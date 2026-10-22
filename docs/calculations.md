@@ -190,7 +190,7 @@ How an uploaded attendance template (the grid: one row per employee, one column 
 - Every change and every error names its cell (G8): the Excel row number and column letter. A row error (unknown or repeated employee code) has the row number and no column.
 - Limits (G9): 5 MB, `.xlsx` only, at most 2000 employee rows (a technical limit in code, not a setting). The file is read once per request and never stored.
 - Order of the cell checks: an unknown or out-of-scope employee code, or a code already used on an earlier row, refuses the row; then a future date, then a day not employed as the group's type; then an unchanged cell is set aside; then, on every changed cell, a locked period, an unknown site or day type, a stale version, and the day rules of single-day entry. A refused cell is skipped and listed; the other cells are still saved.
-- The import follows the template's reach: an own-scope user imports only the employees assigned to them today.
+- The import takes reach per cell: an own-scope user imports only the cells whose employee they reach on that cell's date.
 
 ## Not calculated by the system
 - Bonuses, negligence deductions, penalties, lateness exemptions, insurance shares and income tax: entered by HR.
