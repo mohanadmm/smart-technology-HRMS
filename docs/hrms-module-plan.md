@@ -12,7 +12,7 @@ Smart Technology runs HR and payroll today on 6 hand-built Excel workbooks (anal
 | Language | Arabic + English (RTL/LTR) |
 | Users | 7 accounts: 1 CEO, 1 HR, 5 managers. **No employee or worker accounts.** Developer role can add accounts |
 | Roles | Developer (super-admin) > CEO > HR > Manager. HR can edit everything a manager enters |
-| Data entry | Manager records attendance, absence, lateness, leave and requests for their own employees. Each employee belongs to exactly one manager; attendance is HR-only for now (see Attendance entry (1c)) |
+| Data entry | Manager records attendance, absence, lateness, leave and requests for the people on their sites; attendance is HR-only for now (see Attendance entry (1c)) |
 | Approvals | Manager → HR → (HR decides) CEO, or HR approves alone |
 | HR alerts | Instant for requests, warnings and edits to past days; daily digest for routine attendance |
 | Fingerprint | Office staff only; HR uploads the device's Excel export; 15-min grace; shift 09:00–17:00 (per-employee override); import flags missing punches / early leave / OT, HR confirms. Office attendance is HR's, not the managers' |
@@ -54,7 +54,7 @@ Smart Technology runs HR and payroll today on 6 hand-built Excel workbooks (anal
    - Type (office / engineer / permanent worker / day laborer), with dated type history.
    - Identity: national ID, insurance no., gender, address, fingerprint name (English, for matching).
    - Pay: pay method (bank / cash) + bank account, salary + raise, insured basic, daily wage (day laborers), shift override.
-   - Placement: department, residence, manager (one).
+   - Placement: department, residence, home site (workers), manager (engineers; office reference).
    - Contract dates, document expiry dates, hiring-documents checklist, termination date + reason.
    - HR notes.
 4. **Sites & rates**: sites (deduplicated from both workbooks), leave day-types, site allowance rules, residence×site fares + per-worker overrides, manager↔sites assignment.
@@ -71,7 +71,7 @@ Smart Technology runs HR and payroll today on 6 hand-built Excel workbooks (anal
      - 3 tries with 60 s / 300 s backoff, on the `maintenance` queue.
      - Failures are logged. The counts are cumulative, so the next run covers a failed day.
    - Later, separate items:
-     - **Manager mobile screen**: the manager enters today only, and past days are HR-only. «زي امبارح» quick fill; the manager's own sites only; the «تم التوقيع» sign-off per employee period, after which only HR edits; HR returns a period with a notification to the manager; an alert to HR when a manager skips a day.
+     - **Manager mobile screen**: the manager enters today, and yesterday until 12:00; older days are HR-only. «زي امبارح» quick fill; the manager's own sites only; the «تم التوقيع» sign-off per employee period, after which only HR edits; HR returns a period with a notification to the manager; an alert to HR when a manager skips a day.
      - **Paste site attendance messages**: HR pastes a site's attendance message in a fixed format, and the system parses it per person.
 6. **Leave**: balances and rules above, recorded by the manager, HR approves or escalates.
 7. **Notifications**: in-app, instant + daily digest.

@@ -19,7 +19,7 @@ Mirror the CRM (github.com/mr-h12/smart-technology-CRM, see `docs/adr/0001-mirro
 
 ## Users and permissions
 - Accounts: Developer, CEO, HR, Manager (5 managers today). **Employees and workers have no accounts.**
-- A manager acts on behalf of their own employees: field attendance, leave, requests, the "signed" mark. A manager sees only employees assigned to them. Each employee has exactly one manager at a time (office staff: their department manager); reassignment is dated.
+- A manager acts on behalf of their own employees: field attendance, leave, requests, the "signed" mark. A manager covers one or more sites and reaches, on each date, the workers whose home site is one of their sites and the engineers assigned to them. A worker has one dated home site; only HR moves it. Engineers have one dated manager and work at any of that manager's sites. Office staff keep a dated department manager for reference; HR enters their attendance, leave and requests.
 - Office staff attendance comes from the fingerprint import and HR, not from managers.
 - HR can view and edit everything managers enter. Every manager action notifies HR: instantly for requests, warnings and edits to past days; in a daily digest for routine attendance.
 - Approval flow: manager → HR → (HR chooses) CEO. Escalation is HR's per-request decision, not a rule.

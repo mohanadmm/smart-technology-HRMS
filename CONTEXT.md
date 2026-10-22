@@ -17,7 +17,7 @@ Office staff, engineers and permanent workers together: everyone paid a monthly 
 _Avoid_: permanent employees, مثبتين (alone; it is ambiguous)
 
 **Manager** (مدير):
-An account holder who acts on behalf of the employees assigned to them. Each employee has exactly one manager at a time.
+An account holder who covers one or more sites and acts on behalf of the people they reach on a date: the workers whose home site is one of their sites, and the engineers assigned to them. Office staff are in no manager's reach.
 _Avoid_: supervisor, team leader
 
 **Fingerprint name**:
@@ -33,6 +33,10 @@ _Avoid_: الكود; code (in the UI)
 **Site** (موقع):
 A place where a day of work is done, usually a client location.
 _Avoid_: location, project, place (المكان)
+
+**Home site** (الموقع الأساسي):
+The site a worker belongs to from a date until HR moves them. A worker helping at another site, even for one day, is moved there first.
+_Avoid_: current site, assigned site
 
 **Leave day-type**:
 A non-work value recorded instead of a site for a day: Friday, Saturday, official holiday, sick, rest, absent (غ). It gets its own row in site costing. Stored as a `sites` row with `kind=leave` and a `leave_code`; the UI calls them أنواع الإجازات / Leave types and never "leave site".
