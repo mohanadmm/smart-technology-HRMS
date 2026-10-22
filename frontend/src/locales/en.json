@@ -40,7 +40,8 @@
       "admin": "System administration"
     },
     "settings": "Settings",
-    "attendance": "Attendance"
+    "attendance": "Attendance",
+    "siteDay": "Site attendance"
   },
   "toggle": {
     "language": "Language",
@@ -673,5 +674,19 @@
     "choosePeriod": "Choose AM or PM.",
     "noPeriod": "No AM or PM chosen",
     "invalid": "Invalid time."
+  },
+  "siteDay": {
+    "rows": "People at the site",
+    "site": "Site",
+    "today": "Today",
+    "engineers": "Engineers",
+    "present": "Present",
+    "absent": "Absent",
+    "sick": "Sick",
+    "more": "Other leave types",
+    "atSite": "At site: {{site}}",
+    "otherSite": "At another site",
+    "empty": "No one is assigned to this site on this day.",
+    "noSites": "No sites are assigned to you. Contact HR."
   }
 }
