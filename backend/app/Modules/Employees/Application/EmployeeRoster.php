@@ -29,6 +29,8 @@ final class EmployeeRoster
             (select min(n.effective_from) from employee_type_changes n where n.employee_id = t.employee_id and n.deleted_at is null and n.effective_from > t.effective_from) - 1,
             employees.termination_date, ?::date))';
 
+    private const HOME_SITE = '(select s.site_id from employee_site_assignments s where s.employee_id = employees.id and s.deleted_at is null and s.effective_from <= ?::date order by s.effective_from desc limit 1) = ?';
+
     /** @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}} */
     public function ofType(EmployeeType $type, string $from, string $to, int $perPage, int $page, ?string $managedBy = null): array
     {
@@ -50,7 +52,23 @@ final class EmployeeRoster
     /** @return list<array<string, mixed>> */
     public function allOfType(EmployeeType $type, string $from, string $to, ?string $managedBy = null): array
     {
-        return array_values($this->employedAs($type, $from, $to, $managedBy)->get()->map(fn (Employee $e) => $this->row($e))->all());
+        return $this->rows($this->employedAs($type, $from, $to, $managedBy));
+    }
+
+    /** @return list<array<string, mixed>> the workers employed on $date whose home site on $date is $siteId, by code */
+    public function onSite(string $siteId, string $date): array
+    {
+        return $this->rows(Employee::with(self::RELATIONS)
+            ->where(fn (Builder $q) => $q->whereRaw(self::EMPLOYED_AS, [EmployeeType::PermanentWorker->value, $date, $date])
+                ->orWhereRaw(self::EMPLOYED_AS, [EmployeeType::DayLaborer->value, $date, $date]))
+            ->whereRaw(self::HOME_SITE, [$date, $siteId])
+            ->orderBy('code'));
+    }
+
+    /** @return list<array<string, mixed>> the engineers employed on $date and assigned to $managerId on $date, by code */
+    public function engineersOf(string $managerId, string $date): array
+    {
+        return $this->rows(EmployeeReach::apply($this->employedAs(EmployeeType::Engineer, $date, $date, null), $managerId, $date));
     }
 
     /** @return array<string, mixed>|null */
@@ -81,6 +99,15 @@ final class EmployeeRoster
         return Employee::with(self::RELATIONS)->whereRaw(self::EMPLOYED_AS, [$type->value, $from, $to])
             ->when($managedBy !== null, fn (Builder $q) => EmployeeReach::apply($q, (string) $managedBy, min($to, now('Africa/Cairo')->toDateString())))
             ->orderBy('code');
+    }
+
+    /**
+     * @param  Builder<Employee>  $query
+     * @return list<array<string, mixed>>
+     */
+    private function rows(Builder $query): array
+    {
+        return array_values($query->get()->map(fn (Employee $e) => $this->row($e))->all());
     }
 
     /** @return array<string, mixed> */
