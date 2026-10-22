@@ -32,7 +32,7 @@ class AttendanceImportTest extends TestCase
     use AttendanceFixtures;
     use RefreshDatabase;
 
-    private const STARTS = ['engineer' => '2026-09-26', 'office' => '2026-10-01'];
+    private const STARTS = ['engineer' => '2026-09-26', 'permanent_worker' => '2026-09-26', 'office' => '2026-10-01'];
 
     /** @var array<string, string> */
     private array $leave;
@@ -401,6 +401,48 @@ class AttendanceImportTest extends TestCase
             $this->upload('preview', $file)->assertForbidden();
             $this->upload('confirm', $file)->assertForbidden();
         }
+    }
+
+    public function test_an_own_scope_import_refuses_a_site_outside_the_writers_sites(): void
+    {
+        $this->workSite('Site-2');
+        $lead = $this->userWith('own', 'own');
+        DB::table('manager_sites')->insert(['manager_id' => $lead->id, 'site_id' => $this->site]);
+        $mine = $this->assign($this->employee('engineer'), $lead);
+        $file = $this->edit($this->download(), [$this->code($mine) => ['2026-10-01' => 'Site-2', '2026-10-03' => 'Site-1']]);
+
+        $this->actingAs($lead, 'api');
+        $errors = $this->upload('confirm', $file)->assertOk()->assertJsonPath('data.applied', 1)->json('data.errors');
+        $this->assertSame([[$this->column('2026-10-01'), 'site_not_in_reach']], $this->errorsOf($errors, $mine));
+        $this->assertSame(['2026-10-03'], AttendanceDay::where('employee_id', $mine)->pluck('date')->all());
+    }
+
+    public function test_an_own_scope_import_takes_reach_on_each_cells_date(): void
+    {
+        $site2 = $this->workSite('Site-2');
+        $lead = $this->userWith('own', 'own');
+        DB::table('manager_sites')->insert(['manager_id' => $lead->id, 'site_id' => $this->site]);
+        $worker = $this->employee('permanent_worker');
+        $this->homeSite($worker, $site2, '2026-10-01');                                              // another manager's site until 10-09
+        $this->homeSite($worker, $this->site, '2026-10-10');
+        $sick = $this->leaveName('sick');
+        $file = $this->edit($this->download('permanent_worker'), [$this->code($worker) => ['2026-10-03' => $sick, '2026-10-12' => $sick]]);
+
+        $this->actingAs($lead, 'api');
+        $errors = $this->upload('confirm', $file, 'permanent_worker')->assertOk()->assertJsonPath('data.applied', 1)->json('data.errors');
+        $this->assertSame([[$this->column('2026-10-03'), 'site_not_in_reach']], $this->errorsOf($errors, $worker));
+        $this->assertSame(['2026-10-12'], AttendanceDay::where('employee_id', $worker)->pluck('date')->all());
+    }
+
+    /**
+     * @param  list<array{column: ?string, code: ?int, error: string}>  $errors
+     * @return list<array{?string, string}> [column, error] of one employee's cells
+     */
+    private function errorsOf(array $errors, string $employeeId): array
+    {
+        $code = (int) $this->code($employeeId);
+
+        return array_values(array_map(fn (array $e) => [$e['column'], $e['error']], array_filter($errors, fn (array $e) => $e['code'] === $code)));
     }
 
     /** The template of the group's period (default: its period containing 2026-10-20), downloaded in $locale and saved to a temp file. */

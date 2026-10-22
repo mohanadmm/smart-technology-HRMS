@@ -11,6 +11,7 @@ use App\Modules\Attendance\Domain\Employment;
 use App\Modules\Attendance\Domain\Period;
 use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceDay;
 use App\Modules\Attendance\Infrastructure\PeriodGuard;
+use App\Modules\Employees\Application\EmployeeReach;
 use App\Modules\Employees\Application\EmployeeRoster;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Settings\Application\BusinessRules;
@@ -183,7 +184,8 @@ final class AttendanceDays
     /**
      * One day's write; call inside a transaction. $keepUnsent (bulk) applies P28 to the fields absent from $input, else they are stored as null.
      * An unchanged row is not written (P29). $dryRun stops after the last check, before anything is saved. With $ownerId (own scope)
-     * a work site must be one of that user's sites and, for a worker, the home site on $date (design Part 1).
+     * the employee must be in that user's reach on $date, and a work site must be one of their sites and, for a worker, the home site
+     * on $date (design Part 1). The import takes reach once per period, so this is what checks each cell's own date.
      *
      * @param  array<string, mixed>  $employee
      * @param  array<string, mixed>  $input  validated against FORMAT
@@ -198,8 +200,8 @@ final class AttendanceDays
 
         $siteId = $input['site_id'] ?? null;
         $site = $siteId === null ? null : Site::find((string) $siteId);
-        if ($ownerId !== null && $site?->kind === SiteKind::Work->value) {
-            $this->assertSiteInReach($employee, $type, $date, (string) $site->id, $ownerId);
+        if ($ownerId !== null) {
+            $this->assertInReach($employee, $type, $date, $site?->kind === SiteKind::Work->value ? (string) $site->id : null, $ownerId);
         }
         $siteRule = $this->siteRule($site, $live);
         $isLeave = $site?->kind === 'leave';
@@ -293,11 +295,16 @@ final class AttendanceDays
         return [$type, $row];
     }
 
-    /** @param  array<string, mixed>  $employee */
-    private function assertSiteInReach(array $employee, EmployeeType $type, string $date, string $siteId, string $ownerId): void
+    /**
+     * @param  array<string, mixed>  $employee
+     * @param  string|null  $workSiteId  the day's work site; null for a leave type or office present
+     */
+    private function assertInReach(array $employee, EmployeeType $type, string $date, ?string $workSiteId, string $ownerId): void
     {
         $worker = in_array($type, [EmployeeType::PermanentWorker, EmployeeType::DayLaborer], true);
-        if (! in_array($siteId, $this->sites->idsManagedBy($ownerId), true) || ($worker && Employment::homeSiteOn($employee, $date) !== $siteId)) {
+        $siteRefused = $workSiteId !== null
+            && (! in_array($workSiteId, $this->sites->idsManagedBy($ownerId), true) || ($worker && Employment::homeSiteOn($employee, $date) !== $workSiteId));
+        if ($siteRefused || ! EmployeeReach::reaches((string) $employee['id'], $ownerId, $date)) {
             throw AttendanceRefused::because(AttendanceRefusal::SiteNotInReach);
         }
     }
