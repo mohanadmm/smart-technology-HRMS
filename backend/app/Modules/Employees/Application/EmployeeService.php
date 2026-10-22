@@ -26,9 +26,6 @@ final class EmployeeService
 
     private const CURRENT_TYPE = '(select t.type from employee_type_changes t where t.employee_id = employees.id and t.deleted_at is null and t.effective_from <= ? order by t.effective_from desc limit 1)';
 
-    /** Binds today's date; also used by EmployeeRoster's own-scope filter. */
-    public const CURRENT_MANAGER = '(select m.manager_id from employee_manager_assignments m where m.employee_id = employees.id and m.deleted_at is null and m.effective_from <= ? order by m.effective_from desc limit 1)';
-
     private const CURRENT_SITE = '(select s.site_id from employee_site_assignments s where s.employee_id = employees.id and s.deleted_at is null and s.effective_from <= ? order by s.effective_from desc limit 1)';
 
     private const PAY_FIELDS = ['effective_from', 'salary', 'raise', 'insured_basic', 'daily_wage', 'shift_start', 'shift_end'];
@@ -89,15 +86,12 @@ final class EmployeeService
         return ['total' => (int) $counts->sum(), ...$byType];
     }
 
-    /** @return Builder<Employee> live employees, or only those a manager has today */
+    /** @return Builder<Employee> live employees, or only those a manager reaches today */
     private function visibleTo(?string $ownerId): Builder
     {
         $query = Employee::query();
-        if ($ownerId !== null) {
-            $query->whereRaw(self::CURRENT_MANAGER.' = ?', [self::today(), $ownerId]);
-        }
 
-        return $query;
+        return $ownerId === null ? $query : EmployeeReach::apply($query, $ownerId, self::today());
     }
 
     /**
@@ -220,9 +214,10 @@ final class EmployeeService
         return $this->show($id);
     }
 
-    public function isManagedBy(string $employeeId, string $userId): bool
+    /** Whether the employee is in the user's reach on $date (default today). */
+    public function isManagedBy(string $employeeId, string $userId, ?string $date = null): bool
     {
-        return Employee::query()->whereKey($employeeId)->whereRaw(self::CURRENT_MANAGER.' = ?', [self::today(), $userId])->exists();
+        return EmployeeReach::reaches($employeeId, $userId, $date ?? self::today());
     }
 
     /**

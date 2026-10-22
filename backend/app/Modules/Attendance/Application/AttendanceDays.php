@@ -14,6 +14,8 @@ use App\Modules\Attendance\Infrastructure\PeriodGuard;
 use App\Modules\Employees\Application\EmployeeRoster;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Settings\Application\BusinessRules;
+use App\Modules\Sites\Application\SiteService;
+use App\Modules\Sites\Domain\SiteKind;
 use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -66,19 +68,24 @@ final class AttendanceDays
 
     private const TIMES = ['in_time', 'out_time', 'scheduled_in', 'scheduled_out'];
 
-    public function __construct(private readonly EmployeeRoster $roster, private readonly EffectiveDays $days, private readonly BusinessRules $rules) {}
+    public function __construct(
+        private readonly EmployeeRoster $roster,
+        private readonly EffectiveDays $days,
+        private readonly BusinessRules $rules,
+        private readonly SiteService $sites,
+    ) {}
 
     /**
-     * PUT semantics: a value absent from $input is stored as null.
+     * PUT semantics: a value absent from $input is stored as null. $ownerId (own scope) limits the work site to theirs (see write()).
      *
      * @param  array<string, mixed>  $input  validated against FORMAT
      * @return array<string, mixed> the day after the write
      */
-    public function save(string $employeeId, string $date, array $input, string $source = 'entered'): array
+    public function save(string $employeeId, string $date, array $input, ?string $ownerId = null, string $source = 'entered'): array
     {
         $employee = $this->roster->find($employeeId) ?? throw new ModelNotFoundException;
         try {
-            DB::transaction(fn () => $this->write($employee, $date, $input, $source, false));
+            DB::transaction(fn () => $this->write($employee, $date, $input, $ownerId, $source, false));
         } catch (UniqueConstraintViolationException) {
             // A racing insert of the same employee and date won.
             throw AttendanceRefused::because(AttendanceRefusal::ConcurrencyConflict);
@@ -103,14 +110,14 @@ final class AttendanceDays
      * @param  list<array<string, mixed>>  $rows  validated against BULK_FORMAT
      * @return list<array{employee_id: string, version: ?int}> in request order; version is null after a clear
      */
-    public function bulk(string $date, array $rows): array
+    public function bulk(string $date, array $rows, ?string $ownerId): array
     {
         $employees = $this->roster->findMany(array_map(fn (array $r) => (string) $r['employee_id'], $rows));
         $order = array_keys($rows);
         usort($order, fn (int $a, int $b) => strcmp((string) $rows[$a]['employee_id'], (string) $rows[$b]['employee_id']));
         $settings = $this->rules->all();
         $versions = [];
-        DB::transaction(function () use ($date, $rows, $order, $employees, $settings, &$versions): void {
+        DB::transaction(function () use ($date, $rows, $ownerId, $order, $employees, $settings, &$versions): void {
             $conflicts = [];
             $errors = [];
             // ponytail: ~6 queries per row; preload sites and locks if 500-row requests get slow
@@ -122,13 +129,14 @@ final class AttendanceDays
                         $this->clearRow($employee, $date, (int) $row['version']);
                         $versions[$i] = null;
                     } else {
-                        $versions[$i] = $this->write($employee, $date, $row, 'entered', true, $settings);
+                        $versions[$i] = $this->write($employee, $date, $row, $ownerId, 'entered', true, $settings);
                     }
                 } catch (AttendanceRefused $e) {
                     $detail = ['field' => "rows.{$i}", 'code' => $e->reason->value, 'message' => __('attendance.refusal.'.$e->reason->value, $e->params)];
                     if ($e->reason !== AttendanceRefusal::ConcurrencyConflict) {
                         // A locked period or a future date refuses the whole request, so it names no row.
-                        throw AttendanceRefused::because($e->reason, $e->params, $e->reason === AttendanceRefusal::EmployeeNotActive ? [$detail] : []);
+                        $named = in_array($e->reason, [AttendanceRefusal::EmployeeNotActive, AttendanceRefusal::SiteNotInReach], true);
+                        throw AttendanceRefused::because($e->reason, $e->params, $named ? [$detail] : []);
                     }
                     $conflicts[$i] = $detail;
                 } catch (UniqueConstraintViolationException) {
@@ -163,10 +171,10 @@ final class AttendanceDays
      *
      * @throws AttendanceRefused|DayRulesViolated
      */
-    public function writeCell(array $employee, string $date, array $input, string $source, bool $dryRun = false): void
+    public function writeCell(array $employee, string $date, array $input, ?string $ownerId, string $source, bool $dryRun = false): void
     {
         try {
-            DB::transaction(fn () => $this->write($employee, $date, $input, $source, true, dryRun: $dryRun));
+            DB::transaction(fn () => $this->write($employee, $date, $input, $ownerId, $source, true, dryRun: $dryRun));
         } catch (UniqueConstraintViolationException) {
             throw AttendanceRefused::because(AttendanceRefusal::ConcurrencyConflict);
         }
@@ -174,14 +182,15 @@ final class AttendanceDays
 
     /**
      * One day's write; call inside a transaction. $keepUnsent (bulk) applies P28 to the fields absent from $input, else they are stored as null.
-     * An unchanged row is not written (P29). $dryRun stops after the last check, before anything is saved.
+     * An unchanged row is not written (P29). $dryRun stops after the last check, before anything is saved. With $ownerId (own scope)
+     * a work site must be one of that user's sites and, for a worker, the home site on $date (design Part 1).
      *
      * @param  array<string, mixed>  $employee
      * @param  array<string, mixed>  $input  validated against FORMAT
      * @param  array<string, string>|null  $settings  read here when null and needed
      * @return int the row's version after the write
      */
-    private function write(array $employee, string $date, array $input, string $source, bool $keepUnsent, ?array $settings = null, bool $dryRun = false): int
+    private function write(array $employee, string $date, array $input, ?string $ownerId, string $source, bool $keepUnsent, ?array $settings = null, bool $dryRun = false): int
     {
         [$type, $row] = $this->guard($employee, $date);
         $live = $row !== null && ! $row->trashed() ? $row : null;
@@ -189,6 +198,9 @@ final class AttendanceDays
 
         $siteId = $input['site_id'] ?? null;
         $site = $siteId === null ? null : Site::find((string) $siteId);
+        if ($ownerId !== null && $site?->kind === SiteKind::Work->value) {
+            $this->assertSiteInReach($employee, $type, $date, (string) $site->id, $ownerId);
+        }
         $siteRule = $this->siteRule($site, $live);
         $isLeave = $site?->kind === 'leave';
         $values = array_map(fn (string $f) => $input[$f] ?? null, array_combine(EffectiveDays::VALUES, EffectiveDays::VALUES));
@@ -279,6 +291,15 @@ final class AttendanceDays
         $row = AttendanceDay::withTrashed()->where(['employee_id' => $employee['id'], 'date' => $date])->lockForUpdate()->first();
 
         return [$type, $row];
+    }
+
+    /** @param  array<string, mixed>  $employee */
+    private function assertSiteInReach(array $employee, EmployeeType $type, string $date, string $siteId, string $ownerId): void
+    {
+        $worker = in_array($type, [EmployeeType::PermanentWorker, EmployeeType::DayLaborer], true);
+        if (! in_array($siteId, $this->sites->idsManagedBy($ownerId), true) || ($worker && Employment::homeSiteOn($employee, $date) !== $siteId)) {
+            throw AttendanceRefused::because(AttendanceRefusal::SiteNotInReach);
+        }
     }
 
     private function assertVersion(?AttendanceDay $live, mixed $version): void

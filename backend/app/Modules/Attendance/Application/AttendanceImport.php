@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 /**
  * The Excel grid import (slice 3, G1–G9, docs/calculations.md §14): each changed cell of an uploaded template goes through
  * AttendanceDays::writeCell as the Day sheet's row would. The preview runs every check and saves nothing; confirm re-reads the file
- * and writes in one transaction, a refused cell skipped and returned. $ownerId (own scope) narrows the rows to that manager's employees.
+ * and writes in one transaction, a refused cell skipped and returned. $ownerId (own scope) narrows the rows to that manager's employees and the sites to theirs.
  */
 final class AttendanceImport
 {
@@ -44,7 +44,7 @@ final class AttendanceImport
         $changes = [];
         $errors = $plan['errors'];
         foreach ($plan['changes'] as $c) {
-            $error = $this->write($c, true);
+            $error = $this->write($c, $ownerId, true);
             if ($error === null) {
                 $changes[] = $c['change'];
             } else {
@@ -66,7 +66,7 @@ final class AttendanceImport
         $cells = $plan['changes'];
         // Rows are locked in (employee_id, date) order, as bulk() locks them, so an import and a bulk write cannot deadlock.
         usort($cells, fn (array $a, array $b) => strcmp($a['employee']['id'].$a['date'], $b['employee']['id'].$b['date']));
-        $refused = array_values(array_filter(DB::transaction(fn () => array_map(fn (array $c) => $this->write($c, false), $cells))));
+        $refused = array_values(array_filter(DB::transaction(fn () => array_map(fn (array $c) => $this->write($c, $ownerId, false), $cells))));
 
         return ['applied' => count($cells) - count($refused), 'unchanged' => $plan['unchanged'], 'errors' => self::inSheetOrder([...$plan['errors'], ...$refused])];
     }
@@ -159,12 +159,12 @@ final class AttendanceImport
      * @param  array{employee: array<string, mixed>, date: string, index: int, input: array{version: ?int, site_id: ?string}, change: array{row: int, column: string, employee_id: string, code: int, name_ar: string, name_en: ?string, date: string, from: ?string, to: string}}  $c
      * @return array{row: int, column: ?string, code: ?int, date: ?string, error: string, message: string, index: int}|null the shared write's refusal, with its own code
      */
-    private function write(array $c, bool $dryRun): ?array
+    private function write(array $c, ?string $ownerId, bool $dryRun): ?array
     {
         $at = [$c['change']['row'], $c['index'], $c['change']['code'], $c['date']];
         // ponytail: ~8 queries per changed cell, the preview's dry run included; preload sites and locks if full-period files get slow
         try {
-            $this->writes->writeCell($c['employee'], $c['date'], $c['input'], 'imported', $dryRun);
+            $this->writes->writeCell($c['employee'], $c['date'], $c['input'], $ownerId, 'imported', $dryRun);
 
             return null;
         } catch (AttendanceRefused $e) {

@@ -1,0 +1,45 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Modules\Employees\Application;
+
+use App\Modules\Employees\Domain\EmployeeType;
+use App\Modules\Employees\Infrastructure\Eloquent\Employee;
+use Illuminate\Database\Eloquent\Builder;
+
+/**
+ * Who a manager reaches on a date D, by the employee's type on D (design Part 1): an engineer assigned to them on D, or a worker whose
+ * home site on D is one of their sites (P1: manager_sites is undated). Office staff are in no manager's reach (P2).
+ */
+final class EmployeeReach
+{
+    private const TYPE = '(select t.type from employee_type_changes t where t.employee_id = employees.id and t.deleted_at is null and t.effective_from <= ?::date order by t.effective_from desc limit 1)';
+
+    private const ENGINEER = '(select m.manager_id from employee_manager_assignments m where m.employee_id = employees.id and m.deleted_at is null and m.effective_from <= ?::date order by m.effective_from desc limit 1) = ?';
+
+    private const WORKER = 'exists (select 1 from manager_sites ms where ms.manager_id = ? and ms.site_id = (select s.site_id from employee_site_assignments s where s.employee_id = employees.id and s.deleted_at is null and s.effective_from <= ?::date order by s.effective_from desc limit 1))';
+
+    /**
+     * @param  Builder<Employee>  $employees
+     * @return Builder<Employee>
+     */
+    public static function apply(Builder $employees, string $managerId, string $date): Builder
+    {
+        // ponytail: correlated subqueries; a reach view if manager lists pass ~1,000
+        return $employees->whereRaw(
+            'case '.self::TYPE.' when ? then '.self::ENGINEER.' when ? then '.self::WORKER.' when ? then '.self::WORKER.' else false end',
+            [
+                $date,
+                EmployeeType::Engineer->value, $date, $managerId,
+                EmployeeType::PermanentWorker->value, $managerId, $date,
+                EmployeeType::DayLaborer->value, $managerId, $date,
+            ],
+        );
+    }
+
+    public static function reaches(string $employeeId, string $managerId, string $date): bool
+    {
+        return self::apply(Employee::query()->whereKey($employeeId), $managerId, $date)->exists();
+    }
+}

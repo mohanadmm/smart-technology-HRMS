@@ -13,6 +13,7 @@ return [
         'template_mismatch' => 'The file does not match this period\'s attendance template.',
         'unreadable_file' => 'The file could not be read.',
         'too_many_rows' => 'The file has more than :max rows.',
+        'site_not_in_reach' => 'This site is not one of your sites, or it is not the worker\'s home site on this date.',
     ],
     'rule' => [
         'field_not_allowed' => 'This field does not apply to this day.',

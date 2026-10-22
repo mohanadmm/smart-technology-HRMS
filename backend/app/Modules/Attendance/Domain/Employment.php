@@ -7,7 +7,7 @@ namespace App\Modules\Attendance\Domain;
 use App\Modules\Employees\Domain\EffectiveDated;
 use App\Modules\Employees\Domain\EmployeeType;
 
-/** Reads an EmployeeRoster row: hire_date, termination_date, types [{type, effective_from}], shifts [{effective_from, shift_start, shift_end}]. */
+/** Reads an EmployeeRoster row: hire_date, termination_date, types [{type, effective_from}], shifts [{effective_from, shift_start, shift_end}], sites [{site_id, effective_from}]. */
 final class Employment
 {
     /** @param  array<string, mixed>  $employee */
@@ -22,6 +22,12 @@ final class Employment
         $row = EffectiveDated::at($employee['types'], $date);
 
         return $row === null ? null : EmployeeType::from($row['type']);
+    }
+
+    /** @param  array<string, mixed>  $employee */
+    public static function homeSiteOn(array $employee, string $date): ?string
+    {
+        return EffectiveDated::at($employee['sites'], $date)['site_id'] ?? null;
     }
 
     /**

@@ -223,6 +223,7 @@ class AttendanceBulkTest extends TestCase
         $role = Role::create(['slug' => 'site-lead', 'name' => 'Site lead', 'name_ar' => 'مشرف']);
         $role->permissions()->attach(Permission::create(['resource' => 'attendance', 'action' => 'edit', 'scope' => 'own'])->getKey());
         [$lead, $other] = [$this->makeUser('site-lead'), $this->makeUser('manager')];
+        DB::table('manager_sites')->insert(['manager_id' => $lead->id, 'site_id' => $this->site]);
         [$mine, $theirs] = [$this->employee('engineer'), $this->employee('engineer')];
         $this->postJson("/api/v1/employees/{$mine}/manager-assignments", ['manager_id' => $lead->id, 'effective_from' => '2026-10-01'])->assertCreated();
         $this->postJson("/api/v1/employees/{$theirs}/manager-assignments", ['manager_id' => $other->id, 'effective_from' => '2026-10-01'])->assertCreated();

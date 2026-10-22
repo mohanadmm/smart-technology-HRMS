@@ -384,6 +384,7 @@ class AttendanceImportTest extends TestCase
         foreach ([['own', 'own'], ['all', 'own'], ['own', 'all']] as [$view, $edit]) {
             $grants = "view.{$view} + edit.{$edit}";
             $lead = $this->userWith($view, $edit);
+            DB::table('manager_sites')->insert(['manager_id' => $lead->id, 'site_id' => $this->site]);
             $mine = $this->assign($this->employee('engineer'), $lead);
             $file = $this->edit($this->download(), [$this->code($this->eng) => ['2026-10-01' => 'Site-1'], $this->code($mine) => ['2026-10-01' => 'Site-1']]);
 
