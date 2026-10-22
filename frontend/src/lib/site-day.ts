@@ -10,9 +10,9 @@ export type SiteDay = { site: { id: string; name_ar: string; name_en: string | n
 export const MARKS = ['present', 'absent', 'sick'] as const
 export type Mark = (typeof MARKS)[number]
 
-/** The status button a stored day presses: a work-site day is present, the absent and sick leave days their own; anything else none. */
-export function markOf({ state, site_id, leave_code }: SiteDayRow['day']): Mark | null {
+/** The status button a stored day presses on `siteId`'s list: a work day at that site is present (one at another site is only a hint), the absent and sick leave days their own; anything else none. */
+export function markOf({ state, site_id, leave_code }: SiteDayRow['day'], siteId: string): Mark | null {
   if (state !== 'stored') return null
-  if (leave_code === null) return site_id ? 'present' : null
+  if (leave_code === null) return site_id === siteId ? 'present' : null
   return leave_code === 'absent' || leave_code === 'sick' ? leave_code : null
 }

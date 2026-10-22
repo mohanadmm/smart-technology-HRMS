@@ -48,10 +48,10 @@ export function SiteDayPage() {
 
   const card = (r: SiteDayRow) => {
     const name = localName(r.employee as Row, lang)
-    const mark = markOf(r.day)
+    const mark = site ? markOf(r.day, site.id) : null
     const { leave_code, site_id } = r.day
     const where = leave_code !== null && mark === null ? t(`attendance.leaveName.${leave_code}`, { defaultValue: leave_code })
-      : r.section === 'engineers' && leave_code === null && site_id && site_id !== site?.id ? siteName(site_id) : null
+      : r.day.state === 'stored' && leave_code === null && site_id && site_id !== site?.id ? siteName(site_id) : null
     return (
       <li key={r.employee.id} className="rounded-xl border bg-card p-3 shadow-1">
         <div role="group" aria-label={name}>

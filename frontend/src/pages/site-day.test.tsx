@@ -83,7 +83,16 @@ test('an engineer at another site shows that site', async () => {
   })
   render('/site-day?site=s1')
   expect(within(await screen.findByRole('group', { name: 'Engineer-1' })).getByText('في موقع: Site-2')).toBeInTheDocument()
+  expect(within(screen.getByRole('group', { name: 'Engineer-1' })).getByRole('button', { name: 'حاضر' })).toHaveAttribute('aria-pressed', 'false')
   expect(within(screen.getByRole('group', { name: 'Engineer-2' })).getByText('في موقع آخر')).toBeInTheDocument()
+})
+
+test('a worker stored at another site shows the hint and nothing pressed', async () => {
+  routes([S1, S2], { s1: [row('w1', 'Worker-1', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 's2' })] })
+  render('/site-day?site=s1')
+  const worker = await screen.findByRole('group', { name: 'Worker-1' })
+  expect(within(worker).getByText('في موقع: Site-2')).toBeInTheDocument()
+  expect(worker.querySelector('[aria-pressed="true"]')).toBeNull()
 })
 
 test('no sites shows the empty state', async () => {
