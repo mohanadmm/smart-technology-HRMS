@@ -10,6 +10,7 @@ use App\Modules\Identity\Infrastructure\Eloquent\User;
 use App\Modules\Sites\Domain\LeaveCode;
 use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 
 /** Attendance test data, labelled (no personal data). Use in a TestCase with RefreshDatabase. */
@@ -47,6 +48,21 @@ trait AttendanceFixtures
         return app(EmployeeService::class)->create([
             'name_ar' => "{$label}-{$n}", 'gender' => 'male', 'type' => $type, 'effective_from' => $from, 'hire_date' => $from, ...$pay, ...$attributes,
         ])['id'];
+    }
+
+    /** A user with the manager role who manages these sites. */
+    protected function managerOf(string ...$siteIds): User
+    {
+        $manager = $this->makeUser('manager');
+        DB::table('manager_sites')->insert(array_map(fn (string $id) => ['manager_id' => $manager->id, 'site_id' => $id], $siteIds));
+
+        return $manager;
+    }
+
+    /** Homes a worker on a site from this date, as HR's move does. */
+    protected function homeSite(string $employeeId, string $siteId, string $from): void
+    {
+        app(EmployeeService::class)->assignSite($employeeId, ['site_id' => $siteId, 'effective_from' => $from]);
     }
 
     protected function holiday(string $date, string $name = 'Holiday-1'): string

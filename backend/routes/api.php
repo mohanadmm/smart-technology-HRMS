@@ -40,6 +40,7 @@ Route::middleware('auth')->group(function (): void {
             Route::post('{employee}/type-changes', 'typeChange')->middleware(['permission:employee.edit', 'employee.scope']);
             Route::post('{employee}/pay-changes', 'payChange')->middleware(['permission:employee.edit', 'employee.scope']);
             Route::post('{employee}/manager-assignments', 'assignManager')->middleware(['permission:employee.assign_manager', 'employee.scope']);
+            Route::post('{employee}/site-assignments', 'assignSite')->middleware(['permission:employee.assign_site', 'employee.scope']);
             Route::put('{employee}/documents/{kind}', 'document')->middleware(['permission:employee.edit', 'employee.scope'])
                 ->whereIn('kind', array_column(DocumentKind::cases(), 'value'));
         });
