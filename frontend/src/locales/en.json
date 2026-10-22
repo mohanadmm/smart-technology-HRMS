@@ -89,7 +89,8 @@
       "profile": "Profile",
       "manager": "Manager",
       "history": "History",
-      "documents": "Documents"
+      "documents": "Documents",
+      "site": "Site"
     },
     "subtitle": "Every employee and worker, of every type.",
     "stat": {
@@ -180,7 +181,14 @@
     "addRule": "Add rule",
     "yes": "Yes",
     "managers": "Managers",
-    "addLeaveType": "Add leave type"
+    "addLeaveType": "Add leave type",
+    "home": "Home site",
+    "homeNone": "No home site",
+    "move": "Move to a site",
+    "returnsOn": "Returns to the previous site on",
+    "homeHistory": "Home site history",
+    "workers": "Workers",
+    "workersNone": "No workers are based at this site today."
   },
   "residence": {
     "add": "Add residence"
@@ -238,7 +246,8 @@
       "create": "Employees: create",
       "edit": "Employees: edit",
       "delete": "Employees: delete",
-      "assign_manager": "Employees: assign manager"
+      "assign_manager": "Employees: assign manager",
+      "assign_site": "Employees: assign home site"
     },
     "site": {
       "view": "Sites: view",
@@ -282,12 +291,15 @@
       "delete": "Delete",
       "assign_manager": "Assign manager",
       "manage": "Manage",
-      "lock": "Lock"
+      "lock": "Lock",
+      "assign_site": "Assign home site",
+      "record": "Record"
     },
     "attendance": {
       "view": "Attendance: view",
       "edit": "Attendance: edit",
-      "lock": "Attendance: lock period"
+      "lock": "Attendance: lock period",
+      "record": "Attendance: record"
     },
     "holiday": {
       "manage": "Official holidays: manage"
@@ -344,7 +356,8 @@
       "attendance_days": "Attendance days",
       "attendance_locks": "Attendance locks",
       "official_holidays": "Official holidays",
-      "notifications": "Notifications"
+      "notifications": "Notifications",
+      "employee_site_assignments": "Workers' home sites"
     }
   },
   "settings": {
