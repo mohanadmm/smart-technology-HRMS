@@ -145,3 +145,136 @@ Smart Technology runs HR and payroll today on 6 hand-built Excel workbooks (anal
 - **PDFs:** each of the 11 templates renders correctly in Arabic and matches the client's Word layout.
 - **Reminders:** create test dates → alert fires at the configured lead time.
 - **Deployment:** `docker compose up` on a clean Linux VM reproduces production before each release.
+
+## Client revision 1 (received 2026-10-31)
+Source: `hr-module-edits.pdf`, the client's 23-item Arabic list (2 pages), sent after using the Release 1c build. **Status: draft.** No item has been confirmed with the owner yet, so nothing below changes a settled decision until the owner answers `docs/client-questions.md` § Client revision 1. The PDF is not committed: keep client documents out of the repo.
+
+Status is verified against `main` at `7be93b9` (PR #3 merged) by reading the code. No gate was run for this review. **Status key:** ✅ done, 🟡 partial, 🔁 built but must change, ❌ not built, ❓ needs a decision first.
+
+### Gap analysis
+| # | Client asks (paraphrased) | Status | What the code does today | Affects |
+|---|---|---|---|---|
+| 1 | The period table (جدول الفترة) is too complicated | 🔁 ❓ | Period grid: employees × days, and a click opens the single-day editor (`frontend/src/pages/attendance.tsx:82`). It has no selection and no bulk action. The client gives no detail on what is hard. | Attendance |
+| 2 | Edit shared fields of several employees at once | ❌ ❓ | `PATCH employees/{id}` edits one employee. There is no bulk endpoint or bulk UI. | Employees |
+| 3 | Upload document copies as image or PDF | ❌ | `employee_documents` stores kind, received/expiry dates and a note only (`2026_10_16_000001_create_employees_tables.php`). It has no file column, no storage disk and no upload endpoint. | Employees |
+| 4 | Show HR notes in the outer table, full text on hover | 🔁 ❓ | `hr_notes` is one text field on the employee. It is in `EmployeeService::SENSITIVE` and is not a list column (`frontend/src/pages/employees.tsx:130-139`). The plan above says notes are visible to HR and CEO with an optional reminder date; the reminder is not built. | Employees |
+| 5 | The system is still slow | ❓ | PR #2 (perf architecture) is merged. No measurement exists from the client's server. The known slow path is the import: about 8 queries per changed cell (`AttendanceImport.php:165`). | Foundation |
+| 6 | Move between rows with ↑/↓ and make the current row obvious | 🟡 | The day sheet already moves a cursor row with ↑/↓ and J/K and draws a ring on it (`attendance-sheet.tsx:40,263`, `attendance-sheet-rows.tsx:163`). The period grid has no row cursor. The client may mean the grid, or find the ring too faint. | Attendance |
+| 7 | A way to record arrival and leaving times | 🟡 ❓ | Office: in and out times. Permanent workers: scheduled and actual times. Engineers: optional times, used in no calculation. Day laborers: no times (`Attendance/Domain/DayRules.php:16-18`). The day sheet edits only the office in-time inline. | Attendance |
+| 8 | Lateness computed automatically | 🟡 🔁 | Computed for office (grace applied) and permanent workers (`DayRules::officeLateMinutes`, `workerMinutes`). Engineers and day laborers type late minutes, an owner decision in the 1c spec ("typed as in the Excel"). | Attendance, calculations.md |
+| 9 | Default the site to the last one entered; the user can change it | 🟡 | `last_site_id` is the latest work site in the 7 days before the date (`AttendanceGrid.php:169`). The day sheet's "present" action uses it; the day editor does not prefill it. | Attendance |
+| 10 | Excel attendance per site: auto-fill, HR reviews, and an alert listing what is missing with a count | 🟡 🔁 | The template is per group and period, keyed by employee code, one site or day type per cell (amended G1–G9). Its preview lists changes and errors but not missing days. There is no per-site file. The client's own site sheets (for example the Sheraton sheet HR keeps) have not been analysed. | Attendance |
+| 11 | Every input restricted to its format, for example phone = 11 digits starting 01… | ❌ | `phone` is `nullable|string` (`EmployeeController.php:137`). `national_id` is already `digits:14`. Other free-text fields have no format rule. | Employees, all forms |
+| 12 | The manager also has attendance | ❌ ❓ | Managers are user accounts. `employees` has no link to `users`, so a manager has no attendance row unless HR also creates them as an employee. | Identity, Employees |
+| 13 | An "all employees in the system" option | ❓ | Every attendance view is per employee type, because periods differ per type. Where "all" is wanted (sheet, grid, filter, bulk edit) is not stated. | Attendance |
+| 14 | Quick entry by employee name instead of number | 🔁 | `parseBatch` writes only for ID batches; a name search only selects, by design (`frontend/src/lib/day-sheet.ts:22`, "it must never write"). | Attendance |
+| 15 | Mark a selection present, enter one arrival time, take late people out and give them their own time | 🟡 | Bulk "present" exists; office in-time is per row. There is no batch time dialog and no "remove the late ones" list. | Attendance |
+| 16 | An area (منطقة) above sites, used as a filter and defaulted from the last site | ❌ | Sites have no area or grouping (`2026_10_17_000001_create_sites_tables.php`). | Sites |
+| 17 | Rename manager to team lead (مسؤول التيم); simple, fast phone screens; research voice entry | ❌ | Managers have no attendance permission yet; the manager mobile screen is listed above as a later item. Permissions are checked by name, so a rename is a label and locale change, not a role-slug change. Voice entry needs a research spike. | Team-lead workspace |
+| 18 | In the period table, select several employees and several days and enter attendance together | ❌ | `POST attendance/days/bulk` takes one `date` per call (`AttendanceController::bulk`, `AttendanceDays::BULK_FORMAT`). The grid has no selection. | Attendance |
+| 19 | Drop the employee number or make it a hidden key; number employees 1…N, CEO = 0 | 🔁 ❓ | Each employee already has a hidden UUIDv7 `id`. `code` is a visible unique integer from `max(code)+1`, including soft-deleted employees (`EmployeeService.php:108-112`). The code is used by search, the day-sheet ID batches, the attendance template, the fingerprint plan and open PR #4 (master-data import). | Employees, Attendance, PR #4 |
+| 20 | The manager enters day laborers only | 🔁 ❓ | The current rule (CLAUDE.md) is that a manager acts for all of their own employees, every type. | Identity/RBAC, Team-lead workspace |
+| 21 | The manager enters the day laborers' hourly rate | 🔁 ❓ | Conflicts with ADR 0002: a day laborer has an effective-dated **daily** wage, set by HR through a pay change. Hourly pay and manager-set pay both change the payroll model. | Employees, Sites & rates, Payroll |
+| 22 | Pay closes every 15 days for some people and every 30 for others | 🟡 ❓ | Today the period follows the type: day laborers 1–15/16–end, everyone else monthly. Payroll is not built. Is the cycle per type (as today) or per employee? | Payroll |
+| 23 | When pay closes, who receives the details, and what details? | ❓ | Not built and not specified; the client asks this too. | Payroll, Communication |
+
+### What this changes in earlier decisions
+- **Attendance entry (1c) "HR alone records attendance"**: items 17, 20 and 21 bring the manager screen forward and narrow it to day laborers. The "today only" rule recorded above still stands until the owner says otherwise.
+- **"A name must never write" in the day sheet**: item 14 asks to write by name. This needs a rule for ambiguous names (two employees match) before it is built.
+- **Lateness typed for engineers and day laborers**: item 8 may reverse this. Automatic lateness for them needs scheduled times per type (settings) and a multiplier review in `docs/calculations.md`.
+- **ADR 0002 (daily wage on the worker, set by HR)**: item 21 may require an hourly rate, and lets a manager set pay. If confirmed, write a new ADR. Do not edit 0002.
+- **Employee ID**: item 19 may make `code` internal or change its numbering. Renumbering existing employees would break the attendance template, imports and paper references. See question R5 in `docs/client-questions.md`.
+- **Managers are accounts, not employees**: item 12 needs a link between an account and an employee record.
+
+## Modules, ownership and parallel work
+**Status: proposal.** Owner approval needed. Developer names are the current team: **Youssef**, who built Releases 1a–1c, and **the second developer**, who joins now. A third developer may join later.
+
+### Module map
+The backend already splits into modules (`backend/app/Modules/*`, layers enforced by `deptrac.layers.yaml`); the map keeps them and adds the missing ones. A module owns its tables, its `/api/v1` routes and its frontend pages.
+
+| Module | Responsibility | Owned code and tables | Exposes to others | Depends on |
+|---|---|---|---|---|
+| **Foundation** (shared) | Auth, RBAC, audit, settings, notifications, the API envelope, money and time helpers, layout, routing, i18n setup, the form kit | `Identity`, `Audit`, `Settings`, `Notifications`, `app/Support`; `users`, `roles`, `permissions`, `role_permissions`, `audit_log`, `settings`, `notifications`; `routes/api.php`, `frontend/src/App.tsx`, `components/layout/*`, `components/form.tsx`, `components/ui/*`, `lib/*` | `permission:` middleware, `RequestScope`, `Audited`, `BusinessRules`, `Notifier`, `useList`/`useApi`/`useSave` | none |
+| **Employees** | Employee record, type and pay history, manager assignment, documents and their files, HR notes, field validation, employee ID policy, bulk edit, master-data import (PR #4) | `Employees`; `employees`, `employee_type_changes`, `employee_pay_changes`, `employee_documents`, `employee_manager_assignments`; `pages/employees.tsx` | `EmployeeRoster`, `EffectiveDated::at` (type, pay, shift on a date), `isManagedBy` | Foundation |
+| **Sites & rates** | Sites, leave day-types, areas (new), residences, fares, allowance rules, manager↔site | `Sites`; `sites`, `residences`, `fares`, `employee_fare_overrides`, `site_allowance_rules`, `manager_sites`; `pages/sites.tsx`, Settings tabs for sites, residences and fares | `SiteService`, `FareLookup`, site and area lists | Foundation, Employees (fare overrides) |
+| **Attendance (HR)** | Attendance days, period grid, day sheet, Excel template and import, locks, official holidays, missing-day alert | `Attendance`; `attendance_days`, `attendance_locks`, `official_holidays`; `pages/attendance*.tsx`, `pages/holidays.tsx`, `lib/day-sheet.ts` | `effectiveDay`, the period definition (`Domain/Period`), the locked-period read used by payroll | Foundation, Employees, Sites |
+| **Team-lead workspace** (new) | The manager / team-lead phone screens: today's entry for their own day laborers, last-site fill, sign-off, day-laborer rate entry if confirmed, voice spike | New frontend pages (`pages/team/*`); `attendance.*.own` permissions in a new migration; no tables of its own (it writes through the Attendance API) | none | Attendance (`.own` scope on the existing endpoints), Employees, Sites |
+| **Payroll** (Release 2) | Pay periods and close, engines, advances, insurance and tax fields, payout, payslip | New `Payroll` module and tables | Locked-period results for reports | Attendance (locked days), Employees (pay history), Sites (allowances, fares), Settings |
+| **Requests, documents and communication** (Release 3) | Request workflow, 11 PDF forms, messages, reminders, custody, on- and offboarding | New modules | none | Employees, Payroll (for settlement), Foundation |
+| **Reports** (Release 4) | Dashboards, site costing, exports | New module | none | Everything above; reads only |
+
+```mermaid
+flowchart BT
+  F[Foundation<br/>Identity · Audit · Settings · Notifications · Support · layout · i18n]
+  E[Employees] --> F
+  S[Sites & rates] --> F
+  S -->|fare overrides| E
+  A[Attendance HR] --> E
+  A --> S
+  A --> F
+  T[Team-lead workspace] -->|.own scope| A
+  T --> E
+  P[Payroll · Release 2] -->|locked days| A
+  P -->|pay history| E
+  P -->|allowances, fares| S
+  R[Requests · docs · comms · Release 3] --> E
+  R --> P
+  X[Reports · Release 4] -.reads.-> P
+  X -.reads.-> A
+```
+
+### Shared files and their single owner
+These files cause most merge conflicts. Only the owner merges a change to them; anyone else edits them only in a small PR the owner reviews.
+
+| Shared area | Owner | Rule |
+|---|---|---|
+| `routes/api.php` | Youssef | Each module adds its routes in its own `Route::prefix(...)` block; don't reorder other blocks. Splitting the file per module is a separate Foundation PR, made only if conflicts keep happening. |
+| `frontend/src/App.tsx`, `components/layout/AppLayout.tsx` (routes, nav) | Youssef | One line per new route or nav entry, added at the end of its group. |
+| `frontend/src/locales/ar.json`, `en.json` | Youssef | Keys are namespaced by module (`employee.*`, `attendance.*`, `team.*`). Add keys only inside your own namespace, in both files (the parity test enforces it). |
+| Migrations (`backend/database/migrations`) | Each table's module owner | Always a **new** migration, never an edit to one that ran. Name it with the full time (`Y_m_d_His_…`) so two developers on the same day never share a prefix. A migration touches only its module's tables, plus its own permission and setting rows. |
+| Permissions and settings seeding | Youssef reviews | Add permissions in the feature's own migration, following `2026_10_20_000001_create_attendance_tables.php`. Add new setting keys to `SettingController::RULES` in the same PR. |
+| `components/form.tsx`, `components/ui/*`, `lib/query.ts`, `lib/api.ts` | Youssef | A change to a shared component's props is its own small PR, merged before the feature that needs it. |
+| `CONTEXT.md`, `docs/hrms-module-plan.md`, `docs/calculations.md`, `docs/client-questions.md` | The developer whose PR changes the rule | Update in the same PR as the code; the other developer reviews. |
+
+### Contracts to settle before parallel work starts
+1. **Employee ID (R5).** Whether `code` stays visible decides the template, search, quick entry and PR #4. Answer first.
+2. **The manager / team-lead scope (R1–R4).** This decides the `.own` permissions, and whether managers need an employee record.
+3. **The bulk-day contract.** Change `POST attendance/days/bulk` from one `date` to per-row dates (or add a range form), keeping the version-based 409. Youssef proposes the request and response shape in a short PR description, the second developer agrees, then it is built. The team-lead workspace builds on it.
+4. **The document-file contract.** Storage disk, maximum size, allowed MIME types, who may download, and whether a file version is kept on replace. The Employees owner writes it; Youssef reviews the storage and Docker volume part.
+5. **PR #4 (master-data import).** Merge or close it before the second developer touches `EmployeeController.php` or the Sites controllers; it rewrites their validation.
+
+### Allocation for two developers
+Each developer delivers whole features inside their own modules.
+
+- **Youssef: Foundation, Attendance (HR), Sites & rates.** Youssef built these, and items 1, 6–10, 13–16 and 18 live here.
+- **Second developer: Employees, then the team-lead workspace.** Items 2, 3, 4, 11, 12 and 19 are in Employees and touch no attendance file. The workspace (17, 20, 21) is a new folder of pages on top of the Attendance API, so it rarely conflicts with Youssef's work.
+
+**First work package for each developer** (both start once the contracts above are agreed):
+- **Youssef, WP-A1: period-grid bulk entry (items 18, 6, 1).** The bulk-day contract above (multi-date rows), cell and row selection in the period grid, ↑/↓ row cursor with a visible highlight, and one bulk action bar shared with the day sheet. Tests: multi-date bulk with a stale version → 409 for that row only; locked period refused; audit entry per day.
+- **Second developer, WP-B1: employee input rules and HR notes in the list (items 11, 4).** Format rules on every employee field, in the backend validation and in the form (phone format per R6). An HR-notes column in the employee list with the full text on hover and on tap for phones; visibility per R7. Tests: each rule refuses a bad value with an Arabic message; a manager doesn't see notes unless R7 says so.
+
+**Then, as a sequence of small PRs:**
+| Order | Youssef | Second developer |
+|---|---|---|
+| 1 | WP-A1 bulk contract + grid selection | WP-B1 validation + notes column |
+| 2 | Batch arrival-time dialog with late removal (15); last site prefilled in the editor (9) | Document file upload (3), after the file contract |
+| 3 | Areas on sites + area filter (16) | Employee bulk edit of the fields agreed in R8 (2) |
+| 4 | Quick entry by name, after the ambiguity rule R11 (14); automatic lateness if R10 confirms it (8) | Employee ID change per R5 (19), coordinated with Youssef because the template and quick entry read `code` |
+| 5 | Site-sheet import with a missing-days summary (10), after HR's real site sheet is analysed (R13) | Team-lead workspace: `.own` permissions, today's entry for own day laborers, phone layout (17, 20) |
+| 6 | Performance pass with measurements from the client's server (5, R15) | Day-laborer rate entry if R4 confirms it (21, needs a new ADR); voice-entry spike (17) |
+
+### Integration checkpoints
+- **After each PR:** the other developer reviews it. Every gate in `backend/CLAUDE.md` and `frontend/CLAUDE.md` passes on the branch.
+- **After order 1:** a joint check of the bulk contract from both UIs (grid and day sheet).
+- **Before order 4's employee-ID PR:** both developers agree the migration and template change together, because it crosses modules.
+- **Before the team-lead workspace merges:** a role-matrix test run (Developer, CEO, HR, team lead), and a browser check at 375 px as a team lead.
+- **Before a release:** the owner approves from screenshots (375/1024/1440, ar/en, light/dark), as the 1c slices did.
+
+### Branch and worktree workflow
+- One branch per work package from the latest `main` (`feature/<module>-<topic>`, for example `feature/attendance-grid-bulk`, `feature/employees-validation`). A PR into `main`; the other developer reviews; the owner merges.
+- Keep a separate `git worktree` per open branch, so switching tasks never mixes uncommitted work. Each worktree needs its own `backend/.env`, and a separate Docker project name (`COMPOSE_PROJECT_NAME`) with its own ports if two stacks run at once.
+- Rebase on `main` before asking for review. If `main` gained a migration with a later timestamp than yours, re-date your unmerged migration file so the order stays chronological.
+- Never force-push a shared branch.
+
+### Adding a third developer
+Give the third developer **Payroll (Release 2)**: new tables and a new module that only *reads* Attendance (locked days), Employees (pay history) and Sites (allowances, fares), so it barely touches files the other two edit. It can start once these are fixed: the pay-cycle answer (R16), the locked-period read contract from Attendance, and the October 2026 regression fixtures in this plan. If payroll must wait for answers, the third developer takes the Requests module (Release 3) instead, starting with the request workflow, which also only reads from Employees.

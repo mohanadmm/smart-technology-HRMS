@@ -1,3 +1,5 @@
+> **Stale (noted 2026-10-31).** This handoff predates PRs #1–#3, which are now merged into `main` (`7be93b9`); PR #4 (`feature/migration-step-1`) is open. The repository is now **public**, not private as written below. Because the 2026-10-17 history rewrite notes that GitHub may still serve the pre-rewrite commits by SHA, the owner should decide whether to make the repository private again or ask GitHub support to purge those commits. For current work, see `docs/hrms-module-plan.md` § Client revision 1 and § Modules, ownership and parallel work.
+
 # Handoff — Release 1b Tasks 1–7 done on `feature/release-1b-accounts`; next: Task 8
 
 Written 2026-10-17 (cloud session). Every fact below was re-checked at the end of the session unless marked *unverified*.
