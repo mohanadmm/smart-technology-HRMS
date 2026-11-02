@@ -904,8 +904,8 @@ test('in English the site chips, cohorts, last site and toasts use the English n
   await i18n.changeLanguage('en')
   edit()
   const tbl = await table()
-  expect(within(tbl).getByText('Site-1 EN')).toBeInTheDocument() // Engineer-2's present chip
-  expect(within(tbl).getByText('Last site: Site-1 EN')).toBeInTheDocument()
+  expect(within(tbl).getByRole('button', { name: 'Site-1 EN: Engineer-2 EN' })).toBeInTheDocument() // Engineer-2's site today
+  expect(within(tbl).getByRole('button', { name: 'Site-1 EN: Engineer-1 EN' })).toBeInTheDocument() // Engineer-1's last site
   expect(within(screen.getByRole('group', { name: 'By last site' })).getByRole('button', { name: /^Site-1 EN/ })).toBeInTheDocument()
   await menu('More actions: Engineer-1 EN', 'Absent')
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Someone else just changed Engineer-1 EN; the sheet was reloaded. Check it and try again.'))
@@ -1276,4 +1276,47 @@ test('a locked sheet shows the times as plain text', async () => {
   expect(within(tr).queryByRole('textbox')).not.toBeInTheDocument()
   expect(within(tr).getByText('8:45 ص')).toBeInTheDocument()
   expect(within(tr).getByText('6:00 م')).toBeInTheDocument()
+})
+
+// S2b: the site chip
+const chipSites = [...sites, { id: 's2', name_ar: 'Site-2', name_en: 'Site-2', kind: 'work', leave_code: null, active: true }, { id: 's3', name_ar: 'Site-3', name_en: 'Site-3', kind: 'work', leave_code: null, active: false }]
+const chipRoutes = { ...routes, 'GET /api/v1/sites': () => json(200, { data: chipSites, meta: { pagination } }) }
+
+test('the site chip shows the day\'s site, else the last site, else «اختر موقعًا»', async () => {
+  mockFetch(chipRoutes)
+  edit()
+  const tbl = await table()
+  expect(within(rowOf('Engineer-2')).getByRole('button', { name: 'Site-1 Engineer-2' })).toHaveTextContent('Site-1')
+  expect(within(rowOf('Engineer-1')).getByRole('button', { name: 'Site-1 Engineer-1' })).toHaveTextContent('Site-1')
+  expect(within(rowOf('Engineer-3')).getByRole('button', { name: 'اختر موقعًا Engineer-3' })).toHaveTextContent('اختر موقعًا')
+  expect(within(tbl).queryByText(/^آخر موقع/)).not.toBeInTheDocument()
+})
+
+test('the site chip lists the active work sites and posts the picked one', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...chipRoutes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await table()
+  await user.click(within(rowOf('Engineer-1')).getByRole('button', { name: 'Site-1 Engineer-1' }))
+  const items = await screen.findAllByRole('menuitemradio')
+  expect(items.map((i) => i.textContent)).toEqual(['Site-1', 'Site-2'])
+  await user.click(items[1])
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk).rows).toEqual([{ employee_id: 'e1', version: null, site_id: 's2' }])
+})
+
+test('the site chip checks the day\'s site on a present row', async () => {
+  mockFetch(chipRoutes)
+  edit()
+  await table()
+  await user.click(within(rowOf('Engineer-2')).getByRole('button', { name: 'Site-1 Engineer-2' }))
+  expect(await screen.findByRole('menuitemradio', { name: 'Site-1' })).toHaveAttribute('aria-checked', 'true')
+})
+
+test('a locked sheet shows the site as plain text, no chip', async () => {
+  mockFetch({ ...chipRoutes, 'GET /api/v1/attendance/period': () => json(200, { data: { ...period, is_locked: true } }) })
+  open()
+  await table()
+  expect(within(rowOf('Engineer-2')).getByText('Site-1')).toBeInTheDocument()
+  expect(within(rowOf('Engineer-2')).queryByRole('button', { name: /Site-1/ })).not.toBeInTheDocument()
 })

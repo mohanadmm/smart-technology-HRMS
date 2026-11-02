@@ -1,10 +1,10 @@
-import { CalendarOff, Check, CircleHelp, Clock, Ellipsis, Eye, type LucideIcon, Stethoscope, UserX } from 'lucide-react'
+import { CalendarOff, Check, ChevronDown, CircleHelp, Clock, Ellipsis, Eye, type LucideIcon, MapPin, Stethoscope, UserX } from 'lucide-react'
 import { type ReactNode, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatTime, localName, type Row, TimeInput } from '@/components/form'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type SheetAction, type SheetRow, statusOf } from '@/lib/day-sheet'
 import { cn } from '@/lib/utils'
@@ -57,6 +57,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
     return s ? localName(s, lang) : '—'
   }
   const status = (r: SheetRow) => statusOf(r, office)
+  const workSites = sites.filter((s) => s.kind === 'work' && s.active)
   // the day's leave type (a derived day has no site: its code's leave type); the seeded ones have no name_en, so English falls back to the code's name
   const leaveName = (r: SheetRow, code: string) => {
     const s = sites.find((x) => x.id === r.day.site_id) ?? sites.find((x) => x.kind === 'leave' && x.leave_code === code)
@@ -154,8 +155,35 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
       </span>
     )
   }
+  // a field row's site: the day's site when present, else the last site on a missing row, else «choose a site»; a pick writes that site
+  const siteChip = (r: SheetRow) => {
+    const s = status(r)
+    const at = s === 'present' ? r.day.site_id : s === 'missing' ? r.last_site_id : null
+    const text = at ? siteName(at) : t('attendance.sheet.bulk.pickSite')
+    return (
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" variant="outline" size="sm" className="max-w-48 min-w-0 px-2.5" disabled={pending.has(r.employee.id)} aria-label={t('attendance.sheet.rowAction', { action: text, name: name(r) })}>
+            <MapPin aria-hidden />
+            <span className="truncate">{text}</span>
+            <ChevronDown aria-hidden className="text-muted-foreground" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuRadioGroup value={s === 'present' ? (r.day.site_id ?? '') : ''}>
+            {workSites.map((x) => (
+              <DropdownMenuRadioItem key={x.id} value={x.id} onSelect={() => onApply({ kind: 'site', siteId: x.id }, r, t('attendance.sheet.actionOn', { action: t('attendance.sheet.bulk.setSite'), name: name(r) }))}>
+                {localName(x, lang)}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
   const where = (r: SheetRow) => {
     if (office) return null
+    if (editable) return siteChip(r)
     const s = status(r)
     if (s === 'present') return <span className="rounded-md border bg-card px-2 py-0.5 text-xs">{siteName(r.day.site_id)}</span>
     if (s === 'missing' && r.last_site_id) return <span className="text-xs text-muted-foreground">{t('attendance.sheet.lastSite', { site: siteName(r.last_site_id) })}</span>
