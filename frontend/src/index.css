@@ -85,6 +85,7 @@
 /*
  * Semantic tokens copied from smart-technology-CRM (resources/css/tokens.css, Design System §3.3).
  * Light = "Warm Editorial", dark = "Midnight Obsidian". Components use the shadcn names below.
+ * One exception: the dark accent is orange like the light one, not the CRM's indigo (ADR 0001, 2026-11-02).
  */
 :root {
   color-scheme: light;
@@ -147,21 +148,21 @@
   --popover: #1b2437;
   --popover-foreground: #e0e7ff;
   --surface-raised: #1b2437;
-  --primary: #818cf8;
-  --primary-hover: #a5b4fc;
-  --primary-active: #c7d2fe;
+  --primary: #fb923c;
+  --primary-hover: #fdba74;
+  --primary-active: #fed7aa;
   --primary-foreground: #0b0f19;
   --secondary: #1b2437;
   --secondary-foreground: #e0e7ff;
   --muted: #0f1524;
   --muted-foreground: #afbad4;
-  --accent: color-mix(in srgb, #818cf8 16%, #111827);
-  --accent-foreground: #c7d2fe;
+  --accent: color-mix(in srgb, #fb923c 16%, #111827);
+  --accent-foreground: #fed7aa;
   --destructive: #ff9b91;
   --border: #1f2937;
   --input: #6b7280;
   --ring: #9ca3af;
-  --link: #a5b4fc;
+  --link: #fdba74;
   --sidebar: #111827;
   --success: #5ddb90;
   --warning: #ffca6a;
@@ -177,7 +178,7 @@
 
   --elevation-2: 0 8px 24px -4px rgb(0 0 0 / 0.55), 0 2px 8px -2px rgb(0 0 0 / 0.4);
 
-  --chart-1: #818cf8;
+  --chart-1: #fb923c;
   --chart-2: #7cc4ff;
   --chart-3: #5ddb90;
   --chart-4: #ffca6a;
