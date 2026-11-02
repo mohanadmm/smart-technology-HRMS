@@ -205,20 +205,31 @@ final class AttendanceDays
         }
         $siteRule = $this->siteRule($site, $live);
         $isLeave = $site?->kind === 'leave';
+        $liveKind = $live?->site_id === null ? null : Site::withTrashed()->whereKey($live->site_id)->value('kind');
         $values = array_map(fn (string $f) => $input[$f] ?? null, array_combine(EffectiveDays::VALUES, EffectiveDays::VALUES));
         if ($keepUnsent && $live !== null) {
-            $values = [...$values, ...array_diff_key($this->kept($type, $live, $siteRule), $input)];
+            $values = [...$values, ...array_diff_key($this->kept($type, $live, $liveKind, $siteRule), $input)];
         }
         if ($type === EmployeeType::PermanentWorker && ! $isLeave) {
             foreach ($this->days->workerDefaults($employee, $date, $settings ?? $this->rules->all()) as $field => $default) {
                 $values[$field] ??= $default;
             }
         }
-        // The field shift on Present (calculations §13): bulk writes only; save() (PUT) stores exactly what it is sent.
-        if ($keepUnsent && $type !== EmployeeType::Office && $site !== null && ! $isLeave) {
+        // The field shift on Present (calculations §13): bulk writes only, on a new day or a change of kind to a work day, and only
+        // for a time the row does not send. save() (PUT) stores exactly what it is sent.
+        if ($keepUnsent && $type !== EmployeeType::Office && $site !== null && ! $isLeave && ($live === null || $liveKind !== SiteKind::Work->value)) {
             $shift = EffectiveDays::fieldShift($employee, $date, $settings ?? $this->rules->all());
-            $values['in_time'] ??= $shift['start'];
-            $values['out_time'] ??= $shift['end'];
+            $filled = [...$values];
+            foreach (['in_time' => $shift['start'], 'out_time' => $shift['end']] as $t => $default) {
+                if (! array_key_exists($t, $input)) {
+                    $filled[$t] = $default;
+                }
+            }
+            // Only a permanent worker's day may cross midnight; elsewhere a default must not fail out_before_in on a time nobody sent.
+            $ordered = $filled['in_time'] === null || $filled['out_time'] === null || $filled['out_time'] >= $filled['in_time'];
+            if ($type === EmployeeType::PermanentWorker || $ordered) {
+                $values = $filled;
+            }
         }
 
         $this->assertRules($type, $siteRule, $values);
@@ -267,9 +278,8 @@ final class AttendanceDays
      * @param  array{kind: string, outside_alexandria: bool, active: bool}|null  $siteRule
      * @return array<string, int|string>
      */
-    private function kept(EmployeeType $type, AttendanceDay $live, ?array $siteRule): array
+    private function kept(EmployeeType $type, AttendanceDay $live, ?string $liveKind, ?array $siteRule): array
     {
-        $liveKind = $live->site_id === null ? null : Site::withTrashed()->whereKey($live->site_id)->value('kind');
         $candidates = $liveKind === ($siteRule['kind'] ?? null) ? EffectiveDays::VALUES : ['note', 'advance_amount'];
         $kept = [];
         foreach ($candidates as $f) {

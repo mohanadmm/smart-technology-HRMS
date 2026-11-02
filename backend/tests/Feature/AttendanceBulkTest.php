@@ -114,6 +114,36 @@ class AttendanceBulkTest extends TestCase
         $this->day($e)->assertJsonPath('data.in_time', '08:00')->assertJsonPath('data.out_time', '17:00')->assertJsonPath('data.note', 'n');
     }
 
+    public function test_a_sent_null_clears_the_time_and_is_not_filled(): void
+    {
+        $e = $this->employee('day_laborer');
+        $this->bulk([['employee_id' => $e, 'site_id' => $this->site, 'in_time' => null]])->assertOk();
+        $this->day($e)->assertJsonPath('data.in_time', null)->assertJsonPath('data.out_time', '17:00');
+    }
+
+    public function test_re_marking_a_present_day_never_fills_its_missing_times(): void
+    {
+        $e = $this->employee('engineer');
+        $this->putDay($e, self::DATE, ['site_id' => $this->site])->assertOk();   // a day stored without times (single-day entry, history)
+        $audits = DB::table('audit_log')->count();
+
+        $this->bulk([['employee_id' => $e, 'version' => 1, 'site_id' => $this->site]])->assertOk()->assertJsonPath('data.0.version', 1);
+        $this->assertSame($audits, DB::table('audit_log')->count());
+        $this->bulk([['employee_id' => $e, 'version' => 1, 'site_id' => $this->workSite('Site-2')]])->assertOk()->assertJsonPath('data.0.version', 2);
+        $this->day($e)->assertJsonPath('data.in_time', null)->assertJsonPath('data.out_time', null);   // a move between work sites is not a change of kind
+    }
+
+    public function test_a_default_that_would_end_before_it_starts_is_not_filled(): void
+    {
+        $night = $this->employee('engineer', '2026-01-01', ['shift_start' => '20:00', 'shift_end' => '04:00']);
+        $late = $this->employee('day_laborer');
+        $worker = $this->employee('permanent_worker', '2026-01-01', ['shift_start' => '20:00', 'shift_end' => '04:00']);
+        $this->bulk([['employee_id' => $night, 'site_id' => $this->site], ['employee_id' => $late, 'site_id' => $this->site, 'in_time' => '18:00'], ['employee_id' => $worker, 'site_id' => $this->site]])->assertOk();
+        $this->day($night)->assertJsonPath('data.in_time', null)->assertJsonPath('data.out_time', null);
+        $this->day($late)->assertJsonPath('data.in_time', '18:00')->assertJsonPath('data.out_time', null);
+        $this->day($worker)->assertJsonPath('data.in_time', '20:00')->assertJsonPath('data.out_time', '04:00');   // a permanent worker's shift may cross midnight
+    }
+
     public function test_a_field_row_with_a_time_and_no_site_is_refused_and_nothing_is_written(): void
     {
         [$a, $b] = [$this->employee('engineer'), $this->employee('engineer')];
@@ -193,12 +223,12 @@ class AttendanceBulkTest extends TestCase
     public function test_an_unchanged_row_writes_nothing(): void
     {
         $eng = $this->employee('engineer');
-        $this->putDay($eng, self::DATE, ['site_id' => $this->site, 'in_time' => '08:00', 'out_time' => '17:00', 'advance_amount' => '500'])->assertOk();
+        $this->putDay($eng, self::DATE, ['site_id' => $this->site, 'in_time' => '08:00', 'advance_amount' => '500'])->assertOk();
         $audits = DB::table('audit_log')->count();
 
         $this->bulk([['employee_id' => $eng, 'version' => 1, 'site_id' => $this->site, 'in_time' => '08:00', 'advance_amount' => '500']])->assertOk()->assertJsonPath('data.0.version', 1);
         $this->bulk([['employee_id' => $eng, 'version' => 1, 'site_id' => $this->site]])->assertOk()->assertJsonPath('data.0.version', 1);   // the kept values are the stored ones
-        $this->putDay($eng, self::DATE, ['version' => 1, 'site_id' => $this->site, 'in_time' => '08:00', 'out_time' => '17:00', 'advance_amount' => '500.000000'])->assertOk()->assertJsonPath('data.version', 1);
+        $this->putDay($eng, self::DATE, ['version' => 1, 'site_id' => $this->site, 'in_time' => '08:00', 'advance_amount' => '500.000000'])->assertOk()->assertJsonPath('data.version', 1);
         $this->assertSame($audits, DB::table('audit_log')->count());
     }
 
