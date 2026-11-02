@@ -2,6 +2,7 @@ import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { intlLocale } from '@/components/form'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/input'
@@ -11,24 +12,21 @@ import { cn } from '@/lib/utils'
 import { FOCUS, QUICK } from './attendance-sheet-rows'
 
 type Batch = ReturnType<typeof parseBatch>
-const CHIP = 'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold'
 
-/** The live chips under a batch input: how many rows it hits, the IDs not on the sheet, and the 500-ID cap. */
+/** The live badges under the paste box: how many rows it hits, the IDs not on the sheet, and the 500-ID cap. */
 export function BatchPreview({ batch, count }: { batch: Batch; count: number }) {
   const { t, i18n } = useTranslation()
   return (
     <>
-      <span className={cn(CHIP, 'tabular', count ? 'border-primary/30 bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground')}>{t('attendance.sheet.matched', { count })}</span>
-      {batch.unknown.length > 0 && (
-        <span className={cn(CHIP, 'border-warning-border bg-warning-bg text-warning')}>{t('attendance.sheet.unknown', { ids: new Intl.ListFormat(intlLocale(i18n.language)).format(batch.unknown) })}</span>
-      )}
-      {batch.capped && <span className={cn(CHIP, 'border-warning-border bg-warning-bg text-warning')}>{t('attendance.sheet.capped', { max: MAX_BATCH })}</span>}
+      <Badge variant={count ? 'default' : 'neutral'}>{t('attendance.sheet.matched', { count })}</Badge>
+      {batch.unknown.length > 0 && <Badge variant="warning">{t('attendance.sheet.unknown', { ids: new Intl.ListFormat(intlLocale(i18n.language)).format(batch.unknown) })}</Badge>}
+      {batch.capped && <Badge variant="warning">{t('attendance.sheet.capped', { max: MAX_BATCH })}</Badge>}
     </>
   )
 }
 
 /**
- * Bulk paste (an Excel column, a WhatsApp list): newlines become spaces, then the same parser as the command bar. Only an ID
+ * Bulk paste (an Excel column, a WhatsApp list): newlines become spaces, then `parseBatch`. Only an ID
  * batch is written; a name never is. `onApply` is the sheet's `apply()` and resolves true once the rows are written.
  */
 export function PasteDialog({ open, onOpenChange, rows, leaveSite, onApply }: {
@@ -60,15 +58,16 @@ export function PasteDialog({ open, onOpenChange, rows, leaveSite, onApply }: {
         </DialogHeader>
         <DialogBody className="grid gap-2">
           <Label htmlFor={id}>{t('attendance.sheet.paste.label')}</Label>
-          <Textarea id={id} dir="auto" rows={8} value={text} onChange={(e) => setText(e.target.value)} className="tabular rtl:text-right" />
+          <Textarea id={id} dir="auto" rows={8} value={text} onChange={(e) => setText(e.target.value)} className="rtl:text-right" />
           <div role="status" className="flex min-h-6 flex-wrap items-center gap-1.5">
             {batch?.byName && <span className="text-xs text-warning">{t('attendance.sheet.paste.idsOnly')}</span>}
             {ids && <BatchPreview batch={ids} count={ids.matches.length} />}
           </div>
         </DialogBody>
+        {/* Present is the dialog's one solid action; Absent and Sick are ghost */}
         <DialogFooter>
-          {QUICK.map(([action, label, Icon, tone]) => (
-            <Button key={label} type="button" variant="outline" className={cn(FOCUS, 'h-11 md:h-9', tone)} disabled={!ids?.matches.length || (action.kind === 'leave' && !leaveSite(action.code))}
+          {QUICK.map(([action, label, Icon, tone], i) => (
+            <Button key={label} type="button" variant={i ? 'ghost' : 'default'} className={cn(FOCUS, i > 0 && tone)} disabled={!ids?.matches.length || (action.kind === 'leave' && !leaveSite(action.code))}
               onClick={() => void run(action, t(label))}>
               <Icon aria-hidden />
               {t(label)}

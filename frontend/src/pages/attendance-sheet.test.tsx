@@ -652,6 +652,14 @@ test('the paste dialog applies Absent to the pasted list and reports unknown IDs
   const dialog = screen.getByRole('dialog', { name: 'لصق الأرقام الوظيفية' })
   await user.type(within(dialog).getByRole('textbox', { name: 'الأرقام الوظيفية' }), '1{Enter}2{Enter}99')
   expect(within(dialog).getByRole('status')).toHaveTextContent('2 مطابق')
+  expect(within(dialog).getByText('2 مطابق')).toHaveClass('rounded-md', 'bg-primary/10') // a kit Badge
+  expect(within(dialog).getByText('غير موجود في الكشف: 99')).toHaveClass('bg-warning/10')
+  // one solid action, the rest ghost
+  expect(within(dialog).getByRole('button', { name: 'حاضر' })).toHaveClass('bg-primary')
+  for (const b of ['غياب', 'مرضي']) {
+    expect(within(dialog).getByRole('button', { name: b })).not.toHaveClass('border')
+    expect(within(dialog).getByRole('button', { name: b })).not.toHaveClass('bg-primary')
+  }
   await user.click(within(dialog).getByRole('button', { name: 'غياب' }))
   await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
   expect(sent(bulk).rows).toEqual([{ employee_id: 'e1', version: null, site_id: 'sa' }, { employee_id: 'e2', version: 1, site_id: 'sa' }])
