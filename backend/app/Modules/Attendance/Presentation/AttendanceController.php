@@ -100,23 +100,23 @@ final class AttendanceController
         $this->assertDate($date);
         $data = $request->validate(AttendanceDays::FORMAT);
 
-        return ApiEnvelope::single($request, $this->writes->save($employee, $date, $data));
+        return ApiEnvelope::single($request, $this->writes->save($employee, $date, $data, RequestScope::ownerId($request)));
     }
 
-    /** An own-scope user reaches only employees assigned to them today, as `employee.scope` does; 404 so ids are not confirmed. */
+    /** An own-scope user reaches only employees in their reach on the date, as `employee.scope` does; 404 so ids are not confirmed. */
     public function bulk(Request $request): JsonResponse
     {
         $data = $request->validate(AttendanceDays::BULK_FORMAT);
         $ownerId = RequestScope::ownerId($request);
         if ($ownerId !== null) {
             foreach ($data['rows'] as $row) {
-                if (! $this->employees->isManagedBy($row['employee_id'], $ownerId)) {
+                if (! $this->employees->isManagedBy($row['employee_id'], $ownerId, $data['date'])) {
                     throw new ModelNotFoundException;
                 }
             }
         }
 
-        return ApiEnvelope::single($request, $this->writes->bulk($data['date'], $data['rows']));
+        return ApiEnvelope::single($request, $this->writes->bulk($data['date'], $data['rows'], $ownerId));
     }
 
     public function destroy(Request $request, string $employee, string $date): JsonResponse

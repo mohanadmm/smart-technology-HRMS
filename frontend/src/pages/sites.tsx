@@ -1,4 +1,4 @@
-import { Bus, CalendarOff, House, MapPin, Plus, type LucideIcon } from 'lucide-react'
+import { Bus, CalendarOff, HardHat, House, MapPin, Plus, type LucideIcon } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -230,19 +230,53 @@ function ManagersForm({ siteId, managerIds, users, loadErr, onDone }: { siteId: 
   )
 }
 
+/** The workers whose home site is this site today; mounted only while open, so the list loads on open. */
+function WorkersDialog({ site, open, onOpenChange }: { site: Row; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t } = useTranslation()
+  const { rows, total, err, loading } = useList(`/employees?site_id=${site.id}&per_page=100`)
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>{`${t('site.workers')}: ${site.name_ar}`}</DialogTitle>
+        </DialogHeader>
+        <DialogBody className="grid gap-3">
+          <ErrorBanner err={err} shown={[]} />
+          <Notice show={total > rows.length} text={t('common.tooMany')} />
+          {loading ? (
+            <TableSkeleton rows={3} />
+          ) : !rows.length ? (
+            !err && <EmptyState icon={HardHat} title={t('site.workersNone')} />
+          ) : (
+            <ul className="divide-y">
+              {rows.map((e) => (
+                <li key={e.id} className="flex min-h-11 items-center justify-between gap-3 py-2 text-sm">
+                  <span className="font-medium">{e.name_ar}</span>
+                  {e.current_type && <Badge variant="neutral">{t(`enum.type.${e.current_type}`)}</Badge>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </DialogBody>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /** Work sites and leave types are both `sites` rows; `kind` picks the list, the columns and the row actions. */
 function SiteList({ kind }: { kind: 'work' | 'leave' }) {
   const { t } = useTranslation()
   const { can } = useAuth()
   const { rows, total, err, loading } = useList(`/sites${LIST}&kind=${kind}`)
   const [page, setPage] = useState(1)
-  const [dlg, setDlg] = useState<{ type: 'edit' | 'rules' | 'managers'; row: Row }>()
+  const [dlg, setDlg] = useState<{ type: 'edit' | 'rules' | 'managers' | 'workers'; row: Row }>()
   const close = { open: true, onOpenChange: () => setDlg(undefined) }
   const work = kind === 'work'
   const actions = (row: Row) => [
     ...(can('site.manage') ? [{ label: t('site.edit'), onSelect: () => setDlg({ type: 'edit', row }) }] : []),
     ...(work && can('site.manage') ? [{ label: t('site.allowances'), onSelect: () => setDlg({ type: 'rules', row }) }] : []),
     ...(work && can('site.assign_manager') ? [{ label: t('site.managers'), onSelect: () => setDlg({ type: 'managers', row }) }] : []),
+    ...(work && can('employee.view') ? [{ label: t('site.workers'), onSelect: () => setDlg({ type: 'workers', row }) }] : []),
   ]
   return (
     <ListCard
@@ -292,6 +326,7 @@ function SiteList({ kind }: { kind: 'work' | 'leave' }) {
       {dlg?.type === 'edit' && <SiteDialog kind={kind} site={dlg.row} {...close} />}
       {dlg?.type === 'rules' && <RulesDialog site={dlg.row} {...close} />}
       {dlg?.type === 'managers' && <ManagersDialog site={dlg.row} {...close} />}
+      {dlg?.type === 'workers' && <WorkersDialog site={dlg.row} {...close} />}
     </ListCard>
   )
 }

@@ -3,6 +3,7 @@
 use App\Modules\Attendance\Presentation\AttendanceController;
 use App\Modules\Attendance\Presentation\AttendanceLockController;
 use App\Modules\Attendance\Presentation\HolidayController;
+use App\Modules\Attendance\Presentation\SiteDayController;
 use App\Modules\Audit\Presentation\AuditLogController;
 use App\Modules\Employees\Domain\DocumentKind;
 use App\Modules\Employees\Presentation\EmployeeController;
@@ -40,6 +41,7 @@ Route::middleware('auth')->group(function (): void {
             Route::post('{employee}/type-changes', 'typeChange')->middleware(['permission:employee.edit', 'employee.scope']);
             Route::post('{employee}/pay-changes', 'payChange')->middleware(['permission:employee.edit', 'employee.scope']);
             Route::post('{employee}/manager-assignments', 'assignManager')->middleware(['permission:employee.assign_manager', 'employee.scope']);
+            Route::post('{employee}/site-assignments', 'assignSite')->middleware(['permission:employee.assign_site', 'employee.scope']);
             Route::put('{employee}/documents/{kind}', 'document')->middleware(['permission:employee.edit', 'employee.scope'])
                 ->whereIn('kind', array_column(DocumentKind::cases(), 'value'));
         });
@@ -94,6 +96,8 @@ Route::middleware('auth')->group(function (): void {
             Route::delete('days/{employee}/{date}', 'destroy')->middleware(['permission:attendance.edit', 'employee.scope'])->where('date', $date);
         });
     });
+
+    Route::get('attendance/site-day', [SiteDayController::class, 'show'])->middleware('permission:attendance.record');
 
     Route::prefix('attendance/locks')->controller(AttendanceLockController::class)->group(function (): void {
         Route::post('/', 'store')->middleware('permission:attendance.lock');

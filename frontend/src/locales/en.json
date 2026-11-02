@@ -17,7 +17,9 @@
     "saveChanges": "Save changes",
     "name": "Name",
     "saved": "Changes saved.",
-    "status": "Status"
+    "status": "Status",
+    "cancel": "Cancel",
+    "undo": "Undo"
   },
   "app": {
     "name": "Smart Technology HRMS",
@@ -40,7 +42,8 @@
       "admin": "System administration"
     },
     "settings": "Settings",
-    "attendance": "Attendance"
+    "attendance": "Attendance",
+    "siteDay": "Site attendance"
   },
   "toggle": {
     "language": "Language",
@@ -89,7 +92,8 @@
       "profile": "Profile",
       "manager": "Manager",
       "history": "History",
-      "documents": "Documents"
+      "documents": "Documents",
+      "site": "Site"
     },
     "subtitle": "Every employee and worker, of every type.",
     "stat": {
@@ -180,7 +184,14 @@
     "addRule": "Add rule",
     "yes": "Yes",
     "managers": "Managers",
-    "addLeaveType": "Add leave type"
+    "addLeaveType": "Add leave type",
+    "home": "Home site",
+    "homeNone": "No home site",
+    "move": "Move to a site",
+    "returnsOn": "Returns to the previous site on",
+    "homeHistory": "Home site history",
+    "workers": "Workers",
+    "workersNone": "No workers are based at this site today."
   },
   "residence": {
     "add": "Add residence"
@@ -238,7 +249,8 @@
       "create": "Employees: create",
       "edit": "Employees: edit",
       "delete": "Employees: delete",
-      "assign_manager": "Employees: assign manager"
+      "assign_manager": "Employees: assign manager",
+      "assign_site": "Employees: assign home site"
     },
     "site": {
       "view": "Sites: view",
@@ -282,12 +294,15 @@
       "delete": "Delete",
       "assign_manager": "Assign manager",
       "manage": "Manage",
-      "lock": "Lock"
+      "lock": "Lock",
+      "assign_site": "Assign home site",
+      "record": "Record"
     },
     "attendance": {
       "view": "Attendance: view",
       "edit": "Attendance: edit",
-      "lock": "Attendance: lock period"
+      "lock": "Attendance: lock period",
+      "record": "Attendance: record"
     },
     "holiday": {
       "manage": "Official holidays: manage"
@@ -344,7 +359,8 @@
       "attendance_days": "Attendance days",
       "attendance_locks": "Attendance locks",
       "official_holidays": "Official holidays",
-      "notifications": "Notifications"
+      "notifications": "Notifications",
+      "employee_site_assignments": "Workers' home sites"
     }
   },
   "settings": {
@@ -398,8 +414,8 @@
     "leave_days_under_one_year": "Leave days, under one year of service",
     "leave_days_one_year_plus": "Leave days, one year of service or more",
     "leave_casual_days": "Casual leave days",
-    "worker_shift_start": "Permanent workers' shift start",
-    "worker_shift_end": "Permanent workers' shift end"
+    "worker_shift_start": "Field shift start",
+    "worker_shift_end": "Field shift end"
   },
   "weekday": {
     "saturday": "Saturday",
@@ -409,6 +425,15 @@
     "wednesday": "Wednesday",
     "thursday": "Thursday",
     "friday": "Friday"
+  },
+  "weekdayShort": {
+    "sunday": "Sun",
+    "monday": "Mon",
+    "tuesday": "Tue",
+    "wednesday": "Wed",
+    "thursday": "Thu",
+    "friday": "Fri",
+    "saturday": "Sat"
   },
   "attendance": {
     "subtitle": "Each employee's days, by their group's period.",
@@ -512,7 +537,8 @@
         "onTime": "On time",
         "late": "Late",
         "leave": "Leave",
-        "absent": "Absent"
+        "absent": "Absent",
+        "label": "Day summary"
       },
       "days": "Period days",
       "cohortsSite": "By last site",
@@ -523,7 +549,8 @@
         "details": "Details",
         "present": "Present",
         "absent": "Absent",
-        "sick": "Sick"
+        "sick": "Sick",
+        "more": "More actions"
       },
       "lateBy": "Late {{minutes}} min",
       "lastSite": "Last site: {{site}}",
@@ -536,7 +563,6 @@
       "actionCount": "{{action}} ({{count}})",
       "select": "Select {{name}}",
       "selectPage": "Select this page",
-      "inTime": "In time, {{name}}",
       "rest": "Mark the rest present ({{count}})",
       "sweep": "All present",
       "sweepFor": "Mark the rest of {{cohort}} present",
@@ -546,13 +572,9 @@
         "setSite": "Set site",
         "pickSite": "Choose a site",
         "clear": "Clear",
-        "apply": "Apply"
+        "apply": "Apply",
+        "times": "Edit times"
       },
-      "command": "Quick entry",
-      "commandHint": "ID 12 · list 12, 15 · range 10-20",
-      "commandHelp": "Enter marks the IDs present; a name only selects the matches.",
-      "timeTip": "Type the time, then choose AM or PM, or type it in 24-hour form, like <n>0920</n>.",
-      "commandFind": "Type IDs or part of a name to find employees.",
       "matched": "{{count}} matched",
       "unknown": "Not on this sheet: {{ids}}",
       "capped": "Only the first {{max}} IDs were used",
@@ -572,18 +594,19 @@
         "nothingToChange": "Nothing to change",
         "undone": "Undone: {{label}}",
         "undoneOn": "Undone: {{label}} ({{date}})",
-        "undoConflict": "{{names}} changed since; that undo was dropped."
+        "undoConflict": "{{names}} changed since; that undo was dropped.",
+        "skippedNotPresent": "{{count}} skipped: not present"
       },
       "undo": "Undo ({{count}})",
-      "keys": {
-        "label": "Keyboard shortcuts",
-        "command": "Quick entry",
-        "move": "Move between rows",
-        "mark": "Present, absent, sick",
-        "details": "Details",
-        "undo": "Undo",
-        "clear": "Clear"
-      }
+      "search": "Search by name or employee ID",
+      "found": "{{shown}} of {{total}}",
+      "overBy": "OT {{minutes}} min",
+      "times": {
+        "title": "Edit times",
+        "selected": "{{count}} selected. A blank box changes nothing.",
+        "mixed": "Mixed values"
+      },
+      "siteFor": "Set site: {{site}}, {{name}}"
     },
     "import": {
       "desc": "Download the period's template (one employee per row, one day per column), pick the site or day type in each cell, then upload it to review the changes before saving.",
@@ -660,5 +683,19 @@
     "choosePeriod": "Choose AM or PM.",
     "noPeriod": "No AM or PM chosen",
     "invalid": "Invalid time."
+  },
+  "siteDay": {
+    "rows": "People at the site",
+    "site": "Site",
+    "today": "Today",
+    "engineers": "Engineers",
+    "present": "Present",
+    "absent": "Absent",
+    "sick": "Sick",
+    "more": "Other leave types",
+    "atSite": "At site: {{site}}",
+    "otherSite": "At another site",
+    "empty": "No one is assigned to this site on this day.",
+    "noSites": "No sites are assigned to you. Contact HR."
   }
 }

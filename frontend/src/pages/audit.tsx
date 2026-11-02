@@ -1,22 +1,19 @@
-import { Eye, ScrollText } from 'lucide-react'
+import { ScrollText } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { EmptyState } from '@/components/common/EmptyState'
+import { DataList } from '@/components/common/DataList'
 import { PageHeader } from '@/components/common/PageHeader'
 import { UserAvatar } from '@/components/common/UserAvatar'
 import { ErrorBanner, type Row, SelectField, TextField, toErrs, useCairoTime, useForm, useList } from '@/components/form'
-import { TableSkeleton } from '@/components/layout/PageSkeleton'
-import { Pagination } from '@/components/tables/Pagination'
 import { Badge, type BadgeVariant } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useAuth } from '@/lib/auth'
 import { USERS, useApi } from '@/lib/query'
 
 const ENTITIES = [
-  'employees', 'employee_type_changes', 'employee_pay_changes', 'employee_documents', 'employee_fare_overrides', 'employee_manager_assignments',
+  'employees', 'employee_type_changes', 'employee_pay_changes', 'employee_documents', 'employee_fare_overrides', 'employee_manager_assignments', 'employee_site_assignments',
   'sites', 'site_allowance_rules', 'residences', 'fares', 'users', 'roles', 'settings',
   'attendance_days', 'attendance_locks', 'official_holidays', 'notifications',
 ]
@@ -43,14 +40,14 @@ function Details({ entry, onClose }: { entry: Row; onClose: () => void }) {
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="sm:max-w-[440px]">
-        <div className="space-y-1 border-b p-5 pe-14">
+        <SheetHeader>
           <SheetTitle>
             {label.event(entry)} · {label.entity(entry)}
           </SheetTitle>
           <SheetDescription>
             {time(entry.occurred_at)} · {entry.user?.name ?? '—'}
           </SheetDescription>
-        </div>
+        </SheetHeader>
         <div className="grid flex-1 content-start gap-4 overflow-y-auto overscroll-contain p-5 sm:grid-cols-2">
           {sides.map(([k, values]) => (
             <section key={k} aria-label={t(`audit.${k}`)} className="min-w-0 rounded-lg border p-3">
@@ -72,6 +69,17 @@ function Details({ entry, onClose }: { entry: Row; onClose: () => void }) {
         </div>
       </SheetContent>
     </Sheet>
+  )
+}
+
+function Actor({ user }: { user?: Row | null }) {
+  return user ? (
+    <span className="inline-flex items-center gap-2">
+      <UserAvatar name={user.name} size="sm" />
+      <span className="min-w-0 font-medium">{user.name}</span>
+    </span>
+  ) : (
+    '—'
   )
 }
 
@@ -107,58 +115,26 @@ export function AuditPage() {
           <ErrorBanner err={err} shown={['user_id', 'entity_type', 'from', 'to']} />
           <ErrorBanner err={usersErr} shown={[]} />
         </div>
-        {loading ? (
-          <TableSkeleton rows={8} />
-        ) : !rows.length ? (
-          <EmptyState icon={ScrollText} title={t('common.noResults')} />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('audit.time')}</TableHead>
-                <TableHead className="hidden sm:table-cell">{t('audit.actor')}</TableHead>
-                <TableHead>{t('audit.action')}</TableHead>
-                <TableHead className="hidden md:table-cell">{t('audit.entityType')}</TableHead>
-                <TableHead className="hidden xl:table-cell">{t('audit.entityId')}</TableHead>
-                <TableHead>
-                  <span className="sr-only">{t('common.actions')}</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="whitespace-normal text-muted-foreground sm:whitespace-nowrap">
-                    {time(r.occurred_at)}
-                    <div className="mt-1 text-xs font-medium text-foreground sm:hidden">{r.user?.name ?? '—'}</div>
-                  </TableCell>
-                  <TableCell className="hidden whitespace-normal sm:table-cell">
-                    {r.user ? (
-                      <div className="flex items-center gap-2">
-                        <UserAvatar name={r.user.name} size="sm" />
-                        <span className="min-w-0 font-medium">{r.user.name}</span>
-                      </div>
-                    ) : (
-                      '—'
-                    )}
-                  </TableCell>
-                  <TableCell className="whitespace-normal">
-                    <Badge variant={EVENT_VARIANT[r.event] ?? 'neutral'} className="whitespace-normal">{label.event(r)}</Badge>
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">{label.entity(r)}</TableCell>
-                  <TableCell dir="ltr" className="hidden text-start font-mono text-xs text-muted-foreground xl:table-cell">{r.entity_id}</TableCell>
-                  <TableCell className="text-end">
-                    <Button variant="ghost" size="sm" onClick={() => setOpen(r)} className="max-sm:size-9 max-sm:px-0">
-                      <Eye className="sm:hidden" />
-                      <span className="max-sm:sr-only">{t('audit.details')}</span>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-        {total > 0 && <Pagination page={page} pageSize={PER_PAGE} total={total} onPageChange={setPage} />}
+        <DataList
+          label={t('page.audit')}
+          rows={rows}
+          rowKey={(r) => r.id}
+          title={{ header: t('audit.time'), cell: (r) => time(r.occurred_at) }}
+          status={{ header: t('audit.action'), cell: (r) => <Badge variant={EVENT_VARIANT[r.event] ?? 'neutral'}>{label.event(r)}</Badge> }}
+          fields={[
+            { header: t('audit.actor'), cell: (r) => <Actor user={r.user} /> },
+            { header: t('audit.entityType'), cell: label.entity, tableFrom: 'md' },
+            { header: t('audit.entityId'), cell: (r) => <bdi dir="ltr" className="font-mono text-xs text-muted-foreground">{r.entity_id}</bdi>, tableFrom: 'xl' },
+          ]}
+          actions={(r) => (
+            <Button variant="ghost" size="sm" onClick={() => setOpen(r)}>
+              {t('audit.details')}
+            </Button>
+          )}
+          loading={loading}
+          empty={{ icon: ScrollText, title: t('common.noResults') }}
+          page={{ page, pageSize: PER_PAGE, total, onPageChange: setPage }}
+        />
       </Card>
       {open && <Details entry={open} onClose={() => setOpen(undefined)} />}
     </div>

@@ -8,6 +8,9 @@ use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceDay;
 use App\Modules\Attendance\Infrastructure\Eloquent\OfficialHoliday;
 use App\Modules\Employees\Application\EmployeeService;
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
+use App\Modules\Employees\Infrastructure\Eloquent\EmployeeManagerAssignment;
+use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
+use App\Modules\Identity\Application\Rbac\PermissionHolders;
 use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use Illuminate\Database\Seeder;
 use RuntimeException;
@@ -23,7 +26,7 @@ class AttendanceDemoSeeder extends Seeder
 
         $this->call(SitesSeeder::class);
         $site1 = (string) Site::firstOrCreate(['name_ar' => 'Site-1'], ['kind' => 'work'])->getKey();
-        Site::firstOrCreate(['name_ar' => 'Site-2'], ['kind' => 'work', 'outside_alexandria' => true]);
+        $site2 = (string) Site::firstOrCreate(['name_ar' => 'Site-2'], ['kind' => 'work', 'outside_alexandria' => true])->getKey();
 
         $employees = [
             'Office-1' => 'office', 'Office-2' => 'office',
@@ -41,6 +44,23 @@ class AttendanceDemoSeeder extends Seeder
                 app(EmployeeService::class)->create([
                     'name_ar' => $name, 'gender' => 'male', 'type' => $type, 'effective_from' => '2026-01-01', 'hire_date' => '2026-01-01', ...$pay,
                 ]);
+            }
+        }
+
+        // P18, manager attendance: every manager covers both sites; two workers are homed on each; the first manager has Engineer-1 and -2.
+        $managers = app(PermissionHolders::class)->userIds('attendance.record.own');
+        foreach ([$site1, $site2] as $site) {
+            Site::findOrFail($site)->managers()->syncWithoutDetaching($managers);
+        }
+        $id = fn (string $name) => (string) Employee::where('name_ar', $name)->value('id');
+        foreach (['Worker-1' => $site1, 'Laborer-1' => $site1, 'Worker-2' => $site2, 'Laborer-2' => $site2] as $name => $site) {
+            if (EmployeeSiteAssignment::where('employee_id', $id($name))->doesntExist()) {
+                app(EmployeeService::class)->assignSite($id($name), ['site_id' => $site, 'effective_from' => '2026-01-01']);
+            }
+        }
+        foreach ($managers === [] ? [] : ['Engineer-1', 'Engineer-2'] as $name) {
+            if (EmployeeManagerAssignment::where('employee_id', $id($name))->doesntExist()) {
+                app(EmployeeService::class)->assignManager($id($name), ['manager_id' => $managers[0], 'effective_from' => '2026-01-01']);
             }
         }
 

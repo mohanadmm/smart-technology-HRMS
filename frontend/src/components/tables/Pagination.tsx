@@ -14,7 +14,7 @@ export function Pagination({ page, pageSize, total, onPageChange }: { page: numb
         <Button variant="outline" size="icon-sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)} aria-label={t('common.prev')}>
           <ChevronLeft className="rtl:-scale-x-100" />
         </Button>
-        <span className="px-2 tabular">{t('common.pageOf', { page, pages })}</span>
+        <span className="px-2">{t('common.pageOf', { page, pages })}</span>
         <Button variant="outline" size="icon-sm" disabled={page >= pages} onClick={() => onPageChange(page + 1)} aria-label={t('common.next')}>
           <ChevronRight className="rtl:-scale-x-100" />
         </Button>

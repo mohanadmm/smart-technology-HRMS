@@ -1,34 +1,32 @@
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { intlLocale } from '@/components/form'
+import { intlLocale, isHhmm, TimeInput } from '@/components/form'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { MAX_BATCH, parseBatch, type SheetAction, type SheetRow } from '@/lib/day-sheet'
+import { hhmm, MAX_BATCH, parseBatch, type SheetAction, type SheetRow, statusOf } from '@/lib/day-sheet'
 import { cn } from '@/lib/utils'
-import { FOCUS, QUICK } from './attendance-sheet-rows'
+import { QUICK, selectOnFocus } from './attendance-sheet-rows'
 
 type Batch = ReturnType<typeof parseBatch>
-const CHIP = 'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold'
 
-/** The live chips under a batch input: how many rows it hits, the IDs not on the sheet, and the 500-ID cap. */
-export function BatchPreview({ batch, count }: { batch: Batch; count: number }) {
+/** The live badges under the paste box: how many rows it hits, the IDs not on the sheet, and the 500-ID cap. */
+function BatchPreview({ batch, count }: { batch: Batch; count: number }) {
   const { t, i18n } = useTranslation()
   return (
     <>
-      <span className={cn(CHIP, 'tabular', count ? 'border-primary/30 bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground')}>{t('attendance.sheet.matched', { count })}</span>
-      {batch.unknown.length > 0 && (
-        <span className={cn(CHIP, 'border-warning-border bg-warning-bg text-warning')}>{t('attendance.sheet.unknown', { ids: new Intl.ListFormat(intlLocale(i18n.language)).format(batch.unknown) })}</span>
-      )}
-      {batch.capped && <span className={cn(CHIP, 'border-warning-border bg-warning-bg text-warning')}>{t('attendance.sheet.capped', { max: MAX_BATCH })}</span>}
+      <Badge variant={count ? 'default' : 'neutral'}>{t('attendance.sheet.matched', { count })}</Badge>
+      {batch.unknown.length > 0 && <Badge variant="warning" className="whitespace-normal">{t('attendance.sheet.unknown', { ids: new Intl.ListFormat(intlLocale(i18n.language)).format(batch.unknown) })}</Badge>}
+      {batch.capped && <Badge variant="warning">{t('attendance.sheet.capped', { max: MAX_BATCH })}</Badge>}
     </>
   )
 }
 
 /**
- * Bulk paste (an Excel column, a WhatsApp list): newlines become spaces, then the same parser as the command bar. Only an ID
+ * Bulk paste (an Excel column, a WhatsApp list): newlines become spaces, then `parseBatch`. Only an ID
  * batch is written; a name never is. `onApply` is the sheet's `apply()` and resolves true once the rows are written.
  */
 export function PasteDialog({ open, onOpenChange, rows, leaveSite, onApply }: {
@@ -60,20 +58,84 @@ export function PasteDialog({ open, onOpenChange, rows, leaveSite, onApply }: {
         </DialogHeader>
         <DialogBody className="grid gap-2">
           <Label htmlFor={id}>{t('attendance.sheet.paste.label')}</Label>
-          <Textarea id={id} dir="auto" rows={8} value={text} onChange={(e) => setText(e.target.value)} className="tabular rtl:text-right" />
+          <Textarea id={id} dir="auto" rows={8} value={text} onChange={(e) => setText(e.target.value)} className="rtl:text-right" />
           <div role="status" className="flex min-h-6 flex-wrap items-center gap-1.5">
             {batch?.byName && <span className="text-xs text-warning">{t('attendance.sheet.paste.idsOnly')}</span>}
             {ids && <BatchPreview batch={ids} count={ids.matches.length} />}
           </div>
         </DialogBody>
+        {/* Present is the dialog's one solid action; Absent and Sick are ghost */}
         <DialogFooter>
           {QUICK.map(([action, label, Icon, tone]) => (
-            <Button key={label} type="button" variant="outline" className={cn(FOCUS, 'h-11 md:h-9', tone)} disabled={!ids?.matches.length || (action.kind === 'leave' && !leaveSite(action.code))}
+            // a ghost has no border, so the tone's hover:border-* is dropped
+            <Button key={label} type="button" variant={action.kind === 'present' ? 'default' : 'ghost'} className={cn(action.kind !== 'present' && tone.replace(/ hover:border-\S+/, ''))} disabled={!ids?.matches.length || (action.kind === 'leave' && !leaveSite(action.code))}
               onClick={() => void run(action, t(label))}>
               <Icon aria-hidden />
               {t(label)}
             </Button>
           ))}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+const TIMES = ['in_time', 'out_time'] as const
+
+/**
+ * Bulk arrival/departure for a selection. A box starts with the time every present row shares, else blank («mixed values»); a blank box
+ * changes nothing, and so does a shared value left as it is. Apply waits for a present row in the selection, a box with a new time and
+ * none still needing AM/PM. Only present (or late) rows are written; the rest are skipped with a count toast. `onApply` is the sheet's
+ * `apply()` and resolves true once the rows are written.
+ */
+export function TimesDialog({ rows, office, onOpenChange, onApply }: {
+  rows: SheetRow[]
+  office: boolean
+  onOpenChange: (open: boolean) => void
+  onApply: (action: SheetAction, rows: SheetRow[], label: string) => Promise<boolean>
+}) {
+  const { t } = useTranslation()
+  const ids = { in_time: useId(), out_time: useId() }
+  const here = rows.filter((r) => ['present', 'late'].includes(statusOf(r, office)))
+  const shared = (f: (typeof TIMES)[number]) => {
+    const all = new Set(here.map((r) => hhmm(r.day[f]) ?? ''))
+    return all.size === 1 ? [...all][0] : null // null: the rows differ
+  }
+  const [start] = useState(() => Object.fromEntries(TIMES.map((f) => [f, shared(f)])))
+  const [box, setBox] = useState(() => Object.fromEntries(TIMES.map((f) => [f, { v: start[f] ?? '', needs: false }])))
+  const mixed = TIMES.filter((f) => start[f] === null)
+  // a box counts once it holds a time other than the one it opened with (a shared value left alone changes nothing)
+  const given = TIMES.filter((f) => box[f].v && box[f].v !== start[f])
+  const ready = here.length > 0 && given.length > 0 && TIMES.every((f) => !box[f].v || (!box[f].needs && isHhmm(box[f].v)))
+
+  async function run() {
+    const skipped = rows.length - here.length
+    if (skipped) toast.warning(t('attendance.sheet.toast.skippedNotPresent', { count: skipped }))
+    const action: SheetAction = { kind: 'time', ...Object.fromEntries(given.map((f) => [f, box[f].v])) }
+    if (here.length && !(await onApply(action, here, t('attendance.sheet.actionCount', { action: t('attendance.sheet.bulk.times'), count: here.length })))) return
+    onOpenChange(false)
+  }
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('attendance.sheet.times.title')}</DialogTitle>
+          <DialogDescription>{t('attendance.sheet.times.selected', { count: rows.length })}</DialogDescription>
+        </DialogHeader>
+        <DialogBody className="grid gap-4">
+          {TIMES.map((f) => (
+            <div key={f} className="grid gap-1.5">
+              <Label>{t(`attendance.day.${f}`)}</Label>
+              <TimeInput value={box[f].v} label={t(`attendance.day.${f}`)} aria-label={t(`attendance.day.${f}`)} aria-describedby={mixed.includes(f) ? ids[f] : undefined} {...selectOnFocus}
+                onChange={(v, needs) => setBox((b) => ({ ...b, [f]: { v, needs } }))} />
+              {mixed.includes(f) && <p id={ids[f]} className="text-xs text-muted-foreground">{t('attendance.sheet.times.mixed')}</p>}
+            </div>
+          ))}
+        </DialogBody>
+        <DialogFooter>
+          <Button type="button" disabled={!ready} onClick={() => void run()}>{t('attendance.sheet.bulk.apply')}</Button>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

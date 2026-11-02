@@ -11,7 +11,7 @@ export const DialogClose = DialogPrimitive.Close
 export function DialogOverlay({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
   return (
     <DialogPrimitive.Overlay
-      className={cn('fixed inset-0 z-50 backdrop-brightness-[0.45] backdrop-blur-[2px] data-[state=open]:animate-fade-in', className)}
+      className={cn('fixed inset-0 z-50 bg-scrim data-[state=open]:animate-fade-in', className)}
       {...props}
     />
   )
@@ -29,7 +29,7 @@ export function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         className={cn(
-          'fixed z-50 flex max-h-[92dvh] w-full flex-col overflow-hidden border bg-card shadow-2 outline-none data-[state=open]:animate-fade-in',
+          'fixed z-50 flex max-h-[92dvh] w-full flex-col overflow-hidden border bg-card shadow-float outline-none data-[state=open]:animate-fade-in',
           'inset-x-0 bottom-0 rounded-t-xl pb-[env(safe-area-inset-bottom)] sm:inset-auto sm:pb-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:max-w-lg',
           className,
         )}
@@ -37,7 +37,7 @@ export function DialogContent({
       >
         {children}
         {!hideClose && (
-          <DialogPrimitive.Close className="absolute top-4 end-4 rounded-md p-1 text-muted-foreground max-sm:top-2 max-sm:end-2 max-sm:grid max-sm:size-11 max-sm:place-items-center max-sm:p-0 transition hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+          <DialogPrimitive.Close className="absolute top-3 end-3 grid size-8 min-h-tap min-w-tap place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
             <X className="size-4" />
             <span className="sr-only">{t('common.close')}</span>
           </DialogPrimitive.Close>
@@ -48,7 +48,7 @@ export function DialogContent({
 }
 
 export function DialogHeader({ className, ...props }: React.ComponentProps<'div'>) {
-  return <div className={cn('flex flex-col gap-1 border-b px-6 pt-5 pb-4 pe-12 max-sm:pe-14', className)} {...props} />
+  return <div className={cn('flex flex-col gap-1 border-b px-6 pt-5 pb-4 pe-14', className)} {...props} />
 }
 
 export function DialogBody({ className, ...props }: React.ComponentProps<'div'>) {

@@ -1,0 +1,129 @@
+import type { LucideIcon } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
+import { EmptyState } from '@/components/common/EmptyState'
+import { ErrorBanner } from '@/components/form'
+import { TableSkeleton } from '@/components/layout/PageSkeleton'
+import { Pagination } from '@/components/tables/Pagination'
+import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { cn } from '@/lib/utils'
+
+/** One column. Its header is also the label on the phone card, so the card can never lose a label. */
+export type Field<T> = {
+  header: string
+  cell: (row: T) => ReactNode
+  /** Money and counts: end-aligned header and cell, nowrap, in both layouts (rule 15). */
+  numeric?: boolean
+  /** Table layout only: the column shows from this width up. Cards always show it. */
+  tableFrom?: 'md' | 'lg' | 'xl'
+}
+export type DataColumns<T> = {
+  /** First table column; the card's heading, with no label. */
+  title: { header: string; cell: (row: T) => ReactNode }
+  /** Label/value lines on the card; the middle columns of the table. */
+  fields?: Field<T>[]
+  /** One pill: the last data column in the table, at the top of the card under the heading. */
+  status?: { header: string; cell: (row: T) => ReactNode }
+  /** The trailing cell (sr-only header `common.actions`); top-end of the card. */
+  actions?: (row: T) => ReactNode
+}
+export type DataListProps<T> = DataColumns<T> & {
+  /** The table's accessible name. */
+  label: string
+  /** Already the current page. */
+  rows: readonly T[]
+  rowKey: (row: T) => string
+  loading?: boolean
+  /** A danger Alert above the list; suppresses the empty state. */
+  error?: unknown
+  /** Rule 7: pass `action` only when the page header has no main action. */
+  empty?: { icon: LucideIcon; title: string; description?: string; action?: ReactNode }
+  /** Pagination shows only when total > pageSize. */
+  page?: { page: number; pageSize: number; total: number; onPageChange: (p: number) => void }
+}
+
+// literal classes so Tailwind sees them
+const FROM = { md: 'sm:max-md:hidden', lg: 'sm:max-lg:hidden', xl: 'sm:max-xl:hidden' } as const
+const CELL = 'px-4 py-3 align-middle sm:whitespace-nowrap sm:first:ps-5 sm:last:pe-5 max-sm:p-0'
+// below sm a row is a card: [title | actions] / [status] / [label … value]*
+const CARD = 'max-sm:grid max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:items-center max-sm:gap-x-3 max-sm:gap-y-2 max-sm:px-4 max-sm:py-3'
+
+/**
+ * A list as a table from 640 px up and as one card per row below it (rule 19): one render, switched by CSS. Cards are
+ * separated by hairlines inside the page's Card (not a card in a card). Each field cell carries its header as an
+ * aria-hidden visible label; explicit roles keep the table semantics Safari drops when display changes.
+ * States in order: loading → skeleton, error → Alert, no rows → EmptyState, else rows + Pagination.
+ * No selection, sorting or row click; matrices and the day sheet use ui/table directly.
+ */
+export function DataList<T>({ label, rows, rowKey, title, fields = [], status, actions, loading, error, empty, page }: DataListProps<T>) {
+  const { t } = useTranslation()
+  if (loading) return <TableSkeleton rows={8} />
+  return (
+    <>
+      {!!error && (
+        <div className="p-4">
+          <ErrorBanner err={error} shown={[]} />
+        </div>
+      )}
+      {rows.length ? (
+        <Table role="table" aria-label={label} className="max-sm:block">
+          <TableHeader role="rowgroup" className="max-sm:sr-only">
+            <TableRow role="row">
+              <TableHead role="columnheader">{title.header}</TableHead>
+              {fields.map((f) => (
+                <TableHead role="columnheader" key={f.header} className={cn(f.numeric && 'text-end', f.tableFrom && FROM[f.tableFrom])}>
+                  {f.header}
+                </TableHead>
+              ))}
+              {status && <TableHead role="columnheader">{status.header}</TableHead>}
+              {actions && (
+                <TableHead role="columnheader">
+                  <span className="sr-only">{t('common.actions')}</span>
+                </TableHead>
+              )}
+            </TableRow>
+          </TableHeader>
+          <TableBody role="rowgroup" className="max-sm:block">
+            {rows.map((r) => (
+              <TableRow role="row" key={rowKey(r)} className={CARD}>
+                <td role="cell" className={cn(CELL, 'max-sm:col-start-1 max-sm:row-start-1 max-sm:font-medium')}>
+                  {title.cell(r)}
+                </td>
+                {fields.map((f) => (
+                  <td
+                    role="cell"
+                    key={f.header}
+                    className={cn(
+                      CELL,
+                      'max-sm:col-span-2 max-sm:flex max-sm:items-baseline max-sm:justify-between max-sm:gap-4',
+                      f.numeric && 'text-end whitespace-nowrap',
+                      f.tableFrom && FROM[f.tableFrom],
+                    )}
+                  >
+                    <span aria-hidden="true" className="shrink-0 text-muted-foreground sm:hidden">
+                      {f.header}
+                    </span>
+                    <div className="min-w-0 [overflow-wrap:anywhere] max-sm:text-end">{f.cell(r)}</div>
+                  </td>
+                ))}
+                {status && (
+                  <td role="cell" className={cn(CELL, 'max-sm:col-span-2 max-sm:row-start-2')}>
+                    {status.cell(r)}
+                  </td>
+                )}
+                {actions && (
+                  <td role="cell" className={cn(CELL, 'text-end max-sm:col-start-2 max-sm:row-start-1')}>
+                    {actions(r)}
+                  </td>
+                )}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      ) : (
+        !error && empty && <EmptyState icon={empty.icon} title={empty.title} description={empty.description} action={empty.action} />
+      )}
+      {page && page.total > page.pageSize && <Pagination {...page} />}
+    </>
+  )
+}

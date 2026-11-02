@@ -15,7 +15,7 @@ final class DayRules
         'office' => ['in_time', 'out_time'],
         'engineer' => ['in_time', 'out_time', 'late_minutes', 'ot_minutes', 'outside_minutes', 'advance_amount', 'note'],
         'permanent_worker' => ['scheduled_in', 'scheduled_out', 'in_time', 'out_time', 'outside_amount', 'transport', 'advance_amount', 'note'],
-        'day_laborer' => ['ot_minutes', 'late_minutes', 'advance_amount', 'note'],
+        'day_laborer' => ['in_time', 'out_time', 'ot_minutes', 'late_minutes', 'advance_amount', 'note'],
     ];
 
     public const LEAVE_DAY_FIELDS = ['advance_amount', 'note'];

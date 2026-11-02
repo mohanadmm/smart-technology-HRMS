@@ -36,8 +36,8 @@ class AttendanceDaysTest extends TestCase
         $this->putDay($eng, '2026-10-01', ['version' => null, 'site_id' => $this->outside, 'in_time' => '08:00', 'out_time' => '17:00', 'late_minutes' => 10, 'ot_minutes' => 60, 'outside_minutes' => 30, 'advance_amount' => '500', 'note' => 'n'])
             ->assertOk()->assertJsonPath('data.state', 'stored')->assertJsonPath('data.source', 'entered')
             ->assertJsonPath('data.version', 1)->assertJsonPath('data.advance_amount', '500.000000')->assertJsonPath('data.in_time', '08:00');
-        $this->putDay($this->employee('day_laborer'), '2026-10-01', ['site_id' => $this->site, 'in_time' => '08:00'])
-            ->assertStatus(422)->assertJsonPath('error.details.0.field', 'in_time');
+        $this->putDay($this->employee('day_laborer'), '2026-10-01', ['site_id' => $this->site, 'scheduled_in' => '08:00'])
+            ->assertStatus(422)->assertJsonPath('error.details.0.field', 'scheduled_in');
         $this->putDay($this->employee('office'), '2026-10-01', ['site_id' => $this->site])->assertStatus(422)->assertJsonPath('error.details.0.field', 'site_id');
     }
 
@@ -81,11 +81,39 @@ class AttendanceDaysTest extends TestCase
 
     public function test_scheduled_times_default_from_the_pay_row_or_the_settings(): void
     {
-        $this->putDay($this->employee('permanent_worker'), '2026-10-01', ['site_id' => $this->site])->assertJsonPath('data.scheduled_in', '08:00')->assertJsonPath('data.scheduled_out', '16:00')
+        $this->putDay($this->employee('permanent_worker'), '2026-10-01', ['site_id' => $this->site])->assertJsonPath('data.scheduled_in', '08:00')->assertJsonPath('data.scheduled_out', '17:00')
             ->assertJsonPath('data.transport', 'full');
         $own = $this->employee('permanent_worker', '2026-01-01', ['shift_start' => '07:00', 'shift_end' => '15:00']);
         $this->getJson("/api/v1/attendance/days/{$own}/2026-10-01")->assertJsonPath('data.state', 'missing')->assertJsonPath('data.scheduled_in', '07:00')
             ->assertJsonPath('data.transport', 'full');
+    }
+
+    public function test_single_day_entry_fills_no_times(): void
+    {
+        $this->putDay($this->employee('engineer'), '2026-10-01', ['site_id' => $this->site])->assertOk()
+            ->assertJsonPath('data.in_time', null)->assertJsonPath('data.out_time', null);
+    }
+
+    public function test_an_engineers_times_give_hints_and_leave_the_stored_minutes_alone(): void
+    {
+        $eng = $this->employee('engineer');
+        $this->putDay($eng, '2026-10-01', ['site_id' => $this->site, 'in_time' => '08:45', 'out_time' => '18:30', 'late_minutes' => 5, 'ot_minutes' => 0])->assertOk()
+            ->assertJsonPath('data.hints.late_minutes', 45)->assertJsonPath('data.hints.ot_minutes', 105)
+            ->assertJsonPath('data.late_minutes', 5)->assertJsonPath('data.ot_minutes', 0);
+        $this->putDay($eng, '2026-10-04', ['site_id' => $this->site, 'in_time' => '08:00', 'out_time' => '17:00'])->assertOk()
+            ->assertJsonPath('data.hints.late_minutes', 0)->assertJsonPath('data.hints.ot_minutes', 60)
+            ->assertJsonPath('data.late_minutes', null)->assertJsonPath('data.ot_minutes', null);
+    }
+
+    public function test_a_day_laborer_stores_times_in_order_and_gets_hints(): void
+    {
+        $l = $this->employee('day_laborer');
+        $this->getJson("/api/v1/attendance/days/{$l}/2026-10-01")->assertJsonPath('data.fields', ['in_time', 'out_time', 'ot_minutes', 'late_minutes', 'advance_amount', 'note']);
+        $this->putDay($l, '2026-10-01', ['site_id' => $this->site, 'in_time' => '17:00', 'out_time' => '08:00'])
+            ->assertStatus(422)->assertJsonPath('error.details.0.field', 'out_time')->assertJsonPath('error.details.0.message', __('attendance.rule.out_before_in'));
+        $this->putDay($l, '2026-10-01', ['site_id' => $this->site, 'in_time' => '08:45', 'out_time' => '17:00'])->assertOk()
+            ->assertJsonPath('data.in_time', '08:45')->assertJsonPath('data.hints.late_minutes', 45)->assertJsonPath('data.hints.ot_minutes', 15)
+            ->assertJsonPath('data.late_minutes', null);
     }
 
     public function test_office_lateness_hint_uses_the_shift_and_the_grace(): void

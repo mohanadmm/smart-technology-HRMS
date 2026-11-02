@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Alert } from '@/components/common/Alert'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -11,7 +12,7 @@ export type Row = Record<string, any> // eslint-disable-line @typescript-eslint/
 export type Errs = Record<string, string>
 
 export const selectCls =
-  'flex h-9 w-full rounded-md border border-input bg-card px-3 text-sm max-sm:h-11 max-sm:text-base outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive'
+  'flex h-9 w-full rounded-lg border border-input bg-card px-3 text-sm min-h-tap outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive'
 
 export const toErrs = (e: unknown): Errs =>
   e instanceof ApiError ? Object.fromEntries(e.details.filter((d) => d.field).map((d) => [d.field!, d.message])) : {}
@@ -23,11 +24,11 @@ export function ErrorBanner({ err, shown }: { err: unknown; shown: string[] }) {
       ? err.details.filter((d) => !d.field || !shown.includes(d.field)).map((d) => d.message)
       : [err instanceof Error ? err.message : String(err)]
   return msgs.length ? (
-    <div role="alert" className="rounded-md border border-destructive p-3 text-sm text-destructive">
+    <Alert tone="danger">
       {msgs.map((m, i) => (
         <p key={i}>{m}</p>
       ))}
-    </div>
+    </Alert>
   ) : null
 }
 
@@ -42,6 +43,10 @@ export const ltrDates = (text: string) => text.split(/(\d{4}-\d{2}-\d{2})/).map(
 
 /** Today's date in Cairo as YYYY-MM-DD. */
 export const cairoToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' })
+
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+/** The `weekday.*` / `weekdayShort.*` key of an ISO date, read in UTC so no time zone moves it to another day. */
+export const weekdayOf = (date: string) => WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]
 
 /** Formats a stored UTC timestamp as Cairo wall time (12-hour) in the current language. */
 export function useCairoTime() {
@@ -120,7 +125,7 @@ export function to24(text: string, pm: boolean | null): string | null {
   if (h > 12 || m[1][0] === '0') return `${pad(h)}:${pad(min)}`
   return pm === null ? 'period' : `${pad((h % 12) + (pm ? 12 : 0))}:${pad(min)}`
 }
-const isHhmm = (v: string | null): v is string => !!v && /^\d{2}:\d{2}$/.test(v)
+export const isHhmm = (v: string | null): v is string => !!v && /^\d{2}:\d{2}$/.test(v)
 
 /** "HH:MM" → the box text ("5:30") and whether it is PM; blank or anything else has no AM/PM chosen. */
 const to12 = (v: string): { text: string; pm: boolean | null } => {
@@ -141,10 +146,10 @@ export function stopAtMissingPeriod(from: Element): boolean {
 /**
  * A 12-hour time: a box for the hour and minutes plus an AM/PM (ص/م) choice. `value` in and out is "HH:MM" (24-hour), '' for none.
  * A blank value has no AM/PM chosen; a 12-hour time typed without one is never guessed: the box asks for the choice, and it, like an
- * unreadable entry, goes out as typed; a Save calls `stopAtMissingPeriod` first. `label` names the AM/PM group; `quietHint` keeps the
+ * unreadable entry, goes out as typed (with `needsPeriod` set, so "10:30" is not mistaken for 10:30); a Save calls `stopAtMissingPeriod` first. `label` names the AM/PM group; `quietHint` keeps the
  * hint for screen readers only; the rest goes to the box.
  */
-export function TimeInput({ value, onChange, label, quietHint, className, disabled, ...rest }: { value: string; onChange: (v: string) => void; label: string; quietHint?: boolean } & Omit<React.ComponentProps<'input'>, 'value' | 'onChange' | 'onBlur' | 'type'>) {
+export function TimeInput({ value, onChange, label, quietHint, className, disabled, ...rest }: { value: string; onChange: (v: string, needsPeriod: boolean) => void; label: string; quietHint?: boolean } & Omit<React.ComponentProps<'input'>, 'value' | 'onChange' | 'onBlur' | 'type'>) {
   const { t } = useTranslation()
   const descId = useId()
   const root = useRef<HTMLDivElement>(null)
@@ -160,7 +165,7 @@ export function TimeInput({ value, onChange, label, quietHint, className, disabl
     const v = r === '' || isHhmm(r) ? r : text
     setDraft({ text, pm })
     setShown(v)
-    onChange(v)
+    onChange(v, r === 'period')
   }
   const needsChoice = to24(draft.text, draft.pm) === 'period'
   return (
@@ -169,15 +174,15 @@ export function TimeInput({ value, onChange, label, quietHint, className, disabl
         <Input {...rest} ref={box} type="text" dir="ltr" inputMode="numeric" autoComplete="off" placeholder="--:--" disabled={disabled} value={draft.text}
           aria-invalid={rest['aria-invalid'] || needsChoice || undefined} data-needs-period={needsChoice || undefined} aria-describedby={[rest['aria-describedby'], descId].filter(Boolean).join(' ')}
           // the shared focus ring, except on a box that needs AM/PM or has an error: there it turns to the warning colour
-          className={cn('h-11 flex-1 tabular sm:h-9 rtl:text-right', (rest['aria-invalid'] || needsChoice) && 'focus-visible:border-destructive focus-visible:outline-destructive', className)}
+          className={cn('flex-1 rtl:text-right', (rest['aria-invalid'] || needsChoice) && 'focus-visible:border-destructive focus-visible:outline-destructive', className)}
           onChange={(e) => emit(e.target.value, draft.pm)}
           onBlur={() => { const v = to24(draft.text, draft.pm); if (isHhmm(v)) setDraft(to12(v)) }} />
-        {/* an inset outline, not a border, draws the frame: the buttons fill the box's full height (44 px on a phone) */}
-        <div role="group" aria-label={t('time.period', { field: label })} className="flex shrink-0 overflow-hidden rounded-md bg-card outline-1 -outline-offset-1 outline-solid outline-input">
+        {/* an inset outline, not a border, draws the frame: the buttons fill the box's full height (44 px on touch) */}
+        <div role="group" aria-label={t('time.period', { field: label })} className="flex shrink-0 overflow-hidden rounded-lg bg-card outline-1 -outline-offset-1 outline-solid outline-input">
           {[false, true].map((pm) => (
             // mousedown keeps the cursor where it is, so a click here is not the box being left; from outside, the click moves it into the box
             <button key={String(pm)} type="button" aria-pressed={draft.pm === pm} aria-label={t(pm ? 'time.pmName' : 'time.amName')} disabled={disabled}
-              className="min-w-11 px-2 text-sm font-semibold text-muted-foreground outline-none hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:bg-primary aria-pressed:text-primary-foreground sm:min-w-9"
+              className="w-9 min-w-tap px-1.5 text-sm font-semibold text-muted-foreground outline-none hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:bg-primary aria-pressed:text-primary-foreground"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => { emit(draft.text, pm); if (!root.current?.contains(document.activeElement)) box.current?.focus() }}>
               {t(pm ? 'time.pm' : 'time.am')}

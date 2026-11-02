@@ -85,10 +85,13 @@
 /*
  * Semantic tokens copied from smart-technology-CRM (resources/css/tokens.css, Design System §3.3).
  * Light = "Warm Editorial", dark = "Midnight Obsidian". Components use the shadcn names below.
+ * One exception: the dark accent is orange like the light one, not the CRM's indigo (ADR 0001, 2026-11-02).
  */
 :root {
   color-scheme: light;
   --radius: 0.5rem;
+  /* Smallest hit area: 24 px is the WCAG 2.2 AA floor on any pointer; 44 px on touch (rule 21). */
+  --tap: 1.5rem;
   --background: #faf8f5;
   --foreground: #292524;
   --card: #ffffff;
@@ -123,8 +126,9 @@
   --info-border: #bfdbfe;
   --destructive-bg: #fef3f2;
   --destructive-border: #fecdca;
+  /* The dim layer behind a dialog or sheet, the same in both themes. */
+  --scrim: rgb(0 0 0 / 0.7);
 
-  --elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.06), 0 1px 3px 0 rgb(0 0 0 / 0.1);
   --elevation-2: 0 8px 24px -4px rgb(0 0 0 / 0.14), 0 2px 8px -2px rgb(0 0 0 / 0.08);
 
   --chart-1: #c2410c;
@@ -144,21 +148,21 @@
   --popover: #1b2437;
   --popover-foreground: #e0e7ff;
   --surface-raised: #1b2437;
-  --primary: #818cf8;
-  --primary-hover: #a5b4fc;
-  --primary-active: #c7d2fe;
+  --primary: #fb923c;
+  --primary-hover: #fdba74;
+  --primary-active: #fed7aa;
   --primary-foreground: #0b0f19;
   --secondary: #1b2437;
   --secondary-foreground: #e0e7ff;
   --muted: #0f1524;
   --muted-foreground: #afbad4;
-  --accent: color-mix(in srgb, #818cf8 16%, #111827);
-  --accent-foreground: #c7d2fe;
+  --accent: color-mix(in srgb, #fb923c 16%, #111827);
+  --accent-foreground: #fed7aa;
   --destructive: #ff9b91;
   --border: #1f2937;
   --input: #6b7280;
   --ring: #9ca3af;
-  --link: #a5b4fc;
+  --link: #fdba74;
   --sidebar: #111827;
   --success: #5ddb90;
   --warning: #ffca6a;
@@ -172,15 +176,26 @@
   --destructive-bg: color-mix(in srgb, var(--destructive) 14%, var(--card));
   --destructive-border: color-mix(in srgb, var(--destructive) 40%, var(--card));
 
-  --elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 1px 3px 0 rgb(0 0 0 / 0.3);
   --elevation-2: 0 8px 24px -4px rgb(0 0 0 / 0.55), 0 2px 8px -2px rgb(0 0 0 / 0.4);
 
-  --chart-1: #818cf8;
+  --chart-1: #fb923c;
   --chart-2: #7cc4ff;
   --chart-3: #5ddb90;
   --chart-4: #ffca6a;
   --chart-5: #f9a8d4;
   --chart-6: #afbad4;
+}
+
+/* Rule 21: 44 px targets for coarse pointers only; mouse layouts stay dense. */
+@media (pointer: coarse) {
+  :root {
+    --tap: 2.75rem;
+  }
+}
+
+/* Rule 10: the only shadow utility is the floating-layer one. */
+@theme {
+  --shadow-*: initial;
 }
 
 @theme inline {
@@ -202,8 +217,12 @@
   --text-card-title--line-height: 1.4;
   --text-card-title--font-weight: 600;
 
-  --shadow-1: var(--elevation-1);
-  --shadow-2: var(--elevation-2);
+  --shadow-float: var(--elevation-2);
+  --spacing-tap: var(--tap); /* min-h-tap, min-w-tap */
+  /* Rule 20: the hero figure, 30 px at every width. */
+  --text-kpi: 1.875rem;
+  --text-kpi--line-height: 1.15;
+  --text-kpi--font-weight: 600;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -243,6 +262,7 @@
   --color-info-border: var(--info-border);
   --color-destructive-bg: var(--destructive-bg);
   --color-destructive-border: var(--destructive-border);
+  --color-scrim: var(--scrim);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -284,6 +304,9 @@
   [role='button']:not(:disabled) {
     cursor: pointer;
   }
+  input:is([type='checkbox'], [type='radio']) {
+    accent-color: var(--primary);
+  }
 }
 
 @layer utilities {
@@ -316,6 +339,13 @@ html[lang='ar'] * {
 [dir='rtl'] input:is([type='email'], [type='tel'], [type='number'], [type='date'], [type='time']) {
   direction: ltr;
   text-align: right;
+}
+
+/* Rule 18: iOS zooms into a field under 16 px, on iPhone and iPad. Unlayered, so no caller's text-xs can undo it. */
+@media (pointer: coarse) {
+  :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']), textarea, select) {
+    font-size: 16px;
+  }
 }
 
 /* Unlayered, so it beats every utility: people who ask for less motion get none. */

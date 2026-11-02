@@ -1,0 +1,68 @@
+import type { ReactNode } from 'react'
+import { cn, FOCUS } from '@/lib/utils'
+
+export type StatTone = 'success' | 'warning' | 'destructive' | 'info'
+const TONE: Record<StatTone, string> = { success: 'text-success', warning: 'text-warning', destructive: 'text-destructive', info: 'text-info' }
+
+export type Stat = {
+  label: string
+  value: ReactNode
+  /** One plain line under the value: an "as of" date, a baseline delta ("+3 vs Sep"), a count. */
+  detail?: ReactNode
+  /** Makes the tile a filter toggle: <button aria-pressed>. A pressed tile gets border-primary + ring-1 (a non-colour cue). */
+  select?: { pressed: boolean; onSelect: () => void }
+}
+export type StatRowProps = {
+  /** The row's group name. */
+  label: string
+  /** The one big number: text-kpi (30 px), nowrap, untoned. `progress` (0..1) draws a bar under it. */
+  hero: Stat & { progress?: number }
+  /** Secondary tiles, text-lg, nowrap; tone colours the number only, for real categories (rule 9). No icon prop. */
+  stats?: (Stat & { tone?: StatTone })[]
+}
+
+function Tile({ stat, figure, progress }: { stat: Stat; figure: string; progress?: number }) {
+  const body = (
+    <>
+      <div className="text-xs text-muted-foreground">{stat.label}</div>
+      <div className={cn('mt-1 whitespace-nowrap', figure)}>{stat.value}</div>
+      {stat.detail && <div className="mt-1 text-xs text-muted-foreground">{stat.detail}</div>}
+      {progress !== undefined && (
+        <div aria-hidden className="mt-3 h-1.5 rounded-full bg-muted">
+          <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(1, Math.max(0, progress)) * 100}%` }} />
+        </div>
+      )}
+    </>
+  )
+  const tile = 'block w-full rounded-xl border bg-card p-4 text-start'
+  return stat.select ? (
+    <button
+      type="button"
+      aria-pressed={stat.select.pressed}
+      onClick={stat.select.onSelect}
+      className={cn(tile, FOCUS, 'transition-colors hover:bg-muted/60', stat.select.pressed && 'border-primary ring-1 ring-primary')}
+    >
+      {body}
+    </button>
+  ) : (
+    <div role="group" className={tile}>
+      {body}
+    </div>
+  )
+}
+
+/** One hero and its secondaries (rules 1, 20). Below lg the hero spans the row and the stats sit 2-up under it; from lg a 3fr/2fr split. */
+export function StatRow({ label, hero, stats }: StatRowProps) {
+  return (
+    <div role="group" aria-label={label} className={cn('grid gap-3', stats?.length && 'lg:grid-cols-[3fr_2fr]')}>
+      <Tile stat={hero} figure="text-kpi" progress={hero.progress} />
+      {!!stats?.length && (
+        <div className="grid grid-cols-2 gap-3">
+          {stats.map((s) => (
+            <Tile key={s.label} stat={s} figure={cn('text-lg leading-tight font-semibold', s.tone && TONE[s.tone])} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

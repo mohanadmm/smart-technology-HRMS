@@ -28,7 +28,7 @@ class SettingsApiTest extends TestCase
             ->assertJsonPath('data.office_shift_start', '09:00')
             ->assertJsonPath('data.office_shift_end', '17:00')
             ->assertJsonPath('data.worker_shift_start', '08:00')
-            ->assertJsonPath('data.worker_shift_end', '16:00')
+            ->assertJsonPath('data.worker_shift_end', '17:00')
             ->assertJsonPath('data.weekly_off_office', 'friday,saturday')
             ->assertJsonPath('data.weekly_off_field', 'friday')
             ->assertJsonPath('data.leave_days_under_one_year', '10')
@@ -48,7 +48,7 @@ class SettingsApiTest extends TestCase
         $this->assertSame(['value' => '15'], json_decode($row->old_values, true));
         $this->assertSame(['value' => '20'], json_decode($row->new_values, true));
         $this->assertSame($hr->id, $row->user_id);
-        $this->assertSame(2, DB::table('audit_log')->where(['entity_type' => 'settings', 'event' => 'UPDATED'])->count()); // month_days did not change
+        $this->assertSame(2, DB::table('audit_log')->where(['entity_type' => 'settings', 'event' => 'UPDATED', 'user_id' => $hr->id])->count()); // month_days did not change
     }
 
     public function test_settings_are_read_once_and_an_update_is_visible_on_the_next_read(): void
@@ -98,5 +98,27 @@ class SettingsApiTest extends TestCase
         $this->signIn('ceo');
         $this->getJson('/api/v1/settings')->assertOk();
         $this->putJson('/api/v1/settings', ['office_grace_minutes' => '20'])->assertStatus(403);
+    }
+
+    public function test_the_field_shift_migration_moves_only_an_unedited_end_and_audits_it(): void
+    {
+        $rules = app(BusinessRules::class);
+        $migration = require database_path('migrations/2026_11_02_000001_set_field_shift_end.php');
+        $id = DB::table('settings')->where('key', 'worker_shift_end')->value('id');
+        $audits = fn () => DB::table('audit_log')->where(['entity_type' => 'settings', 'entity_id' => $id])->count();
+
+        $rules->update(['worker_shift_end' => '16:00']);   // as before the migration
+        $before = $audits();
+        $migration->up();
+        $this->assertSame('17:00', $rules->all()['worker_shift_end']);
+        $this->assertSame($before + 1, $audits());
+        $migration->down();
+        $this->assertSame('17:00', $rules->all()['worker_shift_end']);   // down() leaves it: HR may have chosen 17:00
+
+        $rules->update(['worker_shift_end' => '15:30']);   // HR's edit
+        $before = $audits();
+        $migration->up();
+        $this->assertSame('15:30', $rules->all()['worker_shift_end']);
+        $this->assertSame($before, $audits());
     }
 }

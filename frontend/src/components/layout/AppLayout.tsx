@@ -1,6 +1,7 @@
 import {
   CalendarCheck,
   ChevronDown,
+  ClipboardCheck,
   Languages,
   LogOut,
   Menu,
@@ -36,6 +37,7 @@ export const NAV: { group: string; items: { path: string; key: string; icon: Luc
   {
     group: 'nav.group.hr',
     items: [
+      { path: '/site-day', key: 'nav.siteDay', icon: ClipboardCheck, abilities: ['attendance.record'] },
       { path: '/employees', key: 'nav.employees', icon: Users, abilities: ['employee.view'] },
       { path: '/attendance', key: 'nav.attendance', icon: CalendarCheck, abilities: ['attendance.view'] },
     ],
@@ -131,7 +133,7 @@ function SidebarNav({ collapsed = false, onNavigate }: { collapsed?: boolean; on
                     onClick={onNavigate}
                     className={({ isActive }) =>
                       cn(
-                        'group relative flex min-h-11 items-center gap-3 rounded-lg px-3 text-foreground transition-colors hover:bg-muted',
+                        'group relative flex min-h-tap py-2 items-center gap-3 rounded-lg px-3 text-foreground transition-colors hover:bg-muted',
                         FOCUS,
                         isActive && 'bg-muted font-medium',
                         collapsed && 'justify-center px-0',
@@ -185,7 +187,7 @@ function SidebarHeader({ collapsed = false, onToggleCollapse, className }: { col
           onClick={onToggleCollapse}
           aria-expanded={!collapsed}
           aria-label={t(collapsed ? 'nav.expand' : 'nav.collapse')}
-          className={cn('grid size-9 shrink-0 place-items-center rounded-lg border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground', FOCUS)}
+          className={cn('grid size-9 min-h-tap min-w-tap shrink-0 place-items-center rounded-lg border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground', FOCUS)}
         >
           <PanelLeft className="size-5 rtl:-scale-x-100" aria-hidden />
         </button>
@@ -213,7 +215,7 @@ function ProfileMenu() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className={cn('flex min-h-10 items-center gap-2 rounded-xl border p-1 transition-colors max-sm:min-h-11 hover:bg-muted lg:ps-1.5 lg:pe-3', FOCUS)}
+          className={cn('flex min-h-tap items-center gap-2 rounded-xl border p-1 transition-colors hover:bg-muted lg:ps-1.5 lg:pe-3', FOCUS)}
           aria-label={t('nav.profile')}
         >
           <UserAvatar name={me.name} size="sm" />
@@ -309,7 +311,7 @@ export function AppLayout() {
         <Toaster theme={theme} dir={rtl ? 'rtl' : 'ltr'} position={rtl ? 'top-left' : 'top-right'} richColors closeButton toastOptions={{ className: 'font-sans' }} />
         <a
           href="#page-content"
-          className="sr-only rounded-lg border border-input bg-card px-3 py-2 shadow-2 focus:not-sr-only focus:absolute focus:z-50 focus:m-2 focus:outline-2 focus:outline-offset-2 focus:outline-ring"
+          className="sr-only rounded-lg border border-input bg-card px-3 py-2 shadow-float focus:not-sr-only focus:absolute focus:z-50 focus:m-2 focus:outline-2 focus:outline-offset-2 focus:outline-ring"
         >
           {t('skip')}
         </a>

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import * as SheetPrimitive from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { DialogOverlay } from './dialog'
 
 export const Sheet = SheetPrimitive.Root
 export const SheetClose = SheetPrimitive.Close
@@ -17,10 +18,10 @@ export function SheetContent({
   const { t } = useTranslation()
   return (
     <SheetPrimitive.Portal>
-      <SheetPrimitive.Overlay className="fixed inset-0 z-50 backdrop-brightness-[0.45] backdrop-blur-[2px] data-[state=open]:animate-fade-in" />
+      <DialogOverlay />
       <SheetPrimitive.Content
         className={cn(
-          'fixed inset-y-0 z-50 flex h-full flex-col bg-card shadow-2 outline-none transition-transform',
+          'fixed inset-y-0 z-50 flex h-full flex-col bg-card shadow-float outline-none transition-transform',
           side === 'right' ? 'end-0 w-full border-s sm:max-w-md' : 'start-0 w-72 border-e',
           'data-[state=open]:animate-fade-in',
           className,
@@ -30,7 +31,7 @@ export function SheetContent({
       >
         {children}
         {!hideClose && (
-          <SheetPrimitive.Close className="absolute top-[calc(0.5rem+env(safe-area-inset-top))] end-2 grid size-11 place-items-center rounded-md text-muted-foreground transition outline-none hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-ring">
+          <SheetPrimitive.Close className="absolute top-[calc(0.5rem+env(safe-area-inset-top))] end-2 grid size-9 min-h-tap min-w-tap place-items-center rounded-md text-muted-foreground transition outline-none hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-ring">
             <X className="size-4" />
             <span className="sr-only">{t('common.close')}</span>
           </SheetPrimitive.Close>
@@ -46,3 +47,13 @@ export const SheetTitle = ({ className, ...props }: React.ComponentProps<typeof 
 export const SheetDescription = ({ className, ...props }: React.ComponentProps<typeof SheetPrimitive.Description>) => (
   <SheetPrimitive.Description className={cn('text-[13px] text-muted-foreground', className)} {...props} />
 )
+
+/** Mirrors DialogHeader: title and description, with room at the end for the close button. */
+export function SheetHeader({ className, ...props }: React.ComponentProps<'div'>) {
+  return <div className={cn('flex flex-col gap-1 border-b px-5 py-4 pe-14', className)} {...props} />
+}
+
+/** Mirrors DialogFooter: pinned under the sheet's scrolling body; the main action is last (first on a phone, stacked on top). */
+export function SheetFooter({ className, ...props }: React.ComponentProps<'div'>) {
+  return <div className={cn('mt-auto flex flex-col-reverse gap-2 border-t px-5 py-3 sm:flex-row sm:items-center sm:justify-end', className)} {...props} />
+}

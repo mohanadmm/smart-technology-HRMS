@@ -2,10 +2,11 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import i18n from '@/i18n'
+import { queryClient } from '@/lib/query'
 import { json, mockFetch, pagination, renderWithAuth } from '@/test-utils'
 import { AttendancePage } from './attendance'
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }, Toaster: () => null }))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn(), dismiss: vi.fn() }, Toaster: () => null }))
 import { toast } from 'sonner'
 
 const user = userEvent.setup()
@@ -39,7 +40,7 @@ const office = [
   { ...row(10, 'Office-1', { state: 'stored', source: 'entered', version: 1, in_time: '09:40' }, { hints: { late_minutes: 25 } }), employee: { id: 'e10', code: 10, name_ar: 'Office-1', name_en: 'Office-1', department: 'Accounts' } },
   row(11, 'Office-2', {}),
 ]
-const days = [{ date: '2026-10-17', missing: 2 }, { date: '2026-10-18', missing: 1 }, { date: '2026-10-19', missing: 0 }]
+const days = [{ date: '2026-10-17', missing: 2, off: false }, { date: '2026-10-18', missing: 1, off: false }, { date: '2026-10-19', missing: 0, off: false }]
 const sheet = (rows: object[], group = 'engineer') => json(200, { data: { group, date: '2026-10-18', days, rows } })
 const sites = [
   { id: 's1', name_ar: 'Site-1', name_en: 'Site-1', kind: 'work', leave_code: null, active: true },
@@ -58,6 +59,11 @@ const bulkOk = () => vi.fn((_url: string, init?: RequestInit) => json(200, { dat
 const officePeriod = () => json(200, { data: { ...period, group: 'office', start: '2026-10-01', end: '2026-10-31' } })
 const sent = (fn: ReturnType<typeof vi.fn>, call = 0) => JSON.parse(String((fn.mock.calls[call][1] as RequestInit).body))
 const table = async () => screen.findByRole('table')
+/** Opens a table row's ⋯ menu (named by `trigger`) and picks `item` from it. */
+const menu = async (trigger: string, item: string) => {
+  await user.click(within(screen.getByRole('table')).getByRole('button', { name: trigger }))
+  await user.click(await screen.findByRole('menuitem', { name: item }))
+}
 
 test('the day sheet is the default tab and ?tab=grid shows the grid', async () => {
   const getPeriod = vi.fn((_url: string) => json(200, { data: period }))
@@ -111,7 +117,7 @@ test('missing and absent rows look different', async () => {
   mockFetch(routes)
   open()
   const tbl = await table()
-  const status = (name: string) => within(within(tbl).getByText(name).closest('tr')!).getAllByRole('cell')[2] // code, employee, status
+  const status = (name: string) => within(within(tbl).getByText(name).closest('tr')!).getAllByRole('cell')[1] // employee (with its code), status
   const missing = within(status('Engineer-1')).getByText('غير مسجل')
   const absent = within(status('Engineer-3')).getByText('غياب')
   expect(missing).toHaveClass('bg-warning-bg', 'border-warning-border', 'text-warning')
@@ -159,6 +165,39 @@ test('the day strip scrolls itself to the date once, never the page and never ag
   vi.restoreAllMocks()
 })
 
+test('the strip shows the short weekday above the date and tints the days the server marks off', async () => {
+  vi.setSystemTime(new Date('2026-11-03T10:00:00Z'))
+  // Saturday 31 is off from the server (a holiday, say), not from a client rule; Friday 30 is not
+  const week = [{ date: '2026-10-30', missing: 0, off: false }, { date: '2026-10-31', missing: 0, off: true }, { date: '2026-11-02', missing: 1, off: false }, { date: '2026-11-03', missing: 0, off: false }]
+  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => json(200, { data: { group: 'engineer', date: '2026-11-02', days: week, rows: engineers } }) })
+  open('/attendance?group=engineer&date=2026-11-02')
+  const strip = await screen.findByRole('group', { name: 'أيام الفترة' })
+  const day = (d: string) => within(strip).getByRole('button', { name: new RegExp(`^${d}`) })
+  const monday = day('2026-11-02')
+  expect(within(monday).getByText('إثنين').compareDocumentPosition(within(monday).getByText('2')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(monday).toHaveClass('min-w-14') // «أربعاء» fits
+  expect(day('2026-10-31')).toHaveClass('bg-muted-foreground/10')
+  expect(day('2026-10-31')).toHaveClass('hover:bg-muted-foreground/15') // hover darkens the tint, never lightens it
+  expect(day('2026-10-31')).not.toHaveClass('hover:bg-muted')
+  expect(day('2026-10-30')).not.toHaveClass('bg-muted-foreground/10')
+  // the selected day keeps the border and aria-current; today, not selected, only gets accent text
+  expect(monday).toHaveAttribute('aria-current', 'date')
+  expect(monday).toHaveClass('border-primary')
+  const today = day('2026-11-03')
+  expect(today).not.toHaveAttribute('aria-current')
+  expect(today).toHaveClass('text-primary')
+  expect(today).not.toHaveClass('border-primary')
+})
+
+test('in English the strip says Mon above the date', async () => {
+  vi.setSystemTime(new Date('2026-11-03T10:00:00Z'))
+  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => json(200, { data: { group: 'engineer', date: '2026-11-02', days: [{ date: '2026-11-02', missing: 0, off: false }], rows: engineers } }) })
+  await i18n.changeLanguage('en')
+  open('/attendance?group=engineer&date=2026-11-02')
+  const monday = within(await screen.findByRole('group', { name: 'Period days' })).getByRole('button', { name: /^2026-11-02/ })
+  expect(monday).toHaveTextContent(/^Mon2/)
+})
+
 test('field cohorts group by last site and office cohorts by department', async () => {
   mockFetch(routes)
   open()
@@ -194,6 +233,16 @@ test('51 rows paginate at 50', async () => {
   expect(screen.getByText('عرض 1–50 من 51')).toBeInTheDocument()
 })
 
+test('the xl table has no code column: the code sits before the name in the employee cell, so the table fits 1280 in English', async () => {
+  mockFetch(routes)
+  edit()
+  const tbl = await table()
+  expect(within(tbl).queryByRole('columnheader', { name: 'الرقم الوظيفي' })).not.toBeInTheDocument()
+  const name = within(tbl).getByText('Engineer-1')
+  expect(name.parentElement).toHaveClass('flex-wrap') // code and name wrap apart rather than widen the column
+  expect(name.previousElementSibling).toHaveTextContent('1')
+})
+
 test('the employee code sits in its own element apart from the name', async () => {
   mockFetch(routes)
   open()
@@ -223,11 +272,10 @@ test('P on a missing engineer posts his last site in one bulk request', async ()
   mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
   edit()
   const tbl = await table()
-  expect(within(tbl).getByRole('button', { name: 'مرضي Engineer-1' })).toBeDisabled() // no active sick leave type
   await user.click(within(tbl).getByRole('button', { name: 'حاضر Engineer-1' }))
   await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
   expect(sent(bulk)).toEqual({ date: '2026-10-18', rows: [{ employee_id: 'e1', version: null, site_id: 's1' }] })
-  await waitFor(() => expect(toast.success).toHaveBeenCalledWith('تم تسجيل 1'))
+  await waitFor(() => expect(toast.success).toHaveBeenCalledWith('تم تسجيل 1', expect.objectContaining({ action: expect.objectContaining({ label: 'تراجع' }) })))
 })
 
 test('a cohort sweep marks only the missing members of that site', async () => {
@@ -240,7 +288,10 @@ test('a cohort sweep marks only the missing members of that site', async () => {
   mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => sheet(rows), 'POST /api/v1/attendance/days/bulk': bulk })
   edit()
   await table()
-  expect(screen.getByRole('button', { name: 'تسجيل باقي Site-1 حاضرين' })).toHaveClass('h-11', 'md:h-9') // a 44 px touch target below md
+  const sweep = screen.getByRole('button', { name: 'تسجيل باقي Site-1 حاضرين' })
+  expect(sweep.className).not.toMatch(/(^|\s)(md:)?h-11/) // no page height class: the kit's min-h-tap is the 44 px touch target
+  expect(sweep).toHaveClass('min-h-tap', 'bg-card') // an outline button: the sheet's one solid action is «mark the rest present»
+  expect(screen.getByRole('button', { name: /^تسجيل الباقين حاضرين/ })).toHaveClass('bg-primary', 'text-primary-foreground')
   await user.click(screen.getByRole('button', { name: 'تسجيل باقي Site-1 حاضرين' }))
   await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
   expect(sent(bulk).rows).toEqual([{ employee_id: 'e1', version: null, site_id: 's1' }])
@@ -320,7 +371,8 @@ test.each([
 ])('%s names nobody: the toast is the plain message', async (_, status, code, message) => {
   mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': () => json(status, { error: { code, message } }) })
   edit()
-  await user.click(within(await table()).getByRole('button', { name: 'غياب Engineer-1' }))
+  await table()
+  await menu('إجراءات أخرى Engineer-1', 'غياب')
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message))
 })
 
@@ -330,7 +382,7 @@ test('a row in flight is not sent again', async () => {
   edit()
   const tbl = await table()
   await user.click(within(tbl).getByRole('button', { name: 'حاضر Engineer-1' }))
-  await user.click(within(tbl).getByRole('button', { name: 'غياب Engineer-1' }))
+  await menu('إجراءات أخرى Engineer-1', 'غياب')
   await user.click(screen.getByRole('button', { name: /^تسجيل الباقين حاضرين/ }))
   expect(bulk).toHaveBeenCalledTimes(1)
 })
@@ -344,29 +396,6 @@ test('more than 500 rows in one action are refused with a toast', async () => {
   await user.click(screen.getByRole('button', { name: /^تسجيل الباقين حاضرين/ }))
   expect(toast.error).toHaveBeenCalledWith('لا يمكن تسجيل أكثر من 500 صف في مرة واحدة؛ ضيّق الاختيار.')
   expect(bulk).not.toHaveBeenCalled()
-})
-
-const TIP = 'اكتب الوقت ثم اختر ص أو م، أو اكتبه بنظام 24 ساعة مثل 0920.'
-const tip = () => screen.queryByText((_, el) => el?.tagName === 'P' && el.textContent === TIP)
-
-test('the office sheet tells an editor how to type a time, with the example digits isolated left to right', async () => {
-  mockFetch({ ...routes, 'GET /api/v1/attendance/period': officePeriod, 'GET /api/v1/attendance/sheet': () => sheet(office, 'office') })
-  edit('/attendance?group=office')
-  await table()
-  expect(tip()).toBeInTheDocument()
-  expect(tip()!.querySelector('bdi[dir="ltr"]')).toHaveTextContent('0920')
-})
-
-test('no typing tip for a field group or for a reader of the office sheet', async () => {
-  mockFetch(routes)
-  const { unmount } = edit()
-  await table()
-  expect(tip()).toBeNull()
-  unmount()
-  mockFetch({ ...routes, 'GET /api/v1/attendance/period': officePeriod, 'GET /api/v1/attendance/sheet': () => sheet(office, 'office') })
-  open('/attendance?group=office')
-  await table()
-  expect(tip()).toBeNull()
 })
 
 test('an office in-time edit posts site null and the time', async () => {
@@ -510,10 +539,13 @@ test.each([
     const tbl = await table()
     expect(within(tbl).getAllByRole('button', { name: /^التفاصيل / }).length).toBe(rows.length)
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^(حاضر|غياب|مرضي) / })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^(حاضر|غياب|مرضي) \D/ })).not.toBeInTheDocument() // a row's action, not a KPI tile («غياب 1»)
     expect(screen.queryByRole('button', { name: /^تسجيل (الباقين|باقي)/ })).not.toBeInTheDocument()
     expect(within(tbl).queryByRole('textbox', { name: /^وقت الحضور/ })).toBeNull()
     expect(container.querySelector('[aria-pressed][aria-label="صباحًا"]')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'لصق أرقام' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^تراجع/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'ابحث بالاسم أو الرقم الوظيفي' })).toBeInTheDocument() // a reader can still search
     unmount()
   }
 })
@@ -596,37 +628,85 @@ test('a group change does not show the old group\'s period', async () => {
   expect(screen.queryByRole('button', { name: 'قفل الفترة' })).not.toBeInTheDocument()
 })
 
-const command = () => screen.getByRole('textbox', { name: 'إدخال سريع' })
+const key = (code: string, init: object = {}) => fireEvent.keyDown(document, { code, key: code.replace(/^Key/, '').toLowerCase(), ...init })
+const rowOf = (name: string) => within(screen.getByRole('table')).getByText(name).closest('tr')!
+const undoButton = () => screen.getByRole('button', { name: /^تراجع/ })
 const crew = Array.from({ length: 5 }, (_, i) => row(i + 1, `Engineer-${i + 1}`, {}, { last_site_id: 's1' }))
+const search = () => screen.getByRole('textbox', { name: 'ابحث بالاسم أو الرقم الوظيفي' })
 
-test('Enter on a range marks those employee IDs present', async () => {
+test('the search filters the rows as you type, folding Arabic spellings, and says how many it found', async () => {
+  const rows = [row(1, 'أحمد علي', {}), row(2, 'Omar Said', {}), row(3, 'فاطمة حسن', {})]
+  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => sheet(rows) })
+  open()
+  await table()
+  expect(screen.queryByText('1 من 3')).not.toBeInTheDocument()
+  await user.type(search(), 'احمد')
+  expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(2)
+  expect(within(screen.getByRole('table')).getByText('أحمد علي')).toBeInTheDocument()
+  expect(screen.getByText('1 من 3')).toHaveAttribute('aria-live', 'polite')
+  await user.clear(search())
+  await user.type(search(), 'فاطمه')
+  expect(within(screen.getByRole('table')).getByText('فاطمة حسن')).toBeInTheDocument()
+  await user.clear(search())
+  await user.type(search(), 'OMAR')
+  expect(within(screen.getByRole('table')).getByText('Omar Said')).toBeInTheDocument()
+  await user.clear(search())
+  expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(4)
+  expect(screen.queryByText(/^\d+ من 3$/)).not.toBeInTheDocument()
+})
+
+test('Enter in the search sends nothing and selects nothing', async () => {
   const bulk = bulkOk()
   mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => sheet(crew), 'POST /api/v1/attendance/days/bulk': bulk })
   edit()
   await table()
-  await user.type(command(), '2-4')
-  expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(4) // header + the 3 matches
-  expect(screen.getByRole('status', { name: 'إدخال سريع' })).toHaveTextContent('3 مطابق')
-  await user.keyboard('{Enter}')
-  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
-  expect(sent(bulk)).toEqual({ date: '2026-10-18', rows: ['e2', 'e3', 'e4'].map((employee_id) => ({ employee_id, version: null, site_id: 's1' })) })
-  await waitFor(() => expect(command()).toHaveValue(''))
+  await user.type(search(), '2-4{Enter}')
+  await user.clear(search())
+  await user.type(search(), 'Engineer{Enter}')
+  expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(6)
+  expect(screen.queryByRole('group', { name: 'إجراءات المحدد' })).not.toBeInTheDocument()
+  await new Promise((r) => setTimeout(r, 20))
+  expect(bulk).not.toHaveBeenCalled()
 })
 
-test('a name search selects the matches and writes nothing', async () => {
+test('typing a search clears the selection, so a bulk action never writes hidden rows', async () => {
   const bulk = bulkOk()
-  const rows = [row(1, 'Ahmed Ali', {}, { last_site_id: 's1' }), row(2, 'Omar Said', {}, { last_site_id: 's1' }), row(3, 'Ahmed Samir', {}, { last_site_id: 's1' })]
-  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => sheet(rows), 'POST /api/v1/attendance/days/bulk': bulk })
+  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
   edit()
-  await table()
-  await user.type(command(), 'ahmed{Enter}')
-  const tbl = screen.getByRole('table')
-  expect(within(tbl).getAllByRole('row')).toHaveLength(3)
-  expect(within(tbl).getByRole('checkbox', { name: 'تحديد Ahmed Ali' })).toBeChecked()
-  expect(within(tbl).getByRole('checkbox', { name: 'تحديد Ahmed Samir' })).toBeChecked()
-  expect(screen.getByRole('group', { name: 'إجراءات المحدد' })).toHaveTextContent('2 محدد')
-  expect(command()).toHaveValue('ahmed')
+  const tbl = await table()
+  await user.click(within(tbl).getByRole('checkbox', { name: 'تحديد Engineer-1' }))
+  await user.click(within(tbl).getByRole('checkbox', { name: 'تحديد Engineer-2' }))
+  await user.type(search(), 'Engineer-2')
+  expect(screen.queryByRole('group', { name: 'إجراءات المحدد' })).not.toBeInTheDocument()
+  await user.clear(search())
+  expect(screen.queryByRole('group', { name: 'إجراءات المحدد' })).not.toBeInTheDocument()
+  expect(within(screen.getByRole('table')).getByRole('checkbox', { name: 'تحديد Engineer-1' })).not.toBeChecked()
   expect(bulk).not.toHaveBeenCalled()
+})
+
+test('P, J, / and Ctrl+Z do nothing', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' }))
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
+  const keys: [string, object?][] = [['KeyJ'], ['KeyP'], ['KeyA'], ['Slash', { key: '/' }], ['KeyZ', { ctrlKey: true }], ['KeyZ', { metaKey: true }]]
+  for (const [code, init] of keys) expect(key(code, init)).toBe(true) // not prevented: the browser keeps them
+  await new Promise((r) => setTimeout(r, 20))
+  expect(bulk).toHaveBeenCalledTimes(1)
+  expect(undoButton()).toHaveTextContent('تراجع (1)')
+  expect(search()).not.toHaveFocus()
+  expect(document.querySelector('[aria-current="true"]')).toBeNull()
+})
+
+test('the bulk bar sits after the rows card, under no overflow box, and sticks to the bottom', async () => {
+  mockFetch(routes)
+  edit()
+  await user.click(within(await table()).getByRole('checkbox', { name: 'تحديد Engineer-1' }))
+  const bar = screen.getByRole('group', { name: 'إجراءات المحدد' })
+  expect(bar).toHaveClass('sticky', 'bottom-0')
+  for (let el = bar.parentElement; el; el = el.parentElement) expect(el.className).not.toMatch(/overflow-/) // sticky stops under any overflow box
+  expect(bar.previousElementSibling).toContainElement(screen.getByRole('table'))
 })
 
 test('the paste dialog applies Absent to the pasted list and reports unknown IDs', async () => {
@@ -638,6 +718,14 @@ test('the paste dialog applies Absent to the pasted list and reports unknown IDs
   const dialog = screen.getByRole('dialog', { name: 'لصق الأرقام الوظيفية' })
   await user.type(within(dialog).getByRole('textbox', { name: 'الأرقام الوظيفية' }), '1{Enter}2{Enter}99')
   expect(within(dialog).getByRole('status')).toHaveTextContent('2 مطابق')
+  expect(within(dialog).getByText('2 مطابق')).toHaveClass('rounded-md', 'bg-primary/10') // a kit Badge
+  expect(within(dialog).getByText('غير موجود في الكشف: 99')).toHaveClass('bg-warning/10', 'whitespace-normal') // a long ID list wraps at 375 px
+  // one solid action, the rest ghost
+  expect(within(dialog).getByRole('button', { name: 'حاضر' })).toHaveClass('bg-primary')
+  for (const b of ['غياب', 'مرضي']) {
+    expect(within(dialog).getByRole('button', { name: b })).not.toHaveClass('border')
+    expect(within(dialog).getByRole('button', { name: b })).not.toHaveClass('bg-primary')
+  }
   await user.click(within(dialog).getByRole('button', { name: 'غياب' }))
   await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
   expect(sent(bulk).rows).toEqual([{ employee_id: 'e1', version: null, site_id: 'sa' }, { employee_id: 'e2', version: 1, site_id: 'sa' }])
@@ -653,39 +741,6 @@ test('the paste dialog never writes a name search', async () => {
   const dialog = screen.getByRole('dialog', { name: 'لصق الأرقام الوظيفية' })
   await user.type(within(dialog).getByRole('textbox', { name: 'الأرقام الوظيفية' }), 'Engineer')
   for (const b of ['حاضر', 'غياب', 'مرضي']) expect(within(dialog).getByRole('button', { name: b })).toBeDisabled()
-})
-
-test('a capped range says only the first 500 were used', async () => {
-  mockFetch(routes)
-  edit()
-  await table()
-  await user.type(command(), '1-600')
-  expect(screen.getByRole('status', { name: 'إدخال سريع' })).toHaveTextContent('استُخدم أول 500 رقم فقط')
-})
-
-test.each([
-  ['a locked period', EDIT, { ...period, is_locked: true }],
-  ['a reader', ['attendance.view.all'], period],
-])('%s can filter with the command bar but Enter writes nothing and there is no paste', async (_, perms, p) => {
-  const bulk = bulkOk()
-  mockFetch({ ...routes, 'GET /api/v1/attendance/period': () => json(200, { data: p }), 'POST /api/v1/attendance/days/bulk': bulk })
-  open('/attendance?group=engineer', perms)
-  await table()
-  expect(screen.queryByRole('button', { name: 'لصق أرقام' })).not.toBeInTheDocument()
-  await user.type(command(), '1{Enter}')
-  expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(2)
-  expect(bulk).not.toHaveBeenCalled()
-})
-
-test('a reader is told the box finds employees by ID or name; an editor gets the write help', async () => {
-  mockFetch(routes)
-  const { unmount } = open()
-  await table()
-  expect(screen.getByRole('status', { name: 'إدخال سريع' })).toHaveTextContent('اكتب الأرقام الوظيفية أو جزءًا من الاسم للبحث عن الموظفين.')
-  unmount()
-  edit()
-  await table()
-  expect(screen.getByRole('status', { name: 'إدخال سريع' })).toHaveTextContent('مفتاح الإدخال يسجل الأرقام حاضرين؛ الاسم يحدد المطابقين فقط.')
 })
 
 test('the paste undo label is the translated action count', async () => {
@@ -704,18 +759,6 @@ test('the paste undo label is the translated action count', async () => {
   } finally {
     i18n.addResource('ar', 'translation', 'attendance.sheet.actionCount', '{{action}} ({{count}})')
   }
-})
-
-test('Enter writes only the shown rows while a cohort filter is active', async () => {
-  const bulk = bulkOk()
-  const rows = crew.map((r, i) => (i < 3 ? r : { ...r, last_site_id: 's2' }))
-  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => sheet(rows), 'POST /api/v1/attendance/days/bulk': bulk })
-  edit()
-  await table()
-  await user.click(within(screen.getByRole('group', { name: 'حسب آخر موقع' })).getByRole('button', { name: /^Site-1/ }))
-  await user.type(command(), '1-5{Enter}')
-  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
-  expect(sent(bulk).rows.map((r: { employee_id: string }) => r.employee_id)).toEqual(['e1', 'e2', 'e3'])
 })
 
 test('paste applies to every pasted ID on the sheet, whatever the filter', async () => {
@@ -742,93 +785,25 @@ test('an action that changes nothing says so and sends nothing', async () => {
   expect(bulk).not.toHaveBeenCalled()
 })
 
-test('a card shows the no-last-site reason next to its disabled Present', async () => {
+test('an editable card with no last site shows the «اختر موقعًا» chip and no muted no-last-site line; Present keeps the reason for screen readers', async () => {
   mockFetch(routes)
   edit()
   await table()
   const card = within(screen.getByRole('list', { name: 'الموظف' })).getByText('Engineer-3').closest('li')!
-  expect(within(card).getByRole('button', { name: 'حاضر Engineer-3' })).toBeDisabled()
-  expect(within(card).getByText('بدون موقع سابق')).not.toHaveClass('sr-only')
-  const other = within(screen.getByRole('list', { name: 'الموظف' })).getByText('Engineer-1').closest('li')!
-  expect(within(other).queryByText('بدون موقع سابق')).not.toBeInTheDocument()
+  const present = within(card).getByRole('button', { name: 'حاضر Engineer-3' })
+  expect(present).toBeDisabled()
+  expect(present).toHaveAccessibleDescription('بدون موقع سابق')
+  expect(within(card).getByRole('button', { name: 'تعيين موقع: اختر موقعًا، Engineer-3' })).toBeInTheDocument()
+  expect(within(card).queryByText('بدون موقع سابق')).not.toBeInTheDocument()
 })
 
-const key = (code: string, init: object = {}) => fireEvent.keyDown(document, { code, key: code.replace(/^Key/, '').toLowerCase(), ...init })
-const rowOf = (name: string) => within(screen.getByRole('table')).getByText(name).closest('tr')!
-const undoButton = () => screen.getByRole('button', { name: /^تراجع/ })
-
-test('J then P marks the first row and moves the cursor to the second', async () => {
-  const bulk = bulkOk()
-  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
-  edit()
-  await table()
-  key('KeyJ')
-  expect(rowOf('Engineer-1')).toHaveAttribute('aria-current', 'true')
-  key('KeyP')
-  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
-  expect(sent(bulk).rows).toEqual([{ employee_id: 'e1', version: null, site_id: 's1' }])
-  expect(rowOf('Engineer-2')).toHaveAttribute('aria-current', 'true')
-  expect(rowOf('Engineer-1')).not.toHaveAttribute('aria-current')
-  key('ArrowDown')
-  key('ArrowUp')
-  key('KeyK')
-  expect(rowOf('Engineer-1')).toHaveAttribute('aria-current', 'true')
-})
-
-test('a status key acts on an Arabic layout', async () => {
-  const bulk = bulkOk()
-  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
-  edit()
-  await table()
-  key('KeyJ', { key: 'ت' })
-  fireEvent.keyDown(document, { key: 'ح', code: 'KeyP' })
-  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
-  expect(sent(bulk).rows).toEqual([{ employee_id: 'e1', version: null, site_id: 's1' }])
-})
-
-test('P does nothing on a field row with no last site, like its disabled button', async () => {
-  const bulk = bulkOk()
-  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => sheet([...engineers, row(4, 'Engineer-4', {}, { last_site_id: 's1' })]), 'POST /api/v1/attendance/days/bulk': bulk })
-  edit()
-  await table()
-  key('KeyJ'); key('KeyJ'); key('KeyJ')
-  expect(rowOf('Engineer-3')).toHaveAttribute('aria-current', 'true')
-  key('KeyP')
-  key('KeyS') // no active sick leave type: the Sick button is disabled too
-  expect(bulk).not.toHaveBeenCalled()
-  expect(rowOf('Engineer-3')).toHaveAttribute('aria-current', 'true')
-})
-
-test('Slash focuses the command bar and keys do nothing while typing in it or while the day editor is open', async () => {
-  const bulk = bulkOk()
-  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk, 'GET /api/v1/attendance/days/e1/2026-10-18': () => json(200, { data: { ...blank, state: 'missing', date: '2026-10-18', employee_id: 'e1', type: 'engineer',
-    fields: ['in_time'], leave_day_fields: [], hints: {}, period: { start: '2026-09-26', end: '2026-10-25', is_locked: false } } }) })
-  edit()
-  await table()
-  key('KeyJ')
-  expect(key('Slash', { key: '/' })).toBe(false)
-  expect(command()).toHaveFocus()
-  fireEvent.keyDown(command(), { code: 'KeyP', key: 'p' })
-  fireEvent.keyDown(command(), { code: 'KeyJ', key: 'j' })
-  expect(rowOf('Engineer-1')).toHaveAttribute('aria-current', 'true')
-  key('Escape')
-  expect(command()).not.toHaveFocus()
-  key('KeyJ')
-  key('KeyE')
-  expect(await screen.findByRole('dialog', { name: 'يوم 2026-10-18 — Engineer-1' })).toBeInTheDocument()
-  key('KeyJ')
-  key('KeyP')
-  expect(document.querySelector('tr[aria-current="true"]')).toHaveTextContent('Engineer-1') // the modal hides the table from roles
-  expect(bulk).not.toHaveBeenCalled()
-})
-
-test('Ctrl+Z restores the previous day', async () => {
+test('Undo restores the previous day', async () => {
   const bulk = vi.fn((_url: string, init?: RequestInit) => json(200, { data: JSON.parse(String(init?.body)).rows.map((r: { employee_id: string }) => ({ employee_id: r.employee_id, version: bulk.mock.calls.length === 1 ? 1 : null })) }))
   mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
   edit()
   await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' }))
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
-  key('KeyZ', { ctrlKey: true })
+  await user.click(undoButton())
   await waitFor(() => expect(bulk).toHaveBeenCalledTimes(2))
   expect(sent(bulk, 1)).toEqual({ date: '2026-10-18', rows: [{ employee_id: 'e1', clear: true, version: 1 }] })
   await waitFor(() => expect(toast.success).toHaveBeenCalledWith('تم التراجع: حاضر Engineer-1'))
@@ -840,7 +815,8 @@ test('undo rewrites a stored day in full, from the button too', async () => {
   const bulk = bulkOk()
   mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
   edit()
-  await user.click(within(await table()).getByRole('button', { name: 'غياب Engineer-2' }))
+  await table()
+  await menu('إجراءات أخرى Engineer-2', 'غياب')
   await waitFor(() => expect(undoButton()).toHaveAttribute('aria-disabled', 'false'))
   await user.click(undoButton())
   await waitFor(() => expect(bulk).toHaveBeenCalledTimes(2))
@@ -855,7 +831,7 @@ test('an undo refused with 409 is dropped with a message', async () => {
   edit()
   await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' }))
   await waitFor(() => expect(undoButton()).toHaveAttribute('aria-disabled', 'false'))
-  key('KeyZ', { metaKey: true })
+  await user.click(undoButton())
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith('تغيّر يوم Engineer-1 بعد ذلك؛ تعذّر التراجع وحُذف من القائمة.'))
   expect(undoButton()).toHaveTextContent('تراجع (0)')
   expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
@@ -872,7 +848,7 @@ test('the undo stack keeps the last 15', async () => {
     await waitFor(() => expect(undoButton()).toHaveTextContent(`تراجع (${Math.min(i, 15)})`))
   }
   for (let n = 15; n > 0; n--) {
-    key('KeyZ', { ctrlKey: true })
+    await user.click(undoButton())
     await waitFor(() => expect(undoButton()).toHaveTextContent(`تراجع (${n - 1})`))
   }
   const undone = bulk.mock.calls.slice(16).map((_, i) => sent(bulk, 16 + i).rows[0].employee_id)
@@ -905,11 +881,11 @@ const presentThenAbsent = async () => {
   edit()
   await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' }))
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
-  await user.click(within(screen.getByRole('table')).getByRole('button', { name: 'غياب Engineer-1' }))
+  await menu('إجراءات أخرى Engineer-1', 'غياب')
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (2)'))
-  key('KeyZ', { ctrlKey: true })
+  await user.click(undoButton())
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
-  key('KeyZ', { ctrlKey: true })
+  await user.click(undoButton())
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (0)'))
 }
 
@@ -933,17 +909,18 @@ test('an undo on one day never rebases the same employee\'s entry for another da
   await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' })) // 2026-10-18: a new row at v1
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
   await user.click(within(screen.getByRole('group', { name: 'أيام الفترة' })).getByRole('button', { name: /^2026-10-17/ }))
-  await user.click(within(await table()).getByRole('button', { name: 'غياب Engineer-1' })) // 2026-10-17: v1 → v2
+  await table()
+  await menu('إجراءات أخرى Engineer-1', 'غياب') // 2026-10-17: v1 → v2
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (2)'))
-  key('KeyZ', { ctrlKey: true }) // 2026-10-17 back to v1's day, now v3
+  await user.click(undoButton()) // 2026-10-17 back to v1's day, now v3
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
-  key('KeyZ', { ctrlKey: true })
+  await user.click(undoButton())
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (0)'))
   expect(sent(bulk, 3)).toEqual({ date: '2026-10-18', rows: [{ employee_id: 'e1', clear: true, version: 1 }] })
   expect(toast.error).not.toHaveBeenCalled()
 })
 
-test('Ctrl+Z does nothing while a write is in flight', async () => {
+test('Undo does nothing while a write is in flight', async () => {
   const bulk = vi.fn((_url: string, init?: RequestInit) => (bulk.mock.calls.length === 1
     ? json(200, { data: JSON.parse(String(init?.body)).rows.map((r: { employee_id: string }) => ({ employee_id: r.employee_id, version: 1 })) })
     : (new Promise(() => {}) as unknown as Response))) // the second write never answers
@@ -951,107 +928,13 @@ test('Ctrl+Z does nothing while a write is in flight', async () => {
   edit()
   await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' }))
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
-  await user.click(within(screen.getByRole('table')).getByRole('button', { name: 'غياب Engineer-2' }))
+  await menu('إجراءات أخرى Engineer-2', 'غياب')
   await waitFor(() => expect(bulk).toHaveBeenCalledTimes(2))
   expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
-  key('KeyZ', { ctrlKey: true })
+  await user.click(undoButton())
   await new Promise((r) => setTimeout(r, 20))
   expect(bulk).toHaveBeenCalledTimes(2) // the Engineer-1 entry is not undone under the pending write
   expect(undoButton()).toHaveTextContent('تراجع (1)')
-})
-
-test('a held key acts once, but a held J keeps moving', async () => {
-  const bulk = bulkOk()
-  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
-  edit()
-  await table()
-  key('KeyJ')
-  key('KeyA')
-  key('KeyA', { repeat: true })
-  key('KeyJ', { repeat: true })
-  expect(rowOf('Engineer-3')).toHaveAttribute('aria-current', 'true')
-  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
-  key('KeyZ', { ctrlKey: true, repeat: true })
-  await new Promise((r) => setTimeout(r, 20))
-  expect(bulk).toHaveBeenCalledTimes(1)
-})
-
-test('no key writes while a menu or an alert dialog is open', async () => {
-  const bulk = bulkOk()
-  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
-  edit()
-  await table()
-  key('KeyJ')
-  for (const role of ['menu', 'alertdialog']) {
-    const el = document.body.appendChild(Object.assign(document.createElement('div'), { role }))
-    el.setAttribute('role', role)
-    key('KeyP')
-    key('KeyA')
-    el.remove()
-  }
-  expect(bulk).not.toHaveBeenCalled()
-})
-
-test('Escape clears the selection and the cursor', async () => {
-  mockFetch(routes)
-  edit()
-  const tbl = await table()
-  await user.click(within(tbl).getByRole('checkbox', { name: 'تحديد Engineer-1' }))
-  await user.click(within(tbl).getByRole('checkbox', { name: 'تحديد Engineer-2' }))
-  key('KeyJ')
-  key('Escape')
-  expect(screen.queryByRole('group', { name: 'إجراءات المحدد' })).not.toBeInTheDocument()
-  expect(document.querySelector('[aria-current="true"]')).toBeNull()
-  expect(document.activeElement).toBe(document.body)
-})
-
-test('Ctrl+P is left to the browser', async () => {
-  const bulk = bulkOk()
-  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
-  edit()
-  await table()
-  key('KeyJ')
-  expect(key('KeyP', { ctrlKey: true })).toBe(true) // not prevented
-  expect(key('KeyP', { altKey: true })).toBe(true)
-  expect(bulk).not.toHaveBeenCalled()
-})
-
-test('a reader can move and open Details by keyboard but not mark or undo', async () => {
-  const bulk = bulkOk()
-  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk, 'GET /api/v1/attendance/days/e1/2026-10-18': () => json(200, { data: { ...blank, state: 'missing', date: '2026-10-18', employee_id: 'e1', type: 'engineer',
-    fields: ['in_time'], leave_day_fields: [], hints: {}, period: { start: '2026-09-26', end: '2026-10-25', is_locked: false } } }) })
-  open()
-  await table()
-  expect(screen.queryByRole('button', { name: /^تراجع/ })).not.toBeInTheDocument()
-  key('KeyJ')
-  expect(rowOf('Engineer-1')).toHaveAttribute('aria-current', 'true')
-  key('KeyP')
-  key('KeyZ', { ctrlKey: true })
-  expect(bulk).not.toHaveBeenCalled()
-  expect(rowOf('Engineer-1')).toHaveAttribute('aria-current', 'true') // P did not advance
-  key('KeyE')
-  expect(await screen.findByRole('dialog', { name: 'يوم 2026-10-18 — Engineer-1' })).toBeInTheDocument()
-})
-
-test('the shortcuts line names each key', async () => {
-  mockFetch(routes)
-  edit()
-  await table()
-  const keys = screen.getByRole('list', { name: 'اختصارات لوحة المفاتيح' })
-  expect([...keys.querySelectorAll('kbd')].map((k) => k.textContent)).toEqual(['/', 'J', 'K', 'P', 'A', 'S', 'E', 'Ctrl+Z', 'Esc'])
-})
-
-test('no key acts while the next date loads', async () => {
-  const bulk = bulkOk()
-  let calls = 0
-  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => (calls++ ? (new Promise(() => {}) as unknown as Response) : sheet(engineers)), 'POST /api/v1/attendance/days/bulk': bulk })
-  edit()
-  await table()
-  key('KeyJ')
-  await user.click(within(screen.getByRole('group', { name: 'أيام الفترة' })).getByRole('button', { name: /^2026-10-17/ }))
-  await waitFor(() => expect(calls).toBe(2))
-  key('KeyP')
-  expect(bulk).not.toHaveBeenCalled()
 })
 
 test('in English the site chips, cohorts, last site and toasts use the English names', async () => {
@@ -1066,24 +949,11 @@ test('in English the site chips, cohorts, last site and toasts use the English n
   await i18n.changeLanguage('en')
   edit()
   const tbl = await table()
-  expect(within(tbl).getByText('Site-1 EN')).toBeInTheDocument() // Engineer-2's present chip
-  expect(within(tbl).getByText('Last site: Site-1 EN')).toBeInTheDocument()
+  expect(within(tbl).getByRole('button', { name: 'Set site: Site-1 EN, Engineer-2 EN' })).toBeInTheDocument() // Engineer-2's site today
+  expect(within(tbl).getByRole('button', { name: 'Set site: Site-1 EN, Engineer-1 EN' })).toBeInTheDocument() // Engineer-1's last site
   expect(within(screen.getByRole('group', { name: 'By last site' })).getByRole('button', { name: /^Site-1 EN/ })).toBeInTheDocument()
-  await user.click(within(tbl).getByRole('button', { name: 'Absent: Engineer-1 EN' }))
+  await menu('More actions: Engineer-1 EN', 'Absent')
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Someone else just changed Engineer-1 EN; the sheet was reloaded. Check it and try again.'))
-})
-
-test('a status key still marks after a click on a row checkbox', async () => {
-  const bulk = bulkOk()
-  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
-  edit()
-  await table()
-  key('KeyJ')
-  const box = within(screen.getByRole('table')).getByRole('checkbox', { name: 'تحديد Engineer-1' })
-  await user.click(box)
-  fireEvent.keyDown(box, { code: 'KeyP', key: 'p' })
-  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
-  expect(sent(bulk).rows).toEqual([{ employee_id: 'e1', version: null, site_id: 's1' }])
 })
 
 test('a leave day with an unknown code is named from its leave type, in Arabic and English', async () => {
@@ -1130,7 +1000,7 @@ test('an undo of another day names that day in its toast', async () => {
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
   await user.click(within(screen.getByRole('group', { name: 'أيام الفترة' })).getByRole('button', { name: /^2026-10-17/ }))
   await table()
-  key('KeyZ', { ctrlKey: true })
+  await user.click(undoButton())
   await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(2))
   const { container } = render(<>{vi.mocked(toast.success).mock.calls[1][0]}</>)
   expect(container).toHaveTextContent('تم التراجع: حاضر Engineer-1 (2026-10-18)')
@@ -1163,11 +1033,10 @@ test('Enter on Undo keeps focus on the button while the undo is in flight', asyn
 })
 
 // Gate 2b defects
-test('Quick entry and the paste box take their direction from what is typed, so RTL does not draw 1-3 as 3-1', async () => {
+test('the paste box takes its direction from what is typed, so RTL does not draw 1-3 as 3-1', async () => {
   mockFetch(routes)
   edit()
   await table()
-  expect(command()).toHaveAttribute('dir', 'auto')
   await user.click(screen.getByRole('button', { name: 'لصق أرقام' }))
   expect(within(screen.getByRole('dialog')).getByRole('textbox', { name: 'الأرقام الوظيفية' })).toHaveAttribute('dir', 'auto')
 })
@@ -1190,18 +1059,6 @@ test('a cohort chip grows to its full label and carries the full name as its tit
   expect(cohorts).toHaveClass('flex', 'flex-wrap') // not a fixed column grid that cuts the label at 1024
   expect(within(cohorts).getByText('بدون موقع سابق')).toHaveAttribute('title', 'بدون موقع سابق')
   expect(within(cohorts).getByText('Site-1')).toHaveAttribute('title', 'Site-1')
-})
-
-test('the no-last-site hint shows on a missing card, not on one already stored at a site today', async () => {
-  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => sheet([
-    row(5, 'Engineer-5', { state: 'stored', source: 'entered', version: 1, site_id: 's1' }), // at Site-1 today, no last site before it
-    row(6, 'Engineer-6', {}),
-  ]) })
-  edit()
-  await table()
-  const card = (name: string) => within(screen.getByRole('list', { name: 'الموظف' })).getByText(name).closest('li')!
-  expect(within(card('Engineer-5')).queryByText('بدون موقع سابق')).not.toBeInTheDocument()
-  expect(within(card('Engineer-6')).getByText('بدون موقع سابق')).toBeInTheDocument()
 })
 
 test('a selected card carries the same selected tint as its row, and the row tint spans the totals cell', async () => {
@@ -1232,18 +1089,17 @@ test('office totals say present, not at a site', async () => {
 })
 
 // Gate 2b, D3 round 2: the table fits its card at every width where it shows
-test('below 2xl the table row actions are icons named by their tooltip; the labels come back at 2xl', async () => {
+test('below 2xl the table Present is an icon named by its tooltip; the label comes back at 2xl; ⋯ is always an icon with a tooltip', async () => {
   mockFetch(routes)
   edit()
   const tr = within(await table()).getByText('Engineer-1').closest('tr')!
-  for (const action of ['حاضر', 'غياب', 'مرضي', 'التفاصيل']) {
-    const button = within(tr).getByRole('button', { name: `${action} Engineer-1` })
-    expect(button).toHaveAttribute('title', action)
-    expect(within(button).getByText(action)).toHaveClass('hidden', '2xl:inline')
-  }
-  // a card keeps its labelled buttons and no tooltip
+  const present = within(tr).getByRole('button', { name: 'حاضر Engineer-1' })
+  expect(present).toHaveAttribute('title', 'حاضر')
+  expect(within(present).getByText('حاضر')).toHaveClass('hidden', '2xl:inline')
+  expect(within(tr).getByRole('button', { name: 'إجراءات أخرى Engineer-1' })).toHaveAttribute('title', 'إجراءات أخرى')
+  // a card keeps its labelled Present and no tooltip
   const card = within(screen.getByRole('list', { name: 'الموظف' })).getByText('Engineer-1').closest('li')!
-  expect(within(card).getByRole('button', { name: 'التفاصيل Engineer-1' })).not.toHaveAttribute('title')
+  expect(within(card).getByRole('button', { name: 'حاضر Engineer-1' })).not.toHaveAttribute('title')
   expect(within(within(card).getByRole('button', { name: 'حاضر Engineer-1' })).getByText('حاضر')).not.toHaveClass('hidden')
 })
 
@@ -1277,7 +1133,7 @@ test('the cards have their own select-page box: it selects and clears the page a
   const list = screen.getByRole('list', { name: 'الموظف' })
   const all = screen.getAllByRole('checkbox', { name: 'تحديد كل الصفحة' }).find((el) => !el.closest('table'))
   expect(all).toBeDefined()
-  expect(all!.closest('label')).toHaveClass('xl:hidden', 'min-h-11') // a 44 px line, hidden where the table header has its own
+  expect(all!.closest('label')).toHaveClass('xl:hidden', 'min-h-tap') // a touch-height line, hidden where the table header has its own
   await user.click(within(list).getAllByRole('checkbox')[0])
   expect(all).toHaveProperty('indeterminate', true)
   await user.click(all!)
@@ -1294,11 +1150,416 @@ test('a reader gets no select-page box on the cards', async () => {
   expect(screen.queryByRole('checkbox', { name: 'تحديد كل الصفحة' })).not.toBeInTheDocument()
 })
 
-test('the Arabic Quick entry hint isolates every left-to-right example, so RTL does not draw 10-20 as 20-10', async () => {
-  mockFetch(routes)
+
+// S2b: row buttons (owner decision 3)
+test('a row keeps Present and puts Absent, Sick and Details in its ⋯ menu', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  const tr = within(await table()).getByText('Engineer-1').closest('tr')!
+  expect(within(tr).queryByRole('button', { name: /^(غياب|مرضي|التفاصيل) / })).not.toBeInTheDocument()
+  await user.click(within(tr).getByRole('button', { name: 'إجراءات أخرى Engineer-1' }))
+  const items = await screen.findAllByRole('menuitem')
+  expect(items.map((i) => i.textContent)).toEqual(['غياب', 'مرضي', 'التفاصيل'])
+  expect(items[1]).toHaveAttribute('aria-disabled', 'true') // no active sick leave type
+  await user.click(items[0])
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk).rows).toEqual([{ employee_id: 'e1', version: null, site_id: 'sa' }])
+})
+
+test('Details in the ⋯ menu opens the day editor', async () => {
+  mockFetch({ ...routes, 'GET /api/v1/attendance/days/e1/2026-10-18': () => json(200, { data: { ...blank, state: 'missing', date: '2026-10-18', employee_id: 'e1', type: 'engineer',
+    fields: ['in_time'], leave_day_fields: [], hints: {}, period: { start: '2026-09-26', end: '2026-10-25', is_locked: false } } }) })
   edit()
   await table()
-  const hint = command().getAttribute('placeholder')!
-  expect(hint).toContain('⁦10-20⁩')
-  expect(hint.replace(/⁦[^⁩]*⁩/g, '')).not.toMatch(/\d/) // no digit outside an isolate
+  await menu('إجراءات أخرى Engineer-1', 'التفاصيل')
+  expect(await screen.findByRole('dialog', { name: 'يوم 2026-10-18 — Engineer-1' })).toBeInTheDocument()
+})
+
+test('Present looks pressed on a row already present, like a badge', async () => {
+  mockFetch(routes)
+  edit()
+  const tbl = await table()
+  const on = within(tbl).getByRole('button', { name: 'حاضر Engineer-2' })
+  expect(on).toHaveAttribute('aria-pressed', 'true')
+  expect(within(tbl).getByRole('button', { name: 'حاضر Engineer-1' })).toHaveAttribute('aria-pressed', 'false')
+})
+
+test('the bulk bar and the paste dialog still offer Present, Absent and Sick', async () => {
+  mockFetch(routes)
+  edit()
+  await user.click(within(await table()).getByRole('checkbox', { name: 'تحديد Engineer-1' }))
+  const bar = screen.getByRole('group', { name: 'إجراءات المحدد' })
+  for (const b of ['حاضر', 'غياب', 'مرضي']) expect(within(bar).getByRole('button', { name: b })).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'لصق أرقام' }))
+  const dialog = screen.getByRole('dialog', { name: 'لصق الأرقام الوظيفية' })
+  for (const b of ['حاضر', 'غياب', 'مرضي']) expect(within(dialog).getByRole('button', { name: b })).toBeInTheDocument()
+})
+
+// S2b: times on the rows
+const timed = row(2, 'Engineer-2', { state: 'stored', source: 'entered', version: 1, site_id: 's1', in_time: '08:45:00', out_time: '18:00:00' }, { last_site_id: 's1', hints: { late_minutes: 45, ot_minutes: 75 } })
+const timedRoutes = { ...routes, 'GET /api/v1/attendance/sheet': () => sheet([engineers[0], timed, engineers[2]]) }
+
+test('a present field row shows its arrival and departure with the late and OT hints; other rows have no time boxes', async () => {
+  mockFetch(timedRoutes)
+  edit()
+  const tbl = await table()
+  const heads = within(tbl).getAllByRole('columnheader').map((h) => h.textContent)
+  expect(heads).toEqual(expect.arrayContaining(['وقت الحضور', 'وقت الانصراف']))
+  const tr = rowOf('Engineer-2')
+  expect(within(tr).getByRole('textbox', { name: 'وقت الحضور Engineer-2' })).toHaveValue('8:45')
+  expect(within(tr).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' })).toHaveValue('6:00')
+  expect(within(tr).getByText('متأخر 45 د')).toHaveClass('text-warning')
+  expect(within(tr).getByText('إضافي 75 د')).toHaveClass('text-warning')
+  expect(within(rowOf('Engineer-1')).queryByRole('textbox')).not.toBeInTheDocument()
+  expect(within(rowOf('Engineer-3')).queryByRole('textbox')).not.toBeInTheDocument()
+})
+
+test('a field row\'s departure edit posts out_time with its site_id', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...timedRoutes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await table()
+  const tr = rowOf('Engineer-2')
+  const out = within(tr).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' })
+  await user.clear(out)
+  await user.type(out, '3:00{Enter}')
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk)).toEqual({ date: '2026-10-18', rows: [{ employee_id: 'e2', version: 1, site_id: 's1', out_time: '15:00' }] })
+})
+
+test('the time pair is one unit: Tab from arrival to departure and typing there sends nothing until focus leaves the pair', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...timedRoutes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await table()
+  const tr = rowOf('Engineer-2')
+  const arrival = within(tr).getByRole('textbox', { name: 'وقت الحضور Engineer-2' })
+  await user.clear(arrival)
+  await user.type(arrival, '0900')
+  await user.tab()
+  await user.tab()
+  await user.tab()
+  const departure = within(tr).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' })
+  expect(departure).toHaveFocus()
+  await user.clear(departure)
+  await user.type(departure, '5:00')
+  await user.click(within(tr).getAllByRole('button', { name: 'مساءً' })[1]) // departure's PM: still inside the pair
+  expect(bulk).not.toHaveBeenCalled()
+  await user.click(document.body)
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  await new Promise((r) => setTimeout(r, 20))
+  expect(bulk).toHaveBeenCalledTimes(1)
+  expect(sent(bulk).rows).toEqual([{ employee_id: 'e2', version: 1, site_id: 's1', in_time: '09:00', out_time: '17:00' }])
+})
+
+test('focus selects the time, so typing 845 replaces 8:00, even after an AM/PM click', async () => {
+  const bulk = bulkOk()
+  const day = { state: 'stored', source: 'entered', version: 1, site_id: 's1', in_time: '08:00:00', out_time: '17:00:00' }
+  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => sheet([row(2, 'Engineer-2', day, { last_site_id: 's1' })]), 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await table()
+  const tr = rowOf('Engineer-2')
+  const arrival = within(tr).getByRole('textbox', { name: 'وقت الحضور Engineer-2' })
+  await user.click(arrival)
+  await user.click(within(tr).getAllByRole('button', { name: 'صباحًا' })[0]) // its mousedown keeps the cursor, and the selection, in the box
+  await user.keyboard('845')
+  expect(arrival).toHaveValue('845')
+  await user.click(document.body)
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk).rows).toEqual([{ employee_id: 'e2', version: 1, site_id: 's1', in_time: '08:45' }])
+})
+
+test('10:30 with no AM/PM is never written as 10:30 AM', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...routes, 'GET /api/v1/attendance/period': officePeriod, 'GET /api/v1/attendance/sheet': () => sheet(office, 'office'), 'POST /api/v1/attendance/days/bulk': bulk })
+  edit('/attendance?group=office')
+  const input = within(await table()).getByLabelText('وقت الحضور Office-2')
+  await user.type(input, '10:30')
+  fireEvent.blur(input)
+  expect(toast.error).toHaveBeenCalledWith('اختر ص أو م.')
+  expect(input).toHaveValue('')
+  await new Promise((r) => setTimeout(r, 20))
+  expect(bulk).not.toHaveBeenCalled()
+})
+
+test('office rows keep the in-time only', async () => {
+  mockFetch({ ...routes, 'GET /api/v1/attendance/period': officePeriod, 'GET /api/v1/attendance/sheet': () => sheet(office, 'office') })
+  edit('/attendance?group=office')
+  const tbl = await table()
+  expect(within(tbl).getAllByRole('textbox', { name: /^وقت الحضور/ })).toHaveLength(2)
+  expect(within(tbl).queryByRole('textbox', { name: /^وقت الانصراف/ })).not.toBeInTheDocument()
+  expect(within(tbl).queryByRole('columnheader', { name: 'وقت الانصراف' })).not.toBeInTheDocument()
+})
+
+test('on a card the two time boxes stack below sm and sit side by side from sm', async () => {
+  mockFetch(timedRoutes)
+  edit()
+  await table()
+  const card = within(screen.getByRole('list', { name: 'الموظف' })).getByText('Engineer-2').closest('li')!
+  const departure = within(card).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' })
+  const pair = departure.closest('.grid.sm\\:grid-cols-2')
+  expect(pair).toContainElement(within(card).getByRole('textbox', { name: 'وقت الحضور Engineer-2' }))
+  expect(card.querySelector('.w-44')).toBeNull()
+})
+
+test('a locked sheet shows the times as plain text', async () => {
+  mockFetch({ ...timedRoutes, 'GET /api/v1/attendance/period': () => json(200, { data: { ...period, is_locked: true } }) })
+  edit()
+  await table()
+  const tr = rowOf('Engineer-2')
+  expect(within(tr).queryByRole('textbox')).not.toBeInTheDocument()
+  expect(within(tr).getByText('8:45 ص')).toBeInTheDocument()
+  expect(within(tr).getByText('6:00 م')).toBeInTheDocument()
+})
+
+// S2b: the site chip
+const chipSites = [...sites, { id: 's2', name_ar: 'Site-2', name_en: 'Site-2', kind: 'work', leave_code: null, active: true }, { id: 's3', name_ar: 'Site-3', name_en: 'Site-3', kind: 'work', leave_code: null, active: false }]
+const chipRoutes = { ...routes, 'GET /api/v1/sites': () => json(200, { data: chipSites, meta: { pagination } }) }
+
+test('the site chip shows the day\'s site, else the last site, else «اختر موقعًا»', async () => {
+  mockFetch(chipRoutes)
+  edit()
+  const tbl = await table()
+  expect(within(rowOf('Engineer-2')).getByRole('button', { name: 'تعيين موقع: Site-1، Engineer-2' })).toHaveTextContent('Site-1')
+  expect(within(rowOf('Engineer-1')).getByRole('button', { name: 'تعيين موقع: Site-1، Engineer-1' })).toHaveTextContent('Site-1')
+  expect(within(rowOf('Engineer-3')).getByRole('button', { name: 'تعيين موقع: اختر موقعًا، Engineer-3' })).toHaveTextContent('اختر موقعًا')
+  expect(within(tbl).queryByText(/^آخر موقع/)).not.toBeInTheDocument()
+})
+
+test('the site chip lists the active work sites and posts the picked one', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...chipRoutes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await table()
+  await user.click(within(rowOf('Engineer-1')).getByRole('button', { name: 'تعيين موقع: Site-1، Engineer-1' }))
+  const items = await screen.findAllByRole('menuitemradio')
+  expect(items.map((i) => i.textContent)).toEqual(['Site-1', 'Site-2'])
+  await user.click(items[1])
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk).rows).toEqual([{ employee_id: 'e1', version: null, site_id: 's2' }])
+})
+
+test('the site chip checks the day\'s site on a present row', async () => {
+  mockFetch(chipRoutes)
+  edit()
+  await table()
+  await user.click(within(rowOf('Engineer-2')).getByRole('button', { name: 'تعيين موقع: Site-1، Engineer-2' }))
+  expect(await screen.findByRole('menuitemradio', { name: 'Site-1' })).toHaveAttribute('aria-checked', 'true')
+})
+
+test('a locked sheet shows the site as plain text, no chip', async () => {
+  mockFetch({ ...chipRoutes, 'GET /api/v1/attendance/period': () => json(200, { data: { ...period, is_locked: true } }) })
+  open()
+  await table()
+  expect(within(rowOf('Engineer-2')).getByText('Site-1')).toBeInTheDocument()
+  expect(within(rowOf('Engineer-2')).queryByRole('button', { name: /Site-1/ })).not.toBeInTheDocument()
+})
+
+// S2b: the times dialog
+const at = (code: number, inT: string, outT: string) => row(code, `Engineer-${code}`, { state: 'stored', source: 'entered', version: code, site_id: 's1', in_time: inT, out_time: outT }, { last_site_id: 's1' })
+const crewTimes = [at(1, '08:00:00', '17:00:00'), at(2, '09:00:00', '17:00:00'), row(3, 'Engineer-3', {}, { last_site_id: 's1' })]
+const timesDialog = async (codes: number[], bulk = bulkOk()) => {
+  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => sheet(crewTimes), 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  const tbl = await table()
+  for (const c of codes) await user.click(within(tbl).getByRole('checkbox', { name: `تحديد Engineer-${c}` }))
+  await user.click(within(screen.getByRole('group', { name: 'إجراءات المحدد' })).getByRole('button', { name: 'تعديل الأوقات' }))
+  return screen.getByRole('dialog', { name: 'تعديل الأوقات' })
+}
+
+test('the times dialog pre-fills a shared departure, shows «قيم مختلفة» for a mixed arrival and leaves the blank arrival unsent', async () => {
+  const bulk = bulkOk()
+  const dialog = await timesDialog([1, 2], bulk)
+  expect(dialog).toHaveTextContent('2 محددون. الحقل الفارغ لا يغيّر شيئًا.')
+  const arrival = within(dialog).getByRole('textbox', { name: 'وقت الحضور' })
+  const departure = within(dialog).getByRole('textbox', { name: 'وقت الانصراف' })
+  expect(arrival).toHaveValue('')
+  expect(arrival).toHaveAccessibleDescription(expect.stringContaining('قيم مختلفة'))
+  expect(departure).toHaveValue('5:00')
+  expect(within(dialog).getAllByText('قيم مختلفة')).toHaveLength(1)
+  await user.clear(departure)
+  await user.type(departure, '4:00')
+  await user.click(within(dialog).getByRole('button', { name: 'تطبيق' }))
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk).rows).toEqual([{ employee_id: 'e1', version: 1, site_id: 's1', out_time: '16:00' }, { employee_id: 'e2', version: 2, site_id: 's1', out_time: '16:00' }])
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(screen.queryByRole('group', { name: 'إجراءات المحدد' })).not.toBeInTheDocument()
+})
+
+test('the times dialog skips a row that is not present with a count toast', async () => {
+  const bulk = bulkOk()
+  const dialog = await timesDialog([1, 3], bulk)
+  const arrival = within(dialog).getByRole('textbox', { name: 'وقت الحضور' })
+  expect(arrival).toHaveValue('8:00') // shared by the one present row
+  await user.clear(arrival)
+  await user.type(arrival, '0830')
+  await user.click(within(dialog).getByRole('button', { name: 'تطبيق' }))
+  expect(toast.warning).toHaveBeenCalledWith('تم تخطي 1 غير حاضرين')
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk).rows).toEqual([{ employee_id: 'e1', version: 1, site_id: 's1', in_time: '08:30' }])
+})
+
+test('the times dialog keeps Apply disabled while both boxes are blank or a box lacks AM/PM', async () => {
+  const dialog = await timesDialog([1, 2]) // their arrivals differ: a blank box with no AM/PM
+  const apply = within(dialog).getByRole('button', { name: 'تطبيق' })
+  expect(apply).toBeDisabled()
+  const arrival = within(dialog).getByRole('textbox', { name: 'وقت الحضور' })
+  await user.type(arrival, '10:30')
+  expect(apply).toBeDisabled()
+  await user.click(within(dialog).getAllByRole('button', { name: 'صباحًا' })[0])
+  expect(apply).toBeEnabled()
+  await user.click(within(dialog).getByRole('button', { name: 'إلغاء' }))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+// S2b: Undo on the success toast
+test('the success toast carries Undo; one toast id, so a newer write replaces it, and its Undo puts back the newest write', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' }))
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
+  await menu('إجراءات أخرى Engineer-2', 'غياب')
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (2)'))
+  const [[, first], [, second]] = vi.mocked(toast.success).mock.calls as unknown as [string, { id: string; action: { onClick: () => void } }][]
+  expect(first.id).toBeTruthy()
+  expect(second.id).toBe(first.id)
+  second.action.onClick()
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(3))
+  expect(sent(bulk, 2).rows.map((r: { employee_id: string }) => r.employee_id)).toEqual(['e2'])
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
+  expect(undoButton()).toBeInTheDocument() // the Undo button stays
+})
+
+// S2b: class sweep
+test('row controls use the kit touch floor, with no fixed heights; the status pill is a kit badge', async () => {
+  mockFetch(routes)
+  edit()
+  const tr = within(await table()).getByText('Engineer-1').closest('tr')!
+  for (const b of within(tr).getAllByRole('button')) expect(b.className).not.toMatch(/(^|\s)h-(9|11)(\s|$)/)
+  expect(within(tr).getByRole('checkbox').closest('label')).toHaveClass('min-h-tap', 'min-w-tap')
+  expect(within(tr).getAllByText('غير مسجل')[0]).toHaveClass('rounded-md', 'font-semibold', 'bg-warning-bg') // the pill, before the totals' label
+})
+
+// S2b review fixes
+test('the bar\'s Undo dismisses the applied toast, so its Undo can never undo an older write', async () => {
+  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulkOk() })
+  edit()
+  await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' }))
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
+  await menu('إجراءات أخرى Engineer-2', 'غياب')
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (2)'))
+  const { id } = vi.mocked(toast.success).mock.calls[1][1] as { id: string }
+  await user.click(undoButton())
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
+  expect(toast.dismiss).toHaveBeenCalledWith(id)
+})
+
+test('the toast\'s Undo waits while a write is in flight: the toast stays and nothing is undone', async () => {
+  const bulk = vi.fn((_url: string, init?: RequestInit) => (bulk.mock.calls.length === 1
+    ? json(200, { data: JSON.parse(String(init?.body)).rows.map((r: { employee_id: string }) => ({ employee_id: r.employee_id, version: 1 })) })
+    : (new Promise(() => {}) as unknown as Response))) // the second write never answers
+  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' }))
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
+  await menu('إجراءات أخرى Engineer-2', 'غياب')
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(2))
+  const { action } = vi.mocked(toast.success).mock.calls[0][1] as unknown as { action: { onClick: (e: { preventDefault: () => void }) => void } }
+  const preventDefault = vi.fn()
+  action.onClick({ preventDefault })
+  expect(preventDefault).toHaveBeenCalled() // sonner keeps a toast whose action prevented the default
+  await new Promise((r) => setTimeout(r, 20))
+  expect(bulk).toHaveBeenCalledTimes(2)
+  expect(undoButton()).toHaveTextContent('تراجع (1)')
+})
+
+test('a refused time puts the stored one back and a later blur sends nothing', async () => {
+  const bulk = vi.fn(() => json(422, { error: { code: 'validation_failed', message: 'Invalid', details: [{ field: 'rows.0.out_time', code: 'out_before_in', message: 'الانصراف قبل الحضور.' }] } }))
+  mockFetch({ ...timedRoutes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await table()
+  const departure = within(rowOf('Engineer-2')).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' })
+  await user.clear(departure)
+  await user.type(departure, '0700{Enter}')
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Engineer-2: الانصراف قبل الحضور.'))
+  await waitFor(() => expect(departure).toHaveValue('6:00'))
+  await user.click(departure)
+  await user.click(document.body)
+  await new Promise((r) => setTimeout(r, 20))
+  expect(bulk).toHaveBeenCalledTimes(1)
+})
+
+test('a refetch with the same stored times leaves a typed time alone', async () => {
+  const get = vi.fn((_url: string) => sheet([engineers[0], timed, engineers[2]]))
+  mockFetch({ ...timedRoutes, 'GET /api/v1/attendance/sheet': get })
+  edit()
+  await table()
+  const arrival = within(rowOf('Engineer-2')).getByRole('textbox', { name: 'وقت الحضور Engineer-2' })
+  await user.clear(arrival)
+  await user.type(arrival, '0930')
+  const calls = get.mock.calls.length
+  await queryClient.invalidateQueries()
+  await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(calls))
+  expect(within(rowOf('Engineer-2')).getByRole('textbox', { name: 'وقت الحضور Engineer-2' })).toHaveValue('0930')
+})
+
+test('Escape puts both boxes of the pair back and nothing is sent', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...timedRoutes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await table()
+  const tr = rowOf('Engineer-2')
+  const arrival = within(tr).getByRole('textbox', { name: 'وقت الحضور Engineer-2' })
+  const departure = within(tr).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' })
+  await user.clear(arrival)
+  await user.type(arrival, '0930')
+  await user.clear(departure)
+  await user.type(departure, '1900{Escape}')
+  expect(arrival).toHaveValue('8:45')
+  expect(departure).toHaveValue('6:00')
+  await user.click(document.body)
+  await new Promise((r) => setTimeout(r, 20))
+  expect(bulk).not.toHaveBeenCalled()
+})
+
+test('xl time cells keep room for the box and its AM/PM, and sit middle-aligned like the rest of the row', async () => {
+  mockFetch(timedRoutes)
+  edit()
+  await table()
+  const cell = within(rowOf('Engineer-2')).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' }).closest('td')!
+  expect(cell.firstElementChild).toHaveClass('min-w-38')
+  expect(cell).not.toHaveClass('align-top')
+})
+
+test('the site chip does nothing when the checked site is picked again', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...chipRoutes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await table()
+  await user.click(within(rowOf('Engineer-2')).getByRole('button', { name: 'تعيين موقع: Site-1، Engineer-2' }))
+  await user.click(await screen.findByRole('menuitemradio', { name: 'Site-1' }))
+  await new Promise((r) => setTimeout(r, 20))
+  expect(bulk).not.toHaveBeenCalled()
+  expect(toast.info).not.toHaveBeenCalled()
+})
+
+test('the times dialog keeps Apply disabled when no selected row is present', async () => {
+  const dialog = await timesDialog([3])
+  await user.type(within(dialog).getByRole('textbox', { name: 'وقت الحضور' }), '0830')
+  expect(within(dialog).getByRole('button', { name: 'تطبيق' })).toBeDisabled()
+})
+
+test('a times dialog box selects on focus, so typing 3 then م over 5:00 gives 3:00 PM', async () => {
+  const bulk = bulkOk()
+  const dialog = await timesDialog([1, 2], bulk)
+  const departure = within(dialog).getByRole('textbox', { name: 'وقت الانصراف' })
+  await user.click(departure)
+  await user.keyboard('3')
+  await user.click(within(dialog).getAllByRole('button', { name: 'مساءً' })[1])
+  expect(departure).toHaveValue('3')
+  await user.click(within(dialog).getByRole('button', { name: 'تطبيق' }))
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk).rows.map((r: { out_time: string }) => r.out_time)).toEqual(['15:00', '15:00'])
 })

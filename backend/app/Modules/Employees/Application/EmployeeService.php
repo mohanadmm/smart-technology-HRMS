@@ -12,6 +12,7 @@ use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeDocument;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeManagerAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeePayChange;
+use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeTypeChange;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
@@ -25,8 +26,7 @@ final class EmployeeService
 
     private const CURRENT_TYPE = '(select t.type from employee_type_changes t where t.employee_id = employees.id and t.deleted_at is null and t.effective_from <= ? order by t.effective_from desc limit 1)';
 
-    /** Binds today's date; also used by EmployeeRoster's own-scope filter. */
-    public const CURRENT_MANAGER = '(select m.manager_id from employee_manager_assignments m where m.employee_id = employees.id and m.deleted_at is null and m.effective_from <= ? order by m.effective_from desc limit 1)';
+    private const CURRENT_SITE = '(select s.site_id from employee_site_assignments s where s.employee_id = employees.id and s.deleted_at is null and s.effective_from <= ? order by s.effective_from desc limit 1)';
 
     private const PAY_FIELDS = ['effective_from', 'salary', 'raise', 'insured_basic', 'daily_wage', 'shift_start', 'shift_end'];
 
@@ -34,7 +34,7 @@ final class EmployeeService
     private const SENSITIVE = ['national_id', 'insurance_no', 'bank_account', 'hr_notes'];
 
     /**
-     * @param  array{type?: string, search?: string, per_page?: int}  $filters
+     * @param  array{type?: string, site_id?: string, search?: string, per_page?: int}  $filters
      * @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}}
      */
     public function list(array $filters, ?string $ownerId = null): array
@@ -43,6 +43,10 @@ final class EmployeeService
 
         if (isset($filters['type'])) {
             $query->whereRaw(self::CURRENT_TYPE.' = ?', [self::today(), $filters['type']]);
+        }
+
+        if (isset($filters['site_id'])) {
+            $query->whereRaw(self::CURRENT_SITE.' = ?', [self::today(), $filters['site_id']]);
         }
 
         if (isset($filters['search']) && $filters['search'] !== '') {
@@ -82,15 +86,12 @@ final class EmployeeService
         return ['total' => (int) $counts->sum(), ...$byType];
     }
 
-    /** @return Builder<Employee> live employees, or only those a manager has today */
+    /** @return Builder<Employee> live employees, or only those a manager reaches today */
     private function visibleTo(?string $ownerId): Builder
     {
         $query = Employee::query();
-        if ($ownerId !== null) {
-            $query->whereRaw(self::CURRENT_MANAGER.' = ?', [self::today(), $ownerId]);
-        }
 
-        return $query;
+        return $ownerId === null ? $query : EmployeeReach::apply($query, $ownerId, self::today());
     }
 
     /**
@@ -125,7 +126,7 @@ final class EmployeeService
      */
     public function show(string $id, ?string $ownerId = null): array
     {
-        $e = Employee::with(['typeChanges', 'payChanges', 'documents', 'managerAssignments.manager'])->findOrFail($id);
+        $e = Employee::with(['typeChanges', 'payChanges', 'documents', 'managerAssignments.manager', 'siteAssignments.site'])->findOrFail($id);
         $types = $e->typeChanges->sortBy('effective_from')->values()->map(fn ($t) => $this->row($t))->all();
         $pays = $e->payChanges->sortBy('effective_from')->values()->map(fn ($p) => $this->row($p))->all();
         $managers = $e->managerAssignments->sortBy('effective_from')->values()->map(fn (EmployeeManagerAssignment $m) => [
@@ -134,8 +135,16 @@ final class EmployeeService
             'manager_name' => $m->manager?->name,
             'effective_from' => $m->effective_from,
         ])->all();
+        $sites = $e->siteAssignments->sortBy('effective_from')->values()->map(fn (EmployeeSiteAssignment $s) => [
+            'id' => $s->id,
+            'site_id' => $s->site_id,
+            'site_name_ar' => $s->site?->name_ar,
+            'site_name_en' => $s->site?->name_en,
+            'effective_from' => $s->effective_from,
+        ])->all();
         $today = self::today();
         $manager = EffectiveDated::at($managers, $today);
+        $site = EffectiveDated::at($sites, $today);
         $full = $ownerId === null;
 
         return [
@@ -145,6 +154,8 @@ final class EmployeeService
             'type_changes' => $types,
             'current_manager' => $manager === null ? null : ['id' => $manager['manager_id'], 'name' => $manager['manager_name']],
             'manager_assignments' => $managers,
+            'current_site' => $site === null ? null : ['id' => $site['site_id'], 'name_ar' => $site['site_name_ar'], 'name_en' => $site['site_name_en']],
+            'site_assignments' => $sites,
             'documents' => $e->documents->sortBy('kind')->values()->map(fn ($d) => $this->row($d))->all(),
         ];
     }
@@ -203,9 +214,10 @@ final class EmployeeService
         return $this->show($id);
     }
 
-    public function isManagedBy(string $employeeId, string $userId): bool
+    /** Whether the employee is in the user's reach on $date (default today). */
+    public function isManagedBy(string $employeeId, string $userId, ?string $date = null): bool
     {
-        return Employee::query()->whereKey($employeeId)->whereRaw(self::CURRENT_MANAGER.' = ?', [self::today(), $userId])->exists();
+        return EmployeeReach::reaches($employeeId, $userId, $date ?? self::today());
     }
 
     /**
@@ -217,6 +229,42 @@ final class EmployeeService
         $employee = Employee::findOrFail($id);
         $this->assertFreeDate($employee->managerAssignments(), $data['effective_from']);
         $employee->managerAssignments()->create($data);
+
+        return $this->show($id);
+    }
+
+    /**
+     * Moves a worker to a home site from a date. With returns_on, a second row puts them back on the site they had the day before.
+     *
+     * @param  array{site_id: string, effective_from: string, returns_on?: ?string}  $data
+     * @return array<string, mixed>
+     */
+    public function assignSite(string $id, array $data): array
+    {
+        DB::transaction(function () use ($id, $data): void {
+            $employee = Employee::findOrFail($id);
+            $from = $data['effective_from'];
+            $type = EffectiveDated::at($employee->typeChanges->map(fn ($t) => $this->row($t))->all(), $from)['type'] ?? null;
+            if (! in_array($type, [EmployeeType::PermanentWorker->value, EmployeeType::DayLaborer->value], true)) {
+                throw ValidationException::withMessages(['effective_from' => __('errors.not_a_worker')]);
+            }
+            $this->assertFreeDate($employee->siteAssignments(), $from);
+
+            $rows = [['site_id' => $data['site_id'], 'effective_from' => $from]];
+            $returnsOn = $data['returns_on'] ?? null;
+            if ($returnsOn !== null) {
+                $previous = $employee->siteAssignments()->where('effective_from', '<', $from)->orderByDesc('effective_from')->value('site_id');
+                if ($previous === null) {
+                    throw ValidationException::withMessages(['returns_on' => __('errors.no_previous_site')]);
+                }
+                if ($employee->siteAssignments()->where('effective_from', '>', $from)->where('effective_from', '<=', $returnsOn)->exists()) {
+                    throw ValidationException::withMessages(['returns_on' => __('errors.later_move_inside')]);
+                }
+                $rows[] = ['site_id' => $previous, 'effective_from' => $returnsOn];
+            }
+
+            $employee->siteAssignments()->createMany($rows);
+        });
 
         return $this->show($id);
     }
@@ -282,7 +330,7 @@ final class EmployeeService
     /** @return array<string, mixed> */
     private function summary(Employee $e, bool $full): array
     {
-        return Arr::except($e->toArray(), [...self::HIDDEN, 'type_changes', 'pay_changes', 'documents', 'manager_assignments', ...($full ? [] : self::SENSITIVE)]);
+        return Arr::except($e->toArray(), [...self::HIDDEN, 'type_changes', 'pay_changes', 'documents', 'manager_assignments', 'site_assignments', ...($full ? [] : self::SENSITIVE)]);
     }
 
     /** @return array<string, mixed> */

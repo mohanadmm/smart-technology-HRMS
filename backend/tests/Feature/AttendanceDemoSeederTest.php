@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceDay;
 use App\Modules\Attendance\Infrastructure\Eloquent\OfficialHoliday;
+use App\Modules\Employees\Application\EmployeeService;
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use Database\Seeders\AttendanceDemoSeeder;
@@ -20,6 +21,7 @@ class AttendanceDemoSeederTest extends TestCase
     public function test_demo_seeder_is_repeatable_and_refuses_production(): void
     {
         $this->cairo('2026-10-20 12:00');
+        $manager = $this->makeUser('manager');
         $this->seed(AttendanceDemoSeeder::class);
         $this->seed(AttendanceDemoSeeder::class);
 
@@ -28,6 +30,11 @@ class AttendanceDemoSeederTest extends TestCase
         $this->assertSame(3, AttendanceDay::count());
         $this->assertSame('500.000000', AttendanceDay::where('date', '2026-10-04')->value('advance_amount'));
         $this->assertSame('absent', Site::find(AttendanceDay::where('date', '2026-10-05')->value('site_id'))?->leave_code);
+        $reaches = fn (string $name) => app(EmployeeService::class)->isManagedBy((string) Employee::where('name_ar', $name)->value('id'), $manager->id, '2026-10-20');
+        $this->assertTrue($reaches('Worker-1'));
+        $this->assertTrue($reaches('Laborer-2'));
+        $this->assertTrue($reaches('Engineer-2'));
+        $this->assertFalse($reaches('Engineer-3'));
 
         // Called directly: db:seed itself would stop at its production confirmation prompt first.
         $this->app->detectEnvironment(fn () => 'production');

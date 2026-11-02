@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { bulkRows, DAY_VALUES, type DayValue, parseBatch, type SheetRow, statusOf, undoRows } from './day-sheet'
+import { bulkRows, DAY_VALUES, type DayValue, fold, matches, parseBatch, type SheetRow, statusOf, undoRows } from './day-sheet'
 
 const blank = Object.fromEntries(DAY_VALUES.map((f) => [f, null])) as Record<DayValue, null>
 const row = (code: number, o: { day?: Partial<SheetRow['day']>; last_site_id?: string | null; hints?: SheetRow['hints']; department?: string | null; name_en?: string } = {}): SheetRow => ({
@@ -69,6 +69,43 @@ test('parseBatch searches the department', () => {
   expect(parseBatch('proj', rows).matches.map((r) => r.employee.code)).toEqual([1])
 })
 
+test.each([
+  ['احمد', 'أحمد'],
+  ['ايمان', 'إيمان'],
+  ['امال', 'آمال'],
+  ['فاطمه', 'فاطمة'],
+  ['مصطفي', 'مصطفى'],
+  ['١٢', '12'],
+  ['ENGINEER', 'engineer'],
+])('fold makes %s and %s the same', (a, b) => {
+  expect(fold(a)).toBe(fold(b))
+})
+
+test('matches finds a row by a folded Arabic name either way round', () => {
+  const r = { ...row(1), employee: { ...row(1).employee, name_ar: 'أحمد فاطمة' } }
+  expect(matches(r, 'احمد')).toBe(true)
+  expect(matches(r, 'فاطمه')).toBe(true)
+  expect(matches({ ...r, employee: { ...r.employee, name_ar: 'احمد' } }, 'أحمد')).toBe(true)
+  expect(matches(r, 'محمود')).toBe(false)
+})
+
+test('matches finds a row by code in Arabic digits, English name in any case, and department', () => {
+  const r = row(12, { name_en: 'Ahmed Ali', department: 'Projects' })
+  expect(matches(r, '١٢')).toBe(true)
+  expect(matches(r, 'AHMED')).toBe(true)
+  expect(matches(r, 'proj')).toBe(true)
+  expect(matches(r, 'sales')).toBe(false)
+})
+
+test('matches lets a blank query through', () => {
+  expect(matches(row(1), '  ')).toBe(true)
+})
+
+test('parseBatch folds a name search', () => {
+  const r = { ...row(1), employee: { ...row(1).employee, name_ar: 'إيمان' } }
+  expect(parseBatch('ايمان', [r, row(2)]).matches.map((x) => x.employee.code)).toEqual([1])
+})
+
 test('bulkRows present uses the last site and skips rows without one', () => {
   const a = row(1, { last_site_id: 'S1', day: { version: null } })
   const b = row(2)
@@ -102,6 +139,23 @@ test('bulkRows skips every row when the leave day-type is unknown', () => {
 test('bulkRows site sets the site unless it is already there', () => {
   const rows = [row(1), row(2, { day: stored({ site_id: 'S2' }) })]
   expect(bulkRows({ kind: 'site', siteId: 'S2' }, rows, leaveSite, false).rows).toEqual([{ employee_id: 'e1', version: null, site_id: 'S2' }])
+})
+
+test('bulkRows time keeps a field row at its stored site and sends only the given field', () => {
+  const r = row(1, { day: stored({ site_id: 'S1', in_time: '08:00:00', out_time: '17:00:00' }) })
+  expect(bulkRows({ kind: 'time', out_time: '15:00' }, [r], leaveSite, false)).toEqual({ rows: [{ employee_id: 'e1', version: 3, site_id: 'S1', out_time: '15:00' }], skipped: [] })
+})
+
+test('bulkRows time skips a field row with no stored work site', () => {
+  const missing = row(1, { last_site_id: 'S1' })
+  const absent = row(2, { day: stored({ site_id: 'L-absent', leave_code: 'absent' }) })
+  expect(bulkRows({ kind: 'time', in_time: '08:30' }, [missing, absent], leaveSite, false)).toEqual({ rows: [], skipped: [missing, absent] })
+})
+
+test('bulkRows time leaves out a row whose given values already match', () => {
+  const same = row(1, { day: stored({ site_id: 'S1', in_time: '08:00:00', out_time: '17:00:00' }) })
+  const other = row(2, { day: stored({ site_id: 'S1', in_time: '09:00:00', out_time: '17:00:00' }) })
+  expect(bulkRows({ kind: 'time', in_time: '08:00', out_time: '17:00' }, [same, other], leaveSite, false).rows).toEqual([{ employee_id: 'e2', version: 3, site_id: 'S1', in_time: '08:00', out_time: '17:00' }])
 })
 
 test('bulkRows time writes the office in-time with site_id null', () => {
