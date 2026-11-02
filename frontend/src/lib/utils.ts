@@ -16,3 +16,5 @@ export function cn(...inputs: ClassValue[]) {
 
 /** The visible focus ring for controls without one of their own. */
 export const FOCUS = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+/** A weekly-off or holiday day on the strip and the grid: bg-muted/50 would vanish on the grid's bg-muted head row. */
+export const OFF = 'bg-muted-foreground/10'

@@ -7,6 +7,8 @@ import { AttendancePage } from './attendance'
 
 const user = userEvent.setup()
 afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
   return i18n.changeLanguage('ar')
 })
@@ -232,7 +234,6 @@ test('each day head shows the short weekday name above the date, in Arabic and i
   expect(en.map((h) => h.textContent)).toEqual(['Fri30', 'Sat31', 'Sun1', 'Mon2', 'Tue3'])
   expect(above(en[3], 'Mon', '2')).toBeTruthy()
   expect(en[3]).toHaveClass('normal-case') // TableHead upper-cases, "MON" is not the key
-  vi.useRealTimers()
 })
 
 test('today is the accent column with aria-current and the other days are not', async () => {
@@ -243,7 +244,6 @@ test('today is the accent column with aria-current and the other days are not', 
   expect(h[3]).toHaveAttribute('aria-current', 'date')
   expect(h[3]).toHaveClass('bg-accent', 'text-accent-foreground')
   expect(h.filter((x) => x.hasAttribute('aria-current'))).toHaveLength(1)
-  vi.useRealTimers()
 })
 
 test('a column with a derived day is tinted on its head and on every row, others are not', async () => {
@@ -257,7 +257,6 @@ test('a column with a derived day is tinted on its head and on every row, others
   expect(td('Engineer-2 2026-10-30: Site-1')).toHaveClass('bg-muted-foreground/10') // a worked Friday in an off column
   expect(h[1]).not.toHaveClass('bg-muted-foreground/10')
   expect(td('Engineer-1 2026-10-31: Site-1')).not.toHaveClass('bg-muted-foreground/10')
-  vi.useRealTimers()
 })
 
 // jsdom has no layout: the scroller is 0–341, the sticky name column covers `pin`, and today sits at `day`
@@ -284,8 +283,6 @@ test.each([
   expect(scroll).toHaveBeenCalledWith({ left: dx })
   await user.click(screen.getByRole('button', { name: 'Engineer-1 2026-10-31: Site-1' })) // a re-render: the day editor opens
   expect(own()).toHaveLength(1)
-  vi.restoreAllMocks()
-  vi.useRealTimers()
 })
 
 test('the grid does not scroll when today is outside the period', async () => {
@@ -295,6 +292,26 @@ test('the grid does not scroll when today is outside the period', async () => {
   renderWithAuth(<AttendancePage />, ['attendance.view.all'], { path: '/attendance?group=engineer&tab=grid' })
   await screen.findByRole('table')
   expect(scroll).not.toHaveBeenCalled()
-  vi.restoreAllMocks()
-  vi.useRealTimers()
+})
+
+test('the grid waits for the site names before it mounts, so today is measured with the columns at their final width', async () => {
+  onMonday()
+  let answer: ((r: Response) => void) | undefined
+  mockFetch({ ...weekRoutes, 'GET /api/v1/sites': () => new Promise<Response>((r) => { answer = r }) as unknown as Response })
+  renderWithAuth(<AttendancePage />, ['attendance.view.all'], { path: '/attendance?group=engineer&tab=grid' })
+  await waitFor(() => expect(answer).not.toBe(undefined))
+  await new Promise((r) => setTimeout(r, 50)) // the grid list has answered by now
+  expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  answer!(json(200, { data: sites, meta: { pagination } }))
+  expect(await screen.findByRole('button', { name: 'Engineer-1 2026-10-31: Site-1' })).toBeInTheDocument()
+})
+
+test('hovering an off cell darkens its tint instead of lightening it', async () => {
+  onMonday()
+  mockFetch(weekRoutes)
+  renderWithAuth(<AttendancePage />, ['attendance.view.all'], { path: '/attendance?group=engineer&tab=grid' })
+  const off = await screen.findByRole('button', { name: 'Engineer-2 2026-10-30: Site-1' })
+  expect(off).toHaveClass('hover:bg-muted-foreground/15')
+  expect(off).not.toHaveClass('hover:bg-muted')
+  expect(screen.getByRole('button', { name: 'Engineer-2 2026-10-31: Site-1' })).toHaveClass('hover:bg-muted')
 })

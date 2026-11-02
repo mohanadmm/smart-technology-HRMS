@@ -17,7 +17,7 @@ import { ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { type BulkRow, bulkRows, MAX_BATCH, matches, type SheetAction, type SheetRow, statusOf, undoRows } from '@/lib/day-sheet'
 import { queryKey, SITES, useApi, useSave } from '@/lib/query'
-import { cn, FOCUS } from '@/lib/utils'
+import { cn, FOCUS, OFF } from '@/lib/utils'
 import { PasteDialog, TimesDialog } from './attendance-sheet-command'
 import { QUICK, SheetRows, type Status } from './attendance-sheet-rows'
 
@@ -27,8 +27,6 @@ type Sheet = { group: string; date: string; days: { date: string; missing: numbe
 export type Applied = { label: string; before: SheetRow[]; after: { employee_id: string; version: number | null }[] }
 
 const PER_PAGE = 50
-/** A weekly-off or holiday day on the strip and the grid: bg-muted/50 would vanish on the grid's bg-muted head row. */
-export const OFF = 'bg-muted-foreground/10'
 const bucket = (s: Status): Filter => (s === 'derived' ? 'leave' : s)
 // [filter, label key, the status's tone (a real category, so its number is coloured)]
 const KPIS: [Filter, string, StatTone][] = [
@@ -235,7 +233,7 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
         <div key={sheet.days[0]?.date} ref={showDay} role="group" aria-labelledby={daysId} className="flex gap-1.5 overflow-x-auto p-3 pt-2 scrollbar-thin">
           {sheet.days.map((d) => {
             const current = d.date === date
-            const isToday = d.date === today && !current // today gets accent text only; the border and aria-current mark the selected day
+            const isToday = d.date === today
             return (
               <button
                 key={d.date}
@@ -244,7 +242,7 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
                 aria-current={current ? 'date' : undefined}
                 aria-label={t('attendance.sheet.dayLabel', { date: d.date, count: d.missing })}
                 onClick={() => onDate(d.date)}
-                className={cn(FOCUS, 'flex min-h-14 min-w-14 shrink-0 flex-col items-center justify-center rounded-lg border px-1.5 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40', current ? 'border-primary bg-accent text-accent-foreground' : cn(d.off ? OFF : 'bg-card', 'hover:bg-muted', isToday && 'text-primary'))}
+                className={cn(FOCUS, 'flex min-h-14 min-w-14 shrink-0 flex-col items-center justify-center rounded-lg border px-1.5 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40', current ? 'border-primary bg-accent text-accent-foreground' : cn(d.off ? `${OFF} hover:bg-muted-foreground/15` : 'bg-card hover:bg-muted', isToday && 'text-primary'))}
               >
                 <span className={cn(!current && !isToday && 'text-muted-foreground')}>{t(`weekdayShort.${weekdayOf(d.date)}`)}</span>
                 <span className="text-sm font-semibold">{Number(d.date.slice(8))}</span>

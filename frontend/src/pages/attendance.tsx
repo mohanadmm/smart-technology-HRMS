@@ -16,12 +16,12 @@ import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTi
 import { Textarea } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { cn } from '@/lib/utils'
+import { cn, OFF } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
 import { SITES, useApi, useList, useSave } from '@/lib/query'
 import { DayEditor } from './attendance-day'
 import { ImportTab } from './attendance-import'
-import { DaySheet, OFF } from './attendance-sheet'
+import { DaySheet } from './attendance-sheet'
 import { NotFoundPage } from './pages'
 
 const GROUPS = ['office', 'engineer', 'permanent_worker', 'day_laborer']
@@ -208,7 +208,7 @@ function Grid({ group, start, onOpenDay }: { group: string; start: string; onOpe
   const { t, i18n } = useTranslation()
   const [page, setPage] = useState(1)
   const { rows, total, err, loading } = useList(`/attendance/grid?${new URLSearchParams({ group, period_start: start, page: String(page), per_page: String(PER_PAGE) })}`)
-  const { data: sites = [] } = useApi<Row[]>(SITES)
+  const { data: sites = [], loading: sitesLoading } = useApi<Row[]>(SITES)
   const grid = rows as GridRow[]
   const today = cairoToday()
   const offDays = new Set(grid.flatMap((r) => r.days.filter((d) => d.state === 'derived' || d.source === 'derived').map((d) => d.date)))
@@ -223,7 +223,7 @@ function Grid({ group, start, onOpenDay }: { group: string; start: string; onOpe
     return d.site_id ? siteName(d.site_id) : t('attendance.present')
   }
 
-  if (loading) return <TableSkeleton rows={8} />
+  if (loading || sitesLoading) return <TableSkeleton rows={8} /> // site names widen the columns, so showToday measures after them
   if (err) return <div className="p-4"><ErrorBanner err={err} shown={[]} /></div>
   if (!grid.length) return <EmptyState icon={Users} title={t('attendance.empty')} />
   return (
@@ -254,7 +254,7 @@ function Grid({ group, start, onOpenDay }: { group: string; start: string; onOpe
                 const off = d.state === 'future' || d.state === 'not_employed'
                 return (
                   <TableCell key={d.date} className={cn('px-0.5 py-1 first:ps-0.5 last:pe-0.5', offDays.has(d.date) && OFF)}>
-                    <button type="button" disabled={off} aria-label={`${localName(employee, i18n.language)} ${d.date}: ${text}`} className={cn(CELL, LOOK[d.state])} onClick={() => onOpenDay(employee, d.date)}>
+                    <button type="button" disabled={off} aria-label={`${localName(employee, i18n.language)} ${d.date}: ${text}`} className={cn(CELL, LOOK[d.state], offDays.has(d.date) && d.state !== 'missing' && 'hover:bg-muted-foreground/15')} onClick={() => onOpenDay(employee, d.date)}>
                       {off ? <span aria-hidden>—</span> : text}
                     </button>
                   </TableCell>

@@ -177,6 +177,8 @@ test('the strip shows the short weekday above the date and tints the days the se
   expect(within(monday).getByText('إثنين').compareDocumentPosition(within(monday).getByText('2')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(monday).toHaveClass('min-w-14') // «أربعاء» fits
   expect(day('2026-10-31')).toHaveClass('bg-muted-foreground/10')
+  expect(day('2026-10-31')).toHaveClass('hover:bg-muted-foreground/15') // hover darkens the tint, never lightens it
+  expect(day('2026-10-31')).not.toHaveClass('hover:bg-muted')
   expect(day('2026-10-30')).not.toHaveClass('bg-muted-foreground/10')
   // the selected day keeps the border and aria-current; today, not selected, only gets accent text
   expect(monday).toHaveAttribute('aria-current', 'date')
