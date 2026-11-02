@@ -7,7 +7,7 @@ import { MiniStat } from '@/components/cards/StatCard'
 import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatusBadge } from '@/components/common/StatusBadge'
-import { cairoToday, ErrorBanner, Field, FormDialog, intlLocale, localName, ltrDates, type Row, SelectField, useCairoTime } from '@/components/form'
+import { cairoToday, ErrorBanner, Field, FormDialog, localName, ltrDates, type Row, SelectField, useCairoTime, weekdayOf } from '@/components/form'
 import { TableSkeleton } from '@/components/layout/PageSkeleton'
 import { Pagination } from '@/components/tables/Pagination'
 import { Button } from '@/components/ui/button'
@@ -29,7 +29,7 @@ const PER_PAGE = 50
 const TABS = ['sheet', 'grid', 'import'] // import only with attendance.edit
 
 type Period = { group: string; start: string; end: string; prev_start: string; next_start: string | null; is_locked: boolean; lock: { locked_by: { name: string } | null; locked_at: string | null } | null; missing: number }
-type Day = { date: string; state: 'not_employed' | 'stored' | 'derived' | 'future' | 'missing'; site_id: string | null; leave_code: string | null }
+type Day = { date: string; state: 'not_employed' | 'stored' | 'derived' | 'future' | 'missing'; source?: string | null; site_id: string | null; leave_code: string | null }
 type GridRow = { employee: Row; days: Day[] }
 
 const STATE_KEY: Partial<Record<Day['state'], string>> = { missing: 'attendance.state.missing', future: 'attendance.state.future', not_employed: 'attendance.state.notEmployed' }
@@ -40,7 +40,8 @@ const LOOK: Record<Day['state'], string> = {
   future: 'text-muted-foreground opacity-50',
   not_employed: 'text-muted-foreground opacity-50',
 }
-const CELL = 'block min-h-11 w-full min-w-11 max-w-28 truncate rounded-md px-1.5 text-center text-xs transition-colors outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed'
+const OFF = 'bg-muted-foreground/10' // a weekly-off or holiday column: bg-muted/50 would vanish on the bg-muted head row
+const CELL = 'block min-h-11 w-full min-w-14 max-w-28 truncate rounded-md px-1.5 text-center text-xs transition-colors outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed'
 
 /** `?date=` when it is a real date not after today in Cairo, else today. */
 function pickDate(s: string | null) {
@@ -187,14 +188,31 @@ export function AttendancePage() {
   )
 }
 
-/** One page of the period grid: a sticky employee column, then one button per day. */
+/**
+ * Scrolls the grid's own box (the Table wrapper) so today's column shows beside the sticky name column, never the page. Like the
+ * strip's showDay, a module-level ref runs once when the table mounts, not on every render. The free area is the wider side of
+ * the box next to the sticky head cell (left of it in RTL, right of it in LTR); scrollBy is in screen pixels, so both work.
+ */
+function showToday(table: HTMLTableElement | null) {
+  const box = table?.parentElement
+  const b = box?.getBoundingClientRect()
+  const pin = table?.querySelector('th')?.getBoundingClientRect()
+  const day = table?.querySelector('th[aria-current="date"]')?.getBoundingClientRect()
+  if (!box || !b || !pin || !day) return
+  const [left, right] = pin.left - b.left > b.right - pin.right ? [b.left, pin.left] : [pin.right, b.right]
+  const dx = day.left < left ? day.left - left : day.right > right ? day.right - right : 0
+  if (dx) box.scrollBy({ left: dx })
+}
+
+/** One page of the period grid: a sticky employee column, then one button per day; a column is off when some row's day is derived. */
 function Grid({ group, start, onOpenDay }: { group: string; start: string; onOpenDay: (employee: Row, date: string) => void }) {
   const { t, i18n } = useTranslation()
   const [page, setPage] = useState(1)
   const { rows, total, err, loading } = useList(`/attendance/grid?${new URLSearchParams({ group, period_start: start, page: String(page), per_page: String(PER_PAGE) })}`)
   const { data: sites = [] } = useApi<Row[]>(SITES)
   const grid = rows as GridRow[]
-  const weekday = new Intl.DateTimeFormat(intlLocale(i18n.language), { weekday: 'narrow', timeZone: 'UTC' })
+  const today = cairoToday()
+  const offDays = new Set(grid.flatMap((r) => r.days.filter((d) => d.state === 'derived' || d.source === 'derived').map((d) => d.date)))
   const siteName = (id: string) => {
     const s = sites.find((x) => x.id === id)
     return s ? localName(s, i18n.language) : '—'
@@ -211,14 +229,14 @@ function Grid({ group, start, onOpenDay }: { group: string; start: string; onOpe
   if (!grid.length) return <EmptyState icon={Users} title={t('attendance.empty')} />
   return (
     <>
-      <Table>
+      <Table ref={showToday}>
         <TableHeader>
           <TableRow>
             <TableHead className="sticky start-0 z-10 bg-muted">{t('attendance.employee')}</TableHead>
             {grid[0].days.map(({ date }) => (
-              <TableHead key={date} className="px-1 text-center first:ps-1 last:pe-1">
-                <div className="tabular text-foreground">{Number(date.slice(8))}</div>
-                <div className="normal-case">{weekday.format(new Date(`${date}T00:00:00Z`))}</div>
+              <TableHead key={date} aria-current={date === today ? 'date' : undefined} className={cn('min-w-14 px-1 py-1 text-center normal-case tracking-normal first:ps-1 last:pe-1', offDays.has(date) && OFF, date === today && 'border-b-2 border-primary bg-accent text-accent-foreground')}>
+                <div>{t(`weekdayShort.${weekdayOf(date)}`)}</div>
+                <div className={cn('text-sm font-semibold', date !== today && 'text-foreground')}>{Number(date.slice(8))}</div>
               </TableHead>
             ))}
           </TableRow>
@@ -236,7 +254,7 @@ function Grid({ group, start, onOpenDay }: { group: string; start: string; onOpe
                 const text = label(d)
                 const off = d.state === 'future' || d.state === 'not_employed'
                 return (
-                  <TableCell key={d.date} className="px-0.5 py-1 first:ps-0.5 last:pe-0.5">
+                  <TableCell key={d.date} className={cn('px-0.5 py-1 first:ps-0.5 last:pe-0.5', offDays.has(d.date) && OFF)}>
                     <button type="button" disabled={off} aria-label={`${localName(employee, i18n.language)} ${d.date}: ${text}`} className={cn(CELL, LOOK[d.state])} onClick={() => onOpenDay(employee, d.date)}>
                       {off ? <span aria-hidden>—</span> : text}
                     </button>

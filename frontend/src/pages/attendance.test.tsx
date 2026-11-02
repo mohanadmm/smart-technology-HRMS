@@ -203,3 +203,98 @@ test('in Arabic the grid keeps the Arabic site and employee names', async () => 
   renderWithAuth(<AttendancePage />, ['attendance.view.all'], { path: '/attendance?group=engineer&tab=grid' })
   expect(await screen.findByRole('button', { name: 'مهندس-1 2026-10-01: موقع-1' })).toBeInTheDocument()
 })
+
+// the engineers' period 26 Oct → 25 Nov 2026 with today Monday 2 Nov: Friday 30 Oct is derived for one row, so its column is off
+const week = [{ employee: { id: 'e1', code: 1, name_ar: 'Engineer-1', name_en: 'Engineer-1' },
+  days: [cell('2026-10-30', 'derived', { leave_code: 'friday' }), cell('2026-10-31', 'stored', { site_id: 's1' }), cell('2026-11-01', 'stored', { site_id: 's1' }), cell('2026-11-02', 'missing'), cell('2026-11-03', 'future')] },
+{ employee: { id: 'e2', code: 2, name_ar: 'Engineer-2', name_en: 'Engineer-2' },
+  days: [cell('2026-10-30', 'stored', { site_id: 's1' }), cell('2026-10-31', 'stored', { site_id: 's1' }), cell('2026-11-01', 'stored', { site_id: 's1' }), cell('2026-11-02', 'missing'), cell('2026-11-03', 'future')] }]
+const weekRoutes = { ...routes, 'GET /api/v1/attendance/grid': () => json(200, { data: week, meta: { pagination } }) }
+const onMonday = () => {
+  vi.useFakeTimers({ toFake: ['Date'] }) // only the clock: user-event keeps its real timers
+  vi.setSystemTime(new Date('2026-11-02T10:00:00Z'))
+}
+const heads = async () => (await screen.findAllByRole('columnheader')).slice(1) // after the employee column
+const above = (head: HTMLElement, name: string, n: string) =>
+  within(head).getByText(name).compareDocumentPosition(within(head).getByText(n)) & Node.DOCUMENT_POSITION_FOLLOWING
+
+test('each day head shows the short weekday name above the date, in Arabic and in English', async () => {
+  onMonday()
+  mockFetch(weekRoutes)
+  const { unmount } = renderWithAuth(<AttendancePage />, ['attendance.view.all'], { path: '/attendance?group=engineer&tab=grid' })
+  const ar = await heads()
+  expect(ar.map((h) => h.textContent)).toEqual(['جمعة30', 'سبت31', 'أحد1', 'إثنين2', 'ثلاثاء3'])
+  expect(above(ar[3], 'إثنين', '2')).toBeTruthy()
+  unmount()
+  await i18n.changeLanguage('en')
+  renderWithAuth(<AttendancePage />, ['attendance.view.all'], { path: '/attendance?group=engineer&tab=grid' })
+  const en = await heads()
+  expect(en.map((h) => h.textContent)).toEqual(['Fri30', 'Sat31', 'Sun1', 'Mon2', 'Tue3'])
+  expect(above(en[3], 'Mon', '2')).toBeTruthy()
+  expect(en[3]).toHaveClass('normal-case') // TableHead upper-cases, "MON" is not the key
+  vi.useRealTimers()
+})
+
+test('today is the accent column with aria-current and the other days are not', async () => {
+  onMonday()
+  mockFetch(weekRoutes)
+  renderWithAuth(<AttendancePage />, ['attendance.view.all'], { path: '/attendance?group=engineer&tab=grid' })
+  const h = await heads()
+  expect(h[3]).toHaveAttribute('aria-current', 'date')
+  expect(h[3]).toHaveClass('bg-accent', 'text-accent-foreground')
+  expect(h.filter((x) => x.hasAttribute('aria-current'))).toHaveLength(1)
+  vi.useRealTimers()
+})
+
+test('a column with a derived day is tinted on its head and on every row, others are not', async () => {
+  onMonday()
+  mockFetch(weekRoutes)
+  renderWithAuth(<AttendancePage />, ['attendance.view.all'], { path: '/attendance?group=engineer&tab=grid' })
+  const h = await heads()
+  const td = (name: string) => screen.getByRole('button', { name }).closest('td')
+  expect(h[0]).toHaveClass('bg-muted-foreground/10') // visible on the bg-muted head row, unlike bg-muted/50
+  expect(td('Engineer-1 2026-10-30: جمعة')).toHaveClass('bg-muted-foreground/10')
+  expect(td('Engineer-2 2026-10-30: Site-1')).toHaveClass('bg-muted-foreground/10') // a worked Friday in an off column
+  expect(h[1]).not.toHaveClass('bg-muted-foreground/10')
+  expect(td('Engineer-1 2026-10-31: Site-1')).not.toHaveClass('bg-muted-foreground/10')
+  vi.useRealTimers()
+})
+
+// jsdom has no layout: the scroller is 0–341, the sticky name column covers `pin`, and today sits at `day`
+const layout = (pin: [number, number], day: [number, number]) =>
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+    const [left, right] = this.getAttribute('aria-current') === 'date' ? day : this.matches('th:first-child') ? pin : [0, 341]
+    return { left, right } as DOMRect
+  })
+
+test.each([
+  ['RTL, today past the end', [217, 341], [-300, -244], -300],
+  ['RTL, today under the sticky names', [217, 341], [250, 306], 89],
+  ['LTR, today past the end', [0, 167], [500, 556], 215],
+  ['LTR, today under the sticky names', [0, 167], [120, 176], -47],
+] as const)('the grid scrolls its own box once so today shows beside the sticky names (%s), never again on a re-render', async (_, pin, day, dx) => {
+  onMonday()
+  layout([...pin], [...day])
+  const scroll = vi.spyOn(Element.prototype, 'scrollBy')
+  mockFetch(weekRoutes)
+  renderWithAuth(<AttendancePage />, ['attendance.view.all'], { path: '/attendance?group=engineer&tab=grid' })
+  const box = (await screen.findByRole('table')).parentElement
+  const own = () => scroll.mock.contexts.filter((el) => el === box)
+  expect(own()).toHaveLength(1)
+  expect(scroll).toHaveBeenCalledWith({ left: dx })
+  await user.click(screen.getByRole('button', { name: 'Engineer-1 2026-10-31: Site-1' })) // a re-render: the day editor opens
+  expect(own()).toHaveLength(1)
+  vi.restoreAllMocks()
+  vi.useRealTimers()
+})
+
+test('the grid does not scroll when today is outside the period', async () => {
+  const scroll = vi.spyOn(Element.prototype, 'scrollBy')
+  onMonday()
+  mockFetch(routes) // September–October, today is later
+  renderWithAuth(<AttendancePage />, ['attendance.view.all'], { path: '/attendance?group=engineer&tab=grid' })
+  await screen.findByRole('table')
+  expect(scroll).not.toHaveBeenCalled()
+  vi.restoreAllMocks()
+  vi.useRealTimers()
+})

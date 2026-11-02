@@ -426,6 +426,15 @@
     "thursday": "الخميس",
     "friday": "الجمعة"
   },
+  "weekdayShort": {
+    "sunday": "أحد",
+    "monday": "إثنين",
+    "tuesday": "ثلاثاء",
+    "wednesday": "أربعاء",
+    "thursday": "خميس",
+    "friday": "جمعة",
+    "saturday": "سبت"
+  },
   "attendance": {
     "subtitle": "سجل أيام كل موظف حسب فترة مجموعته.",
     "groupLabel": "المجموعة",

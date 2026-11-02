@@ -426,6 +426,15 @@
     "thursday": "Thursday",
     "friday": "Friday"
   },
+  "weekdayShort": {
+    "sunday": "Sun",
+    "monday": "Mon",
+    "tuesday": "Tue",
+    "wednesday": "Wed",
+    "thursday": "Thu",
+    "friday": "Fri",
+    "saturday": "Sat"
+  },
   "attendance": {
     "subtitle": "Each employee's days, by their group's period.",
     "groupLabel": "Group",
