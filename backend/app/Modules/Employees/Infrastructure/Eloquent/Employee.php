@@ -39,4 +39,10 @@ class Employee extends Model
     {
         return $this->hasMany(EmployeeManagerAssignment::class);
     }
+
+    /** @return HasMany<EmployeeSiteAssignment, $this> */
+    public function siteAssignments(): HasMany
+    {
+        return $this->hasMany(EmployeeSiteAssignment::class);
+    }
 }

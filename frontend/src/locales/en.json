@@ -40,7 +40,8 @@
       "admin": "System administration"
     },
     "settings": "Settings",
-    "attendance": "Attendance"
+    "attendance": "Attendance",
+    "siteDay": "Site attendance"
   },
   "toggle": {
     "language": "Language",
@@ -89,7 +90,8 @@
       "profile": "Profile",
       "manager": "Manager",
       "history": "History",
-      "documents": "Documents"
+      "documents": "Documents",
+      "site": "Site"
     },
     "subtitle": "Every employee and worker, of every type.",
     "stat": {
@@ -180,7 +182,14 @@
     "addRule": "Add rule",
     "yes": "Yes",
     "managers": "Managers",
-    "addLeaveType": "Add leave type"
+    "addLeaveType": "Add leave type",
+    "home": "Home site",
+    "homeNone": "No home site",
+    "move": "Move to a site",
+    "returnsOn": "Returns to the previous site on",
+    "homeHistory": "Home site history",
+    "workers": "Workers",
+    "workersNone": "No workers are based at this site today."
   },
   "residence": {
     "add": "Add residence"
@@ -238,7 +247,8 @@
       "create": "Employees: create",
       "edit": "Employees: edit",
       "delete": "Employees: delete",
-      "assign_manager": "Employees: assign manager"
+      "assign_manager": "Employees: assign manager",
+      "assign_site": "Employees: assign home site"
     },
     "site": {
       "view": "Sites: view",
@@ -282,12 +292,15 @@
       "delete": "Delete",
       "assign_manager": "Assign manager",
       "manage": "Manage",
-      "lock": "Lock"
+      "lock": "Lock",
+      "assign_site": "Assign home site",
+      "record": "Record"
     },
     "attendance": {
       "view": "Attendance: view",
       "edit": "Attendance: edit",
-      "lock": "Attendance: lock period"
+      "lock": "Attendance: lock period",
+      "record": "Attendance: record"
     },
     "holiday": {
       "manage": "Official holidays: manage"
@@ -344,7 +357,8 @@
       "attendance_days": "Attendance days",
       "attendance_locks": "Attendance locks",
       "official_holidays": "Official holidays",
-      "notifications": "Notifications"
+      "notifications": "Notifications",
+      "employee_site_assignments": "Workers' home sites"
     }
   },
   "settings": {
@@ -398,8 +412,8 @@
     "leave_days_under_one_year": "Leave days, under one year of service",
     "leave_days_one_year_plus": "Leave days, one year of service or more",
     "leave_casual_days": "Casual leave days",
-    "worker_shift_start": "Permanent workers' shift start",
-    "worker_shift_end": "Permanent workers' shift end"
+    "worker_shift_start": "Field shift start",
+    "worker_shift_end": "Field shift end"
   },
   "weekday": {
     "saturday": "Saturday",
@@ -660,5 +674,19 @@
     "choosePeriod": "Choose AM or PM.",
     "noPeriod": "No AM or PM chosen",
     "invalid": "Invalid time."
+  },
+  "siteDay": {
+    "rows": "People at the site",
+    "site": "Site",
+    "today": "Today",
+    "engineers": "Engineers",
+    "present": "Present",
+    "absent": "Absent",
+    "sick": "Sick",
+    "more": "Other leave types",
+    "atSite": "At site: {{site}}",
+    "otherSite": "At another site",
+    "empty": "No one is assigned to this site on this day.",
+    "noSites": "No sites are assigned to you. Contact HR."
   }
 }

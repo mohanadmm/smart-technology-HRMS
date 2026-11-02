@@ -105,3 +105,14 @@ test('the header shows the notification bell before the account menu', async () 
   const bell = await screen.findByRole('button', { name: /^فتح الإشعارات/ })
   expect(bell.compareDocumentPosition(profile) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })
+
+test('a manager lands on /site-day', async () => {
+  localStorage.setItem('hrms.auth.token.v1', 't'.repeat(64))
+  mockFetch({
+    'GET /api/v1/auth/me': () => json(200, { data: me(['attendance.record.own', 'employee.view.own', 'site.view.own']) }),
+    'GET /api/v1/sites': () => json(200, { data: [], meta: { pagination: { ...pagination, total: 0 } } }),
+  })
+  renderApp('/')
+  expect(await screen.findByText('لا توجد مواقع مسندة إليك. تواصل مع الموارد البشرية.')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'حضور الموقع' })).toHaveAttribute('aria-current', 'page')
+})

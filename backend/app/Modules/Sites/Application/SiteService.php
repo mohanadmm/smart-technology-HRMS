@@ -117,6 +117,12 @@ final class SiteService
         return $this->show($id);
     }
 
+    /** @return list<string> the sites the user manages (P1: undated, so the current set on any date) */
+    public function idsManagedBy(string $managerId): array
+    {
+        return array_values(DB::table('manager_sites')->where('manager_id', $managerId)->pluck('site_id')->map(fn ($id) => (string) $id)->all());
+    }
+
     /** @return Builder<Site> */
     private function visibleTo(?string $ownerId): Builder
     {

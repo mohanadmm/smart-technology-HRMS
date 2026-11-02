@@ -86,7 +86,7 @@ final class AttendanceGrid
      * One group's employees on one date (those employed then, by code), with the day, its hints, the last site and the period totals,
      * plus the period's missing days per date.
      *
-     * @return array{group: string, date: string, days: list<array{date: string, missing: int}>, rows: list<array<string, mixed>>}
+     * @return array{group: string, date: string, days: list<array{date: string, missing: int, off: bool}>, rows: list<array<string, mixed>>}
      */
     public function sheet(EmployeeType $g, string $date, ?string $ownerId = null): array
     {
@@ -108,6 +108,7 @@ final class AttendanceGrid
                 $missing[$d['date']] += $d['state'] === 'missing' ? 1 : 0;
             }
         }
+        $off = $this->days->offDays($p);
 
         $rows = [];
         foreach ($employed as $e) {
@@ -138,7 +139,7 @@ final class AttendanceGrid
         return [
             'group' => $g->value,
             'date' => $date,
-            'days' => array_map(fn (string $d, int $n) => ['date' => $d, 'missing' => $n], array_keys($missing), array_values($missing)),
+            'days' => array_map(fn (string $d, int $n) => ['date' => $d, 'missing' => $n, 'off' => $off[$d]], array_keys($missing), array_values($missing)),
             'rows' => $rows,
         ];
     }

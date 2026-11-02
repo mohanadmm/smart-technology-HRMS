@@ -9,6 +9,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\AttendanceFixtures;
 use Tests\TestCase;
 
@@ -48,7 +49,107 @@ class AttendanceBulkTest extends TestCase
     {
         $w = $this->employee('permanent_worker');
         $this->bulk([['employee_id' => $w, 'site_id' => $this->site]])->assertOk();
-        $this->day($w)->assertJsonPath('data.scheduled_in', '08:00')->assertJsonPath('data.transport', 'full');
+        $this->day($w)->assertJsonPath('data.scheduled_in', '08:00')->assertJsonPath('data.scheduled_out', '17:00')->assertJsonPath('data.transport', 'full')
+            ->assertJsonPath('data.in_time', '08:00')->assertJsonPath('data.out_time', '17:00');
+    }
+
+    /** @return array<string, array{string}> */
+    public static function fieldTypes(): array
+    {
+        return ['engineer' => ['engineer'], 'permanent worker' => ['permanent_worker'], 'day laborer' => ['day_laborer']];
+    }
+
+    #[DataProvider('fieldTypes')]
+    public function test_a_field_employee_marked_present_gets_the_field_shift_times(string $type): void
+    {
+        $e = $this->employee($type);
+        $this->bulk([['employee_id' => $e, 'site_id' => $this->site]])->assertOk();
+        $this->day($e)->assertJsonPath('data.in_time', '08:00')->assertJsonPath('data.out_time', '17:00');
+    }
+
+    public function test_office_present_and_a_leave_day_get_no_times(): void
+    {
+        [$office, $eng] = [$this->employee('office'), $this->employee('engineer')];
+        $this->bulk([['employee_id' => $office, 'site_id' => null], ['employee_id' => $eng, 'site_id' => $this->leave['sick']]])->assertOk();
+        $this->day($office)->assertJsonPath('data.in_time', null)->assertJsonPath('data.out_time', null);
+        $this->day($eng)->assertJsonPath('data.in_time', null)->assertJsonPath('data.out_time', null);
+    }
+
+    public function test_the_employees_own_shift_wins_over_the_field_shift(): void
+    {
+        $e = $this->employee('engineer', '2026-01-01', ['shift_start' => '07:00', 'shift_end' => '15:00']);
+        $this->bulk([['employee_id' => $e, 'site_id' => $this->site]])->assertOk();
+        $this->day($e)->assertJsonPath('data.in_time', '07:00')->assertJsonPath('data.out_time', '15:00');
+    }
+
+    public function test_the_default_departure_follows_the_setting(): void
+    {
+        $this->putJson('/api/v1/settings', ['worker_shift_end' => '18:30'])->assertOk();
+        $e = $this->employee('day_laborer');
+        $this->bulk([['employee_id' => $e, 'site_id' => $this->site]])->assertOk();
+        $this->day($e)->assertJsonPath('data.out_time', '18:30');
+    }
+
+    public function test_a_sent_time_wins_and_only_the_unsent_one_is_filled(): void
+    {
+        $e = $this->employee('engineer');
+        $this->bulk([['employee_id' => $e, 'site_id' => $this->site, 'out_time' => '19:00']])->assertOk();
+        $this->day($e)->assertJsonPath('data.in_time', '08:00')->assertJsonPath('data.out_time', '19:00');
+    }
+
+    public function test_a_kept_time_wins_over_the_default(): void
+    {
+        $e = $this->employee('engineer');
+        $this->putDay($e, self::DATE, ['site_id' => $this->site, 'in_time' => '09:15', 'out_time' => '18:00'])->assertOk();
+        $other = $this->workSite('Site-2');
+        $this->bulk([['employee_id' => $e, 'version' => 1, 'site_id' => $other]])->assertOk();
+        $this->day($e)->assertJsonPath('data.site_id', $other)->assertJsonPath('data.in_time', '09:15')->assertJsonPath('data.out_time', '18:00');
+    }
+
+    public function test_leave_to_work_fills_the_default_times(): void
+    {
+        $e = $this->employee('day_laborer');
+        $this->putDay($e, self::DATE, ['site_id' => $this->leave['sick'], 'note' => 'n'])->assertOk();
+        $this->bulk([['employee_id' => $e, 'version' => 1, 'site_id' => $this->site]])->assertOk();
+        $this->day($e)->assertJsonPath('data.in_time', '08:00')->assertJsonPath('data.out_time', '17:00')->assertJsonPath('data.note', 'n');
+    }
+
+    public function test_a_sent_null_clears_the_time_and_is_not_filled(): void
+    {
+        $e = $this->employee('day_laborer');
+        $this->bulk([['employee_id' => $e, 'site_id' => $this->site, 'in_time' => null]])->assertOk();
+        $this->day($e)->assertJsonPath('data.in_time', null)->assertJsonPath('data.out_time', '17:00');
+    }
+
+    public function test_re_marking_a_present_day_never_fills_its_missing_times(): void
+    {
+        $e = $this->employee('engineer');
+        $this->putDay($e, self::DATE, ['site_id' => $this->site])->assertOk();   // a day stored without times (single-day entry, history)
+        $audits = DB::table('audit_log')->count();
+
+        $this->bulk([['employee_id' => $e, 'version' => 1, 'site_id' => $this->site]])->assertOk()->assertJsonPath('data.0.version', 1);
+        $this->assertSame($audits, DB::table('audit_log')->count());
+        $this->bulk([['employee_id' => $e, 'version' => 1, 'site_id' => $this->workSite('Site-2')]])->assertOk()->assertJsonPath('data.0.version', 2);
+        $this->day($e)->assertJsonPath('data.in_time', null)->assertJsonPath('data.out_time', null);   // a move between work sites is not a change of kind
+    }
+
+    public function test_a_default_that_would_end_before_it_starts_is_not_filled(): void
+    {
+        $night = $this->employee('engineer', '2026-01-01', ['shift_start' => '20:00', 'shift_end' => '04:00']);
+        $late = $this->employee('day_laborer');
+        $worker = $this->employee('permanent_worker', '2026-01-01', ['shift_start' => '20:00', 'shift_end' => '04:00']);
+        $this->bulk([['employee_id' => $night, 'site_id' => $this->site], ['employee_id' => $late, 'site_id' => $this->site, 'in_time' => '18:00'], ['employee_id' => $worker, 'site_id' => $this->site]])->assertOk();
+        $this->day($night)->assertJsonPath('data.in_time', null)->assertJsonPath('data.out_time', null);
+        $this->day($late)->assertJsonPath('data.in_time', '18:00')->assertJsonPath('data.out_time', null);
+        $this->day($worker)->assertJsonPath('data.in_time', '20:00')->assertJsonPath('data.out_time', '04:00');   // a permanent worker's shift may cross midnight
+    }
+
+    public function test_a_field_row_with_a_time_and_no_site_is_refused_and_nothing_is_written(): void
+    {
+        [$a, $b] = [$this->employee('engineer'), $this->employee('engineer')];
+        $this->bulk([['employee_id' => $a, 'site_id' => $this->site], ['employee_id' => $b, 'site_id' => null, 'in_time' => '09:00']])
+            ->assertStatus(422)->assertJsonPath('error.details.0.field', 'rows.1.site_id')->assertJsonPath('error.details.0.message', __('attendance.rule.site_required'));
+        $this->assertSame(0, AttendanceDay::count());
     }
 
     public function test_a_stale_row_fails_the_whole_request_and_lists_every_conflict(): void
@@ -223,6 +324,7 @@ class AttendanceBulkTest extends TestCase
         $role = Role::create(['slug' => 'site-lead', 'name' => 'Site lead', 'name_ar' => 'مشرف']);
         $role->permissions()->attach(Permission::create(['resource' => 'attendance', 'action' => 'edit', 'scope' => 'own'])->getKey());
         [$lead, $other] = [$this->makeUser('site-lead'), $this->makeUser('manager')];
+        DB::table('manager_sites')->insert(['manager_id' => $lead->id, 'site_id' => $this->site]);
         [$mine, $theirs] = [$this->employee('engineer'), $this->employee('engineer')];
         $this->postJson("/api/v1/employees/{$mine}/manager-assignments", ['manager_id' => $lead->id, 'effective_from' => '2026-10-01'])->assertCreated();
         $this->postJson("/api/v1/employees/{$theirs}/manager-assignments", ['manager_id' => $other->id, 'effective_from' => '2026-10-01'])->assertCreated();

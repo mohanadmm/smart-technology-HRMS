@@ -113,6 +113,27 @@ class AttendanceSheetTest extends TestCase
         $this->assertSame(['2026-10-01' => 1, '2026-10-02' => 0, '2026-10-05' => 2, '2026-10-12' => 3, '2026-10-21' => 0], array_intersect_key($days, array_flip(['2026-10-01', '2026-10-02', '2026-10-05', '2026-10-12', '2026-10-21'])));
     }
 
+    public function test_a_date_is_off_on_the_groups_weekly_off_and_on_a_holiday(): void
+    {
+        $this->holiday('2026-10-06');
+        $off = fn (string $group, string $date) => array_column($this->sheet($group, $date)->json('data.days'), 'off', 'date');
+
+        $empty = $off('engineer', '2026-10-18');   // no employees: the calendar alone
+        $this->assertSame([true, true, false, false], [$empty['2026-10-16'], $empty['2026-10-06'], $empty['2026-10-17'], $empty['2026-10-01']]);
+
+        $eng = $this->employee('engineer');
+        $this->putDay($eng, '2026-10-16', ['site_id' => $this->site]);   // worked the Friday
+        $this->assertTrue($off('engineer', '2026-10-18')['2026-10-16']);
+        $this->assertSame([true, true], [$off('office', '2026-10-18')['2026-10-17'], $off('office', '2026-10-18')['2026-10-16']]);   // office: Friday and Saturday
+    }
+
+    public function test_engineer_and_laborer_rows_carry_the_time_hints(): void
+    {
+        $eng = $this->employee('engineer');
+        $this->putDay($eng, '2026-10-18', ['site_id' => $this->site, 'in_time' => '08:45', 'out_time' => '18:30']);
+        $this->sheet('engineer', '2026-10-18')->assertJsonPath('data.rows.0.hints', ['late_minutes' => 45, 'ot_minutes' => 105]);
+    }
+
     public function test_office_rows_carry_the_lateness_hint(): void
     {
         $o = $this->employee('office');

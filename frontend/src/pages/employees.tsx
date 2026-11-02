@@ -1,4 +1,4 @@
-import { Briefcase, CalendarDays, FileText, HardHat, History as HistoryIcon, IdCard, type LucideIcon, UserCog, UserPlus, Users, Wrench } from 'lucide-react'
+import { Briefcase, CalendarDays, FileText, HardHat, History as HistoryIcon, IdCard, type LucideIcon, MapPin, UserCog, UserPlus, Users, Wrench } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -23,6 +23,8 @@ import { useAuth } from '@/lib/auth'
 import { RESIDENCES, USERS, useApi, useList, useSave } from '@/lib/query'
 
 const TYPES = ['office', 'engineer', 'permanent_worker', 'day_laborer']
+const WORKERS = ['permanent_worker', 'day_laborer'] // a worker belongs to a home site; its manager follows the site
+const WORK_SITES = '/sites?per_page=100&kind=work&active=true' // the same list the fares grid loads
 const GENDERS = ['male', 'female']
 const PAY_METHODS = ['cash', 'bank']
 const DOC_KINDS = ['national_id_copy', 'work_stub', 'criminal_record', 'qualification', 'birth_certificate', 'insurance_form_6', 'photos', 'military_status', 'other']
@@ -181,6 +183,7 @@ export function EmployeesPage() {
 const TABS: [string, LucideIcon][] = [
   ['profile', IdCard],
   ['manager', UserCog],
+  ['site', MapPin],
   ['history', HistoryIcon],
   ['documents', FileText],
 ]
@@ -307,7 +310,9 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
       </div>
     )
 
-  const tab = TABS.some(([v]) => v === params.get('tab')) ? params.get('tab')! : 'profile'
+  const worker = WORKERS.includes(emp.current_type)
+  const tabs = TABS.filter(([v]) => v !== (worker ? 'manager' : 'site'))
+  const tab = tabs.some(([v]) => v === params.get('tab')) ? params.get('tab')! : 'profile'
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <ErrorBanner err={loadErr} shown={[]} />
@@ -324,15 +329,15 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
         </div>
         {emp.current_type && <Badge variant="info" className="self-start sm:self-center">{t(`enum.type.${emp.current_type}`)}</Badge>}
         <dl className="flex gap-2 text-sm">
-          <dt className="text-muted-foreground">{t('manager.title')}</dt>
-          <dd>{emp.current_manager?.name ?? t('manager.none')}</dd>
+          <dt className="text-muted-foreground">{t(worker ? 'site.home' : 'manager.title')}</dt>
+          <dd>{worker ? emp.current_site?.name_ar ?? t('site.homeNone') : emp.current_manager?.name ?? t('manager.none')}</dd>
         </dl>
-        {can('employee.assign_manager') && <AssignManagerDialog empId={emp.id} />}
+        {worker ? can('employee.assign_site') && <MoveSiteDialog empId={emp.id} /> : can('employee.assign_manager') && <AssignManagerDialog empId={emp.id} />}
       </Card>
 
       <Tabs value={tab} onValueChange={(v) => setParams({ tab: v }, { replace: true })}>
         <TabsList>
-          {TABS.map(([v, Icon]) => (
+          {tabs.map(([v, Icon]) => (
             <TabsTrigger key={v} value={v}>
               <Icon className="hidden size-4 sm:block" aria-hidden /> {t(`employee.tab.${v}`)}
             </TabsTrigger>
@@ -343,6 +348,7 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
           {{
             profile,
             manager: <ManagerHistory emp={emp} />,
+            site: <SiteHistory emp={emp} />,
             history: <History emp={emp} />,
             documents: <Documents emp={emp} />,
           }[tab]}
@@ -388,6 +394,80 @@ function ManagerSelect(f: FormApi) {
       <ErrorBanner err={err} shown={[]} />
       <SelectField name="manager_id" label={t('manager.title')} blank options={users.filter((u) => u.is_active).map((u) => [u.id, u.name])} {...f} />
     </>
+  )
+}
+
+/** Moves a worker to a home site from a date; with a return date the API also puts them back on the site they had before. */
+function MoveSiteDialog({ empId }: { empId: string }) {
+  const { t } = useTranslation()
+  const send = useSave()
+  const shown = ['site_id', 'effective_from', 'returns_on']
+  return (
+    <FormDialog
+      title={t('site.move')}
+      trigger={
+        <Button type="button" variant="outline">
+          <MapPin />
+          {t('site.move')}
+        </Button>
+      }
+      init={{ site_id: '', effective_from: '', returns_on: '' }}
+      submit={(form) => send(`/employees/${empId}/site-assignments`, { body: clean(form, shown) })}
+      onDone={() => {}}
+      shown={shown}
+    >
+      {(f) => (
+        <>
+          <SiteSelect {...f} />
+          <TextField name="effective_from" label={t('change.effective_from')} type="date" {...f} />
+          <TextField name="returns_on" label={t('site.returnsOn')} type="date" {...f} />
+        </>
+      )}
+    </FormDialog>
+  )
+}
+
+/** Mounted with the dialog body, so the active work sites load when it opens. */
+function SiteSelect(f: FormApi) {
+  const { t } = useTranslation()
+  const { rows, err } = useList(WORK_SITES)
+  return (
+    <>
+      <ErrorBanner err={err} shown={[]} />
+      <SelectField name="site_id" label={t('site.home')} blank options={rows.map((s) => [s.id, s.name_ar])} {...f} />
+    </>
+  )
+}
+
+function SiteHistory({ emp }: { emp: Row }) {
+  const { t } = useTranslation()
+  const rows: Row[] = [...emp.site_assignments].reverse() // the API sends oldest first
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader>
+        <CardTitle>{t('site.homeHistory')}</CardTitle>
+      </CardHeader>
+      {rows.length ? (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('site.home')}</TableHead>
+              <TableHead>{t('change.effective_from')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((s) => (
+              <TableRow key={s.id}>
+                <TableCell className="font-medium">{s.site_name_ar ?? '—'}</TableCell>
+                <TableCell>{s.effective_from}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      ) : (
+        <EmptyState icon={MapPin} title={t('site.homeNone')} />
+      )}
+    </Card>
   )
 }
 

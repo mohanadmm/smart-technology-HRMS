@@ -10,6 +10,7 @@ use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Employees\Domain\Gender;
 use App\Modules\Employees\Domain\PayMethod;
 use App\Modules\Identity\Presentation\RequestScope;
+use App\Modules\Sites\Domain\SiteKind;
 use App\Support\Http\ApiEnvelope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,7 @@ final class EmployeeController
     {
         $f = $request->validate([
             'type' => ['sometimes', Rule::enum(EmployeeType::class)],
+            'site_id' => ['sometimes', 'uuid'],
             'search' => ['sometimes', 'nullable', 'string'],
             'per_page' => ['sometimes', 'integer', 'min:1'],
         ]);
@@ -95,6 +97,17 @@ final class EmployeeController
         ]);
 
         return ApiEnvelope::single($request, $this->employees->assignManager($employee, $data), 201);
+    }
+
+    public function assignSite(Request $request, string $employee): JsonResponse
+    {
+        $data = $request->validate([
+            'site_id' => ['required', 'uuid', Rule::exists('sites', 'id')->where('kind', SiteKind::Work->value)->where('active', true)->whereNull('deleted_at')],
+            'effective_from' => ['required', 'date_format:Y-m-d'],
+            'returns_on' => ['nullable', 'date_format:Y-m-d', 'after:effective_from'],
+        ]);
+
+        return ApiEnvelope::single($request, $this->employees->assignSite($employee, $data), 201);
     }
 
     public function document(Request $request, string $employee, string $kind): JsonResponse

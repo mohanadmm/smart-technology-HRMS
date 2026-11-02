@@ -54,7 +54,12 @@ Net = salary + travel + tower + overtime + bonus
 Example (S = 9,000): 60 late minutes after grace → 60 × 0.625 = **37.50** deducted; 2 absence days → **600** deducted; 120 OT minutes → 120 × 0.625 × 1.5 = **112.50** added.
 
 ## 2. Engineers (مهندسين): 26th → 25th
-Each day records: site, OT minutes, late minutes, minutes worked outside Alexandria, advance taken. Weekly off **Friday**.
+Each day records: site, arrival and departure, OT minutes, late minutes, minutes worked outside Alexandria, advance taken. Weekly off **Friday**.
+
+- Arrival/departure default to the field shift on Present (§13). They suggest late = max(0, arrival − shift start) and
+  OT = max(0, hours worked − **8** h) as hints, as for permanent workers (§3); the shift is the per-employee shift, else
+  **08:00–17:00** (`worker_shift_start`/`worker_shift_end`), so the default day suggests 60 OT minutes (client question 20).
+  HR confirms by entering the minutes; payroll reads only the stored minutes.
 
 - Day extra = OT min × minute rate × **1.5** − late min × minute rate × **1.5** + outside-Alex min × minute rate
 - Day cost = day rate + day extra (used for site costing, section 8)
@@ -74,9 +79,10 @@ Outside-Alex minutes are paid at ×1, with no multiplier, as in the Excel.
 - A derived day is never an absence.
 
 ## 3. Permanent workers (عمال مثبتين): 26th → 25th
-Each day records: scheduled in/out (default **08:00–16:00**), actual in/out, site, outside-Alex money, transport (full / half / none), advance. Weekly off **Friday**.
+Each day records: scheduled in/out (default **08:00–17:00**), actual in/out, site, outside-Alex money, transport (full / half / none), advance. Weekly off **Friday**.
 
-- Scheduled in/out are stored on each day; they default to **08:00–16:00** (`worker_shift_start`/`worker_shift_end`) or the pay-row override. Late minutes = max(0, actual in − scheduled in); OT minutes = max(0, time worked − **8** h), as below. Both are shown as hints.
+- Scheduled in/out are stored on each day; they default to **08:00–17:00** (`worker_shift_start`/`worker_shift_end`) or the pay-row override. Late minutes = max(0, actual in − scheduled in); OT minutes = max(0, time worked − **8** h), as below. Both are shown as hints.
+- ⚠️ Every default Present stores actual in/out 08:00–17:00 (§13), and permanent workers' OT is computed from the times, so each default day pays **60 OT minutes** unless HR edits the times (client question 20).
 - ⚠️ Late minutes do not wrap around midnight: scheduled 00:00 with arrival 23:50 the day before gives 1,430 late minutes; scheduled 23:50 with arrival 00:10 gives 0. Must a scheduled start that crosses midnight wrap?
 
 - Hours worked = actual out − actual in. If out is earlier than in, the shift crossed midnight: add 24 h.
@@ -91,7 +97,7 @@ Each day records: scheduled in/out (default **08:00–16:00**), actual in/out, s
 The Excel worker template **adds** lateness to the net (Excel error #4) and leaves transport out. The system subtracts lateness and pays transport.
 
 ## 4. Day laborers (عمال باليومية): 1–15 and 16–end
-Each day records a site. The worker has a **daily wage** (effective-dated) and a **residence**.
+Each day records a site, arrival and departure (§2 defaults and hints), OT and late minutes. The worker has a **daily wage** (effective-dated) and a **residence**.
 
 | Item | Formula |
 |---|---|
@@ -170,6 +176,13 @@ What the day sheet (كشف اليوم) shows for one group and date, then how it
   - missing = days with no stored and no derived record (a derived day, such as a weekly off or an official holiday, is never missing)
 - Missing per date = number of employees whose day on that date is missing. Future dates count 0.
 - Office on time / late: a present office day is on time when the section 1 lateness hint is 0 and late when it is above 0. A present day with no in time counts as on time.
+- Present on a field row at a work site, through the bulk write (the sheet, the attendance import, the manager's day), stores
+  arrival = field shift start and departure = field shift end when the day is new or changes kind to a work day, for each time
+  the row does not send (a sent empty time stays empty). Re-marking a present day, or moving it to another work site, fills
+  nothing. A default that would end before it starts (a shift crossing midnight) is not filled for engineers and day laborers;
+  a permanent worker's day may cross midnight. Office rows and leave days get none. Single-day entry stores what it sends.
+- A date is off (tinted on the strip and the grid) when it is the group's weekly off or an official holiday (§2a), whatever
+  the days stored on it.
 
 The sheet saves through bulk marking, under the same day rules as single-day entry:
 - All or nothing: if any row is stale (changed since loading) or breaks a rule, nothing is saved and every stale row is reported.
@@ -190,7 +203,7 @@ How an uploaded attendance template (the grid: one row per employee, one column 
 - Every change and every error names its cell (G8): the Excel row number and column letter. A row error (unknown or repeated employee code) has the row number and no column.
 - Limits (G9): 5 MB, `.xlsx` only, at most 2000 employee rows (a technical limit in code, not a setting). The file is read once per request and never stored.
 - Order of the cell checks: an unknown or out-of-scope employee code, or a code already used on an earlier row, refuses the row; then a future date, then a day not employed as the group's type; then an unchanged cell is set aside; then, on every changed cell, a locked period, an unknown site or day type, a stale version, and the day rules of single-day entry. A refused cell is skipped and listed; the other cells are still saved.
-- The import follows the template's reach: an own-scope user imports only the employees assigned to them today.
+- The import takes reach per cell: an own-scope user imports only the cells whose employee they reach on that cell's date.
 
 ## Not calculated by the system
 - Bonuses, negligence deductions, penalties, lateness exemptions, insurance shares and income tax: entered by HR.

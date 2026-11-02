@@ -18,7 +18,8 @@ class DayRulesTest extends TestCase
     {
         $this->assertSame([], DayRules::violations(EmployeeType::Engineer, self::WORK, ['in_time' => '08:00', 'out_time' => '17:00', 'late_minutes' => 10, 'ot_minutes' => 60, 'outside_minutes' => 30, 'advance_amount' => '500', 'note' => 'n']));
         $this->assertSame([['field' => 'transport', 'code' => 'field_not_allowed']], DayRules::violations(EmployeeType::Engineer, self::WORK, ['transport' => 'full']));
-        $this->assertSame([['field' => 'in_time', 'code' => 'field_not_allowed']], DayRules::violations(EmployeeType::DayLaborer, self::WORK, ['in_time' => '08:00']));
+        $this->assertSame([], DayRules::violations(EmployeeType::DayLaborer, self::WORK, ['in_time' => '08:00', 'out_time' => '17:00', 'ot_minutes' => 60, 'late_minutes' => 0, 'advance_amount' => '100', 'note' => 'n']));
+        $this->assertSame([['field' => 'scheduled_in', 'code' => 'field_not_allowed']], DayRules::violations(EmployeeType::DayLaborer, self::WORK, ['scheduled_in' => '08:00']));
         $this->assertSame([['field' => 'late_minutes', 'code' => 'field_not_allowed']], DayRules::violations(EmployeeType::PermanentWorker, self::WORK, ['late_minutes' => 5]));
         $this->assertSame([['field' => 'advance_amount', 'code' => 'field_not_allowed']], DayRules::violations(EmployeeType::Office, null, ['advance_amount' => '1']));
         $this->assertSame([['field' => 'site_id', 'code' => 'site_not_allowed']], DayRules::violations(EmployeeType::Office, self::WORK, []));
@@ -53,6 +54,7 @@ class DayRulesTest extends TestCase
     public function test_times_order(): void
     {
         $this->assertSame([['field' => 'out_time', 'code' => 'out_before_in']], DayRules::violations(EmployeeType::Engineer, self::WORK, ['in_time' => '20:00', 'out_time' => '04:00']));
+        $this->assertSame([['field' => 'out_time', 'code' => 'out_before_in']], DayRules::violations(EmployeeType::DayLaborer, self::WORK, ['in_time' => '17:00', 'out_time' => '08:00']));
         $this->assertSame([['field' => 'out_time', 'code' => 'times_need_both']], DayRules::violations(EmployeeType::PermanentWorker, self::WORK, ['in_time' => '08:00']));
         $this->assertSame([], DayRules::violations(EmployeeType::PermanentWorker, self::WORK, ['in_time' => '20:00', 'out_time' => '04:00']));
     }
@@ -74,6 +76,8 @@ class DayRulesTest extends TestCase
         $this->assertSame(['late' => 0, 'ot' => 10], DayRules::workerMinutes('08:00', '07:50', '16:00', '8'));
         $this->assertSame(['late' => 15, 'ot' => 0], DayRules::workerMinutes('08:00', '08:15', '15:00', '8'));
         $this->assertSame(['late' => 0, 'ot' => 30], DayRules::workerMinutes('08:00', '08:00', '16:00', '7.5'));
+        $this->assertSame(['late' => 0, 'ot' => 60], DayRules::workerMinutes('08:00', '08:00', '17:00', '8'));   // the default field day
+        $this->assertSame(['late' => 45, 'ot' => 105], DayRules::workerMinutes('08:00', '08:45', '18:30', '8'));
         $this->assertSame(25, DayRules::officeLateMinutes('09:40', '09:00', 15));
         $this->assertSame(0, DayRules::officeLateMinutes('09:15', '09:00', 15));
         $this->assertSame(0, DayRules::officeLateMinutes('08:50', '09:00', 15));

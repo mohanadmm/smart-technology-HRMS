@@ -58,6 +58,52 @@ test('manager tab lists the assignment history', async () => {
   expect(within(row).getByText('خالد')).toBeInTheDocument()
 })
 
+const worker = { ...emp, current_type: 'day_laborer', current_site: { id: 's1', name_ar: 'موقع أ', name_en: null }, site_assignments: [
+  { id: 'a1', site_id: 's2', site_name_ar: 'موقع ب', site_name_en: null, effective_from: '2026-01-01' },
+  { id: 'a2', site_id: 's1', site_name_ar: 'موقع أ', site_name_en: null, effective_from: '2026-06-01' },
+] }
+
+test('a worker shows the home site and moves with a return date', async () => {
+  const post = vi.fn(() => json(201, { data: {} }))
+  mockFetch({ 'GET /api/v1/employees/e1': () => json(200, { data: worker }), 'GET /api/v1/residences': residences,
+    'GET /api/v1/sites': () => json(200, { data: [{ id: 's1', name_ar: 'موقع أ' }, { id: 's2', name_ar: 'موقع ب' }], meta: { pagination } }),
+    'POST /api/v1/employees/e1/site-assignments': post })
+  renderWithAuth(<EmployeeDetailRoute id="e1" tab="site" />, ['employee.view.all', 'employee.assign_site.all', 'employee.assign_manager.all'], { router: false })
+  expect(await screen.findByRole('term')).toHaveTextContent('الموقع الأساسي')
+  expect(screen.getByRole('definition')).toHaveTextContent('موقع أ')
+  expect(screen.queryByRole('tab', { name: 'المدير' })).toBeNull() // a worker's manager follows the site
+  expect(screen.queryByRole('button', { name: 'تعيين مدير' })).toBeNull()
+  expect(screen.getByRole('tab', { name: 'الموقع' })).toHaveAttribute('aria-selected', 'true')
+  const rows = screen.getAllByRole('row').slice(1)
+  expect(rows.map((r) => r.textContent)).toEqual(['موقع أ2026-06-01', 'موقع ب2026-01-01']) // newest first
+  await user.click(screen.getByRole('button', { name: 'نقل إلى موقع' }))
+  await screen.findByRole('option', { name: 'موقع ب' })
+  await user.selectOptions(screen.getByLabelText('الموقع الأساسي'), 's2')
+  await user.type(screen.getByLabelText('ساري اعتبارًا من'), '2026-10-21')
+  await user.type(screen.getByLabelText('يعود إلى الموقع السابق في'), '2026-10-22')
+  await user.click(screen.getByRole('button', { name: 'حفظ' }))
+  await waitFor(() => expect(post).toHaveBeenCalled())
+  expect(JSON.parse((post.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual({ site_id: 's2', effective_from: '2026-10-21', returns_on: '2026-10-22' })
+  expect(vi.mocked(fetch).mock.calls.map(([u]) => String(u)).find((u) => u.includes('/sites'))).toBe('/api/v1/sites?per_page=100&kind=work&active=true')
+})
+
+test('an engineer keeps the manager tab', async () => {
+  mockFetch({ 'GET /api/v1/employees/e1': () => json(200, { data: { ...emp, current_type: 'engineer', current_site: null, site_assignments: [] } }), 'GET /api/v1/residences': residences })
+  renderWithAuth(<EmployeeDetailRoute id="e1" tab="manager" />, ['employee.view.all', 'employee.assign_site.all', 'employee.assign_manager.all'], { router: false })
+  expect(await screen.findByRole('tab', { name: 'المدير' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByRole('button', { name: 'تعيين مدير' })).toBeInTheDocument()
+  expect(screen.queryByRole('tab', { name: 'الموقع' })).toBeNull()
+  expect(screen.queryByText('الموقع الأساسي')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'نقل إلى موقع' })).toBeNull()
+})
+
+test('no move button without employee.assign_site', async () => {
+  mockFetch({ 'GET /api/v1/employees/e1': () => json(200, { data: worker }), 'GET /api/v1/residences': residences })
+  renderWithAuth(<EmployeeDetailRoute id="e1" tab="site" />, ['employee.view.all'], { router: false })
+  expect(await screen.findByRole('definition')).toHaveTextContent('موقع أ')
+  expect(screen.queryByRole('button', { name: 'نقل إلى موقع' })).toBeNull()
+})
+
 test('a document is updated from its row dialog and the refetched record is shown', async () => {
   let docs: unknown[] = []
   const put = vi.fn(() => { docs = [{ id: 'd1', kind: 'criminal_record', received_at: '2026-10-01', expires_at: null, note: 'أصل' }]; return json(200, { data: { ...emp, documents: docs } }) })

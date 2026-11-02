@@ -1,6 +1,7 @@
 import {
   CalendarCheck,
   ChevronDown,
+  ClipboardCheck,
   Languages,
   LogOut,
   Menu,
@@ -36,6 +37,7 @@ export const NAV: { group: string; items: { path: string; key: string; icon: Luc
   {
     group: 'nav.group.hr',
     items: [
+      { path: '/site-day', key: 'nav.siteDay', icon: ClipboardCheck, abilities: ['attendance.record'] },
       { path: '/employees', key: 'nav.employees', icon: Users, abilities: ['employee.view'] },
       { path: '/attendance', key: 'nav.attendance', icon: CalendarCheck, abilities: ['attendance.view'] },
     ],

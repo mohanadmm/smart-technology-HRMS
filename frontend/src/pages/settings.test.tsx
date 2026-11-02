@@ -288,6 +288,30 @@ test('site managers dialog pre-checks current managers and saves the ticked ids'
   expect(urlWith('/users')).toBe('/api/v1/users?per_page=100') // the lookup every page shares
 })
 
+test('a work site lists its workers today', async () => {
+  mockFetch({ 'GET /api/v1/sites': list([sites[0]]), 'GET /api/v1/employees': list([{ id: 'e1', code: 7, name_ar: 'محمود سعيد', current_type: 'day_laborer' }]) })
+  renderWithAuth(<SettingsPage />, ['site.view.all', 'employee.view.all'])
+  await rowMenu('موقع أ')
+  await user.click(await screen.findByRole('menuitem', { name: 'العمال' }))
+  const dialog = await screen.findByRole('dialog', { name: 'العمال: موقع أ' })
+  expect(await within(dialog).findByText('محمود سعيد')).toBeInTheDocument()
+  expect(within(dialog).getByText('عامل باليومية')).toBeInTheDocument()
+  expect(urlWith('/employees')).toBe('/api/v1/employees?site_id=s1&per_page=100')
+})
+
+test('a site with no workers today says so, and the action needs employee.view', async () => {
+  mockFetch({ 'GET /api/v1/sites': list([sites[0]]), 'GET /api/v1/employees': list([]) })
+  const { unmount } = renderWithAuth(<SettingsPage />, ['site.view.all', 'employee.view.all'])
+  await rowMenu('موقع أ')
+  await user.click(await screen.findByRole('menuitem', { name: 'العمال' }))
+  expect(await within(await screen.findByRole('dialog')).findByText('لا يوجد عمال بهذا الموقع اليوم.')).toBeInTheDocument()
+  unmount()
+  renderWithAuth(<SettingsPage />, MANAGE)
+  await rowMenu('موقع أ')
+  expect(await screen.findByRole('menuitem', { name: 'تعديل' })).toBeInTheDocument()
+  expect(screen.queryByRole('menuitem', { name: 'العمال' })).toBeNull()
+})
+
 test('switching tabs back to one already shown makes no new request', async () => {
   mockFetch({ 'GET /api/v1/sites': list(sites), 'GET /api/v1/residences': list(residences), 'GET /api/v1/fares': list([]) })
   renderWithAuth(<SettingsPage />, MANAGE, { path: '/settings?tab=fares' })
@@ -347,7 +371,7 @@ test('rules Save is blocked while a shift time has no AM/PM', async () => {
   const put = vi.fn(() => json(200, { data: rules }))
   mockFetch({ 'GET /api/v1/settings': () => json(200, { data: { ...rules, worker_shift_end: '' } }), 'PUT /api/v1/settings': put })
   renderWithAuth(<SettingsPage />, RULES, { path: '/settings?tab=rules' })
-  const end = await screen.findByLabelText('انتهاء وردية العمال المثبتين')
+  const end = await screen.findByLabelText('انتهاء وردية العاملين بالمواقع')
   await user.type(end, '10:15')
   await user.click(screen.getByRole('button', { name: 'حفظ التغييرات' }))
   expect(put).not.toHaveBeenCalled()
@@ -361,10 +385,10 @@ test('rules tab loads the settings, saves typed values and toasts', async () => 
   renderWithAuth(<SettingsPage />, RULES, { path: '/settings?tab=rules' })
   const grace = await screen.findByLabelText('فترة السماح للتأخير (دقيقة)')
   expect(grace).toHaveValue('15')
-  expect(screen.getByLabelText('بدء وردية العمال المثبتين')).toHaveValue('8:00')
-  const end = screen.getByLabelText('انتهاء وردية العمال المثبتين')
+  expect(screen.getByLabelText('بدء وردية العاملين بالمواقع')).toHaveValue('8:00')
+  const end = screen.getByLabelText('انتهاء وردية العاملين بالمواقع')
   expect(end).toHaveValue('4:00')
-  expect(within(screen.getByRole('group', { name: 'صباحًا أو مساءً: انتهاء وردية العمال المثبتين' })).getByRole('button', { name: 'مساءً' })).toHaveAttribute('aria-pressed', 'true')
+  expect(within(screen.getByRole('group', { name: 'صباحًا أو مساءً: انتهاء وردية العاملين بالمواقع' })).getByRole('button', { name: 'مساءً' })).toHaveAttribute('aria-pressed', 'true')
   expect(screen.getByRole('button', { name: 'حفظ التغييرات' })).toBeDisabled()
   await user.clear(grace)
   await user.type(grace, '٢٠')
