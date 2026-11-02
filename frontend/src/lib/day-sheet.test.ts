@@ -141,6 +141,23 @@ test('bulkRows site sets the site unless it is already there', () => {
   expect(bulkRows({ kind: 'site', siteId: 'S2' }, rows, leaveSite, false).rows).toEqual([{ employee_id: 'e1', version: null, site_id: 'S2' }])
 })
 
+test('bulkRows time keeps a field row at its stored site and sends only the given field', () => {
+  const r = row(1, { day: stored({ site_id: 'S1', in_time: '08:00:00', out_time: '17:00:00' }) })
+  expect(bulkRows({ kind: 'time', out_time: '15:00' }, [r], leaveSite, false)).toEqual({ rows: [{ employee_id: 'e1', version: 3, site_id: 'S1', out_time: '15:00' }], skipped: [] })
+})
+
+test('bulkRows time skips a field row with no stored work site', () => {
+  const missing = row(1, { last_site_id: 'S1' })
+  const absent = row(2, { day: stored({ site_id: 'L-absent', leave_code: 'absent' }) })
+  expect(bulkRows({ kind: 'time', in_time: '08:30' }, [missing, absent], leaveSite, false)).toEqual({ rows: [], skipped: [missing, absent] })
+})
+
+test('bulkRows time leaves out a row whose given values already match', () => {
+  const same = row(1, { day: stored({ site_id: 'S1', in_time: '08:00:00', out_time: '17:00:00' }) })
+  const other = row(2, { day: stored({ site_id: 'S1', in_time: '09:00:00', out_time: '17:00:00' }) })
+  expect(bulkRows({ kind: 'time', in_time: '08:00', out_time: '17:00' }, [same, other], leaveSite, false).rows).toEqual([{ employee_id: 'e2', version: 3, site_id: 'S1', in_time: '08:00', out_time: '17:00' }])
+})
+
 test('bulkRows time writes the office in-time with site_id null', () => {
   const a = row(1)
   const same = row(2, { day: stored({ site_id: null, in_time: '09:20:00' }) })

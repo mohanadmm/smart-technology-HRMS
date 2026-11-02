@@ -16,7 +16,7 @@ export type SheetRow = {
 /** One `rows[]` item of `POST /attendance/days/bulk`. The endpoint refuses `clear: false`, so `clear` is `true` or absent. */
 export type BulkRow = { employee_id: string; version: number | null; clear?: true; site_id?: string | null } & Partial<Record<DayValue, string | number | null>>
 
-export type SheetAction = { kind: 'present' } | { kind: 'leave'; code: 'absent' | 'sick' } | { kind: 'site'; siteId: string } | { kind: 'time'; in_time: string }
+export type SheetAction = { kind: 'present' } | { kind: 'leave'; code: 'absent' | 'sick' } | { kind: 'site'; siteId: string } | { kind: 'time'; in_time?: string; out_time?: string }
 
 export const MAX_BATCH = 500
 
@@ -75,8 +75,12 @@ export function bulkRows(action: SheetAction, rows: SheetRow[], leaveSite: (code
       else if (!(stored && d.site_id === leave)) out.push({ ...base, site_id: leave })
     } else if (action.kind === 'site') {
       if (!(stored && d.site_id === action.siteId)) out.push({ ...base, site_id: action.siteId })
-    } else if (!(stored && d.site_id === null && hhmm(d.in_time) === hhmm(action.in_time))) {
-      out.push({ ...base, site_id: null, in_time: action.in_time })
+    } else {
+      // a time keeps the row where it is: office present has no site; a field row stays at its stored work site, and without one it is skipped
+      const site = office ? null : d.site_id
+      const times = Object.fromEntries((['in_time', 'out_time'] as const).flatMap((f) => (action[f] === undefined ? [] : [[f, action[f]]])))
+      if (!office && !(stored && site && d.leave_code === null)) skipped.push(r)
+      else if (!(stored && d.site_id === site && Object.entries(times).every(([f, v]) => hhmm(d[f as DayValue]) === v))) out.push({ ...base, site_id: site, ...times })
     }
   }
   return { rows: out, skipped }
