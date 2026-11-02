@@ -1320,3 +1320,60 @@ test('a locked sheet shows the site as plain text, no chip', async () => {
   expect(within(rowOf('Engineer-2')).getByText('Site-1')).toBeInTheDocument()
   expect(within(rowOf('Engineer-2')).queryByRole('button', { name: /Site-1/ })).not.toBeInTheDocument()
 })
+
+// S2b: the times dialog
+const at = (code: number, inT: string, outT: string) => row(code, `Engineer-${code}`, { state: 'stored', source: 'entered', version: code, site_id: 's1', in_time: inT, out_time: outT }, { last_site_id: 's1' })
+const crewTimes = [at(1, '08:00:00', '17:00:00'), at(2, '09:00:00', '17:00:00'), row(3, 'Engineer-3', {}, { last_site_id: 's1' })]
+const timesDialog = async (codes: number[], bulk = bulkOk()) => {
+  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => sheet(crewTimes), 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  const tbl = await table()
+  for (const c of codes) await user.click(within(tbl).getByRole('checkbox', { name: `تحديد Engineer-${c}` }))
+  await user.click(within(screen.getByRole('group', { name: 'إجراءات المحدد' })).getByRole('button', { name: 'تعديل الأوقات' }))
+  return screen.getByRole('dialog', { name: 'تعديل الأوقات' })
+}
+
+test('the times dialog pre-fills a shared departure, shows «قيم مختلفة» for a mixed arrival and leaves the blank arrival unsent', async () => {
+  const bulk = bulkOk()
+  const dialog = await timesDialog([1, 2], bulk)
+  expect(dialog).toHaveTextContent('2 محددون. الحقل الفارغ لا يغيّر شيئًا.')
+  const arrival = within(dialog).getByRole('textbox', { name: 'وقت الحضور' })
+  const departure = within(dialog).getByRole('textbox', { name: 'وقت الانصراف' })
+  expect(arrival).toHaveValue('')
+  expect(arrival).toHaveAccessibleDescription(expect.stringContaining('قيم مختلفة'))
+  expect(departure).toHaveValue('5:00')
+  expect(within(dialog).getAllByText('قيم مختلفة')).toHaveLength(1)
+  await user.clear(departure)
+  await user.type(departure, '4:00')
+  await user.click(within(dialog).getByRole('button', { name: 'تطبيق' }))
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk).rows).toEqual([{ employee_id: 'e1', version: 1, site_id: 's1', out_time: '16:00' }, { employee_id: 'e2', version: 2, site_id: 's1', out_time: '16:00' }])
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  expect(screen.queryByRole('group', { name: 'إجراءات المحدد' })).not.toBeInTheDocument()
+})
+
+test('the times dialog skips a row that is not present with a count toast', async () => {
+  const bulk = bulkOk()
+  const dialog = await timesDialog([1, 3], bulk)
+  const arrival = within(dialog).getByRole('textbox', { name: 'وقت الحضور' })
+  expect(arrival).toHaveValue('8:00') // shared by the one present row
+  await user.clear(arrival)
+  await user.type(arrival, '0830')
+  await user.click(within(dialog).getByRole('button', { name: 'تطبيق' }))
+  expect(toast.warning).toHaveBeenCalledWith('تم تخطي 1 غير حاضرين')
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk).rows).toEqual([{ employee_id: 'e1', version: 1, site_id: 's1', in_time: '08:30' }])
+})
+
+test('the times dialog keeps Apply disabled while both boxes are blank or a box lacks AM/PM', async () => {
+  const dialog = await timesDialog([3])
+  const apply = within(dialog).getByRole('button', { name: 'تطبيق' })
+  expect(apply).toBeDisabled()
+  const arrival = within(dialog).getByRole('textbox', { name: 'وقت الحضور' })
+  await user.type(arrival, '10:30')
+  expect(apply).toBeDisabled()
+  await user.click(within(dialog).getAllByRole('button', { name: 'صباحًا' })[0])
+  expect(apply).toBeEnabled()
+  await user.click(within(dialog).getByRole('button', { name: 'إلغاء' }))
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})

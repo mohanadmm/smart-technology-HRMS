@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { CheckCheck, ClipboardPaste, Lock, Undo2, Users } from 'lucide-react'
+import { CheckCheck, ClipboardPaste, Clock, Lock, Undo2, Users } from 'lucide-react'
 import { useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -18,7 +18,7 @@ import { useAuth } from '@/lib/auth'
 import { type BulkRow, bulkRows, MAX_BATCH, matches, type SheetAction, type SheetRow, statusOf, undoRows } from '@/lib/day-sheet'
 import { queryKey, SITES, useApi, useSave } from '@/lib/query'
 import { cn } from '@/lib/utils'
-import { PasteDialog } from './attendance-sheet-command'
+import { PasteDialog, TimesDialog } from './attendance-sheet-command'
 import { FOCUS, QUICK, SheetRows, type Status } from './attendance-sheet-rows'
 
 type Filter = 'all' | 'missing' | 'present' | 'late' | 'leave' | 'absent'
@@ -72,6 +72,7 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [query, setQuery] = useState('') // the search: filters the list, never writes
   const [pasting, setPasting] = useState(false)
+  const [timing, setTiming] = useState(false) // the bulk bar's times dialog
   const [siteChoice, setSiteChoice] = useState('') // the bulk bar's Set site: chosen first, written only by its Apply button
   const unselect = () => { setSelected(new Set()); setSiteChoice('') }
   const [shownDate, setShownDate] = useState(date)
@@ -328,6 +329,10 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
               {t(label)}
             </Button>
           ))}
+          <Button type="button" variant="outline" size="sm" className={FOCUS} onClick={() => setTiming(true)}>
+            <Clock aria-hidden />
+            {t('attendance.sheet.bulk.times')}
+          </Button>
           {/* a closed native select changes on an arrow key or a letter, so choosing never writes; Apply does */}
           {!office && (
             <div className="flex items-end gap-2">
@@ -343,6 +348,10 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
           )}
           <Button type="button" variant="ghost" size="sm" className={FOCUS} onClick={unselect}>{t('attendance.sheet.bulk.clear')}</Button>
         </ActionBar>
+      )}
+      {editable && timing && (
+        <TimesDialog rows={picked} office={office} onOpenChange={setTiming}
+          onApply={async (action, chosen, label) => { const done = await apply(action, chosen, label); if (done) unselect(); return !!done }} />
       )}
     </div>
   )

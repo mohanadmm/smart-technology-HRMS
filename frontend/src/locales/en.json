@@ -17,7 +17,8 @@
     "saveChanges": "Save changes",
     "name": "Name",
     "saved": "Changes saved.",
-    "status": "Status"
+    "status": "Status",
+    "cancel": "Cancel"
   },
   "app": {
     "name": "Smart Technology HRMS",
@@ -583,12 +584,18 @@
         "nothingToChange": "Nothing to change",
         "undone": "Undone: {{label}}",
         "undoneOn": "Undone: {{label}} ({{date}})",
-        "undoConflict": "{{names}} changed since; that undo was dropped."
+        "undoConflict": "{{names}} changed since; that undo was dropped.",
+        "skippedNotPresent": "{{count}} skipped: not present"
       },
       "undo": "Undo ({{count}})",
       "search": "Search by name or employee ID",
       "found": "{{shown}} of {{total}}",
-      "overBy": "OT {{minutes}} min"
+      "overBy": "OT {{minutes}} min",
+      "times": {
+        "title": "Edit times",
+        "selected": "{{count}} selected. A blank box changes nothing.",
+        "mixed": "Mixed values"
+      }
     },
     "import": {
       "desc": "Download the period's template (one employee per row, one day per column), pick the site or day type in each cell, then upload it to review the changes before saving.",
