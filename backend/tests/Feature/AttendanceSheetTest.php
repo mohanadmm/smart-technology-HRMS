@@ -113,6 +113,28 @@ class AttendanceSheetTest extends TestCase
         $this->assertSame(['2026-10-01' => 1, '2026-10-02' => 0, '2026-10-05' => 2, '2026-10-12' => 3, '2026-10-21' => 0], array_intersect_key($days, array_flip(['2026-10-01', '2026-10-02', '2026-10-05', '2026-10-12', '2026-10-21'])));
     }
 
+    public function test_a_date_is_off_when_some_day_on_it_is_derived(): void
+    {
+        $this->holiday('2026-10-06');
+        $eng = $this->employee('engineer');
+        $this->putDay($eng, '2026-10-01', ['site_id' => $this->site]);
+        $off = fn () => array_column($this->sheet('engineer', '2026-10-18')->json('data.days'), 'off', 'date');
+
+        $open = $off();
+        $this->assertSame([true, true, false, false], [$open['2026-10-16'], $open['2026-10-06'], $open['2026-10-01'], $open['2026-10-04']]);   // Friday, holiday, worked, missing
+
+        $this->postJson('/api/v1/attendance/locks', ['group' => 'engineer', 'period_start' => '2026-09-26', 'confirm_missing' => true])->assertCreated();
+        $locked = $off();   // a locked period derives nothing: its off days are stored with source derived
+        $this->assertSame([true, true, false], [$locked['2026-10-16'], $locked['2026-10-06'], $locked['2026-10-01']]);
+    }
+
+    public function test_engineer_and_laborer_rows_carry_the_time_hints(): void
+    {
+        $eng = $this->employee('engineer');
+        $this->putDay($eng, '2026-10-18', ['site_id' => $this->site, 'in_time' => '08:45', 'out_time' => '18:30']);
+        $this->sheet('engineer', '2026-10-18')->assertJsonPath('data.rows.0.hints', ['late_minutes' => 45, 'ot_minutes' => 105]);
+    }
+
     public function test_office_rows_carry_the_lateness_hint(): void
     {
         $o = $this->employee('office');

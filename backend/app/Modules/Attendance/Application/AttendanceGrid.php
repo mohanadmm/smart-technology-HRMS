@@ -86,7 +86,7 @@ final class AttendanceGrid
      * One group's employees on one date (those employed then, by code), with the day, its hints, the last site and the period totals,
      * plus the period's missing days per date.
      *
-     * @return array{group: string, date: string, days: list<array{date: string, missing: int}>, rows: list<array<string, mixed>>}
+     * @return array{group: string, date: string, days: list<array{date: string, missing: int, off: bool}>, rows: list<array<string, mixed>>}
      */
     public function sheet(EmployeeType $g, string $date, ?string $ownerId = null): array
     {
@@ -103,9 +103,12 @@ final class AttendanceGrid
         $lastSites = $g === EmployeeType::Office ? [] : $this->lastSites(array_column($employed, 'id'), $date);
 
         $missing = array_fill_keys($p->days(), 0);
+        $off = array_fill_keys($p->days(), false);
         foreach ($days as $byDate) {
             foreach ($byDate as $d) {
                 $missing[$d['date']] += $d['state'] === 'missing' ? 1 : 0;
+                // A weekly off or holiday: derived while open, stored with source derived once locked (calculations §13).
+                $off[$d['date']] = $off[$d['date']] || $d['state'] === 'derived' || $d['source'] === 'derived';
             }
         }
 
@@ -138,7 +141,7 @@ final class AttendanceGrid
         return [
             'group' => $g->value,
             'date' => $date,
-            'days' => array_map(fn (string $d, int $n) => ['date' => $d, 'missing' => $n], array_keys($missing), array_values($missing)),
+            'days' => array_map(fn (string $d, int $n) => ['date' => $d, 'missing' => $n, 'off' => $off[$d]], array_keys($missing), array_values($missing)),
             'rows' => $rows,
         ];
     }
