@@ -2,7 +2,8 @@
 import { readFileSync } from 'node:fs'
 import { act, render, renderHook, screen } from '@testing-library/react'
 import { afterEach, expect, test } from 'vitest'
-import '@/i18n'
+import i18n from '@/i18n'
+import { SearchInput } from '@/components/common/Filters'
 import { selectCls } from '@/components/form'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
@@ -68,6 +69,7 @@ test('every kit control has the touch floor, whatever the size', () => {
       <Select><SelectTrigger aria-label="trigger"><SelectValue /></SelectTrigger></Select>
       <select aria-label="native" className={selectCls} />
       <Tabs defaultValue="a"><TabsList><TabsTrigger value="a">tab</TabsTrigger></TabsList></Tabs>
+      <SearchInput value="x" onChange={() => {}} placeholder="search" />
     </>,
   )
   const cls = (el: HTMLElement) => el.className.split(' ')
@@ -75,6 +77,8 @@ test('every kit control has the touch floor, whatever the size', () => {
   for (const name of ['icon', 'icon-sm', 'shrunk']) expect(cls(screen.getByRole('button', { name })), name).toContain('min-w-tap')
   for (const name of ['input', 'trigger', 'native']) expect(cls(screen.getByLabelText(name)), name).toContain('min-h-tap')
   expect(cls(screen.getByRole('tab', { name: 'tab' }))).toContain('min-h-tap')
+  const clear = cls(screen.getByRole('button', { name: i18n.t('common.clearSearch') }))
+  expect(clear).toEqual(expect.arrayContaining(['min-h-tap', 'min-w-tap']))
 })
 
 // 24 px is the WCAG 2.2 AA floor on any pointer; 44 px on touch only, so mouse layouts stay dense.

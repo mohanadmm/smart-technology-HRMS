@@ -177,7 +177,7 @@ export function TimeInput({ value, onChange, label, quietHint, className, disabl
           {[false, true].map((pm) => (
             // mousedown keeps the cursor where it is, so a click here is not the box being left; from outside, the click moves it into the box
             <button key={String(pm)} type="button" aria-pressed={draft.pm === pm} aria-label={t(pm ? 'time.pmName' : 'time.amName')} disabled={disabled}
-              className="w-9 min-w-tap px-2 text-sm font-semibold text-muted-foreground outline-none hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+              className="w-9 min-w-tap px-1.5 text-sm font-semibold text-muted-foreground outline-none hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:bg-primary aria-pressed:text-primary-foreground"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => { emit(draft.text, pm); if (!root.current?.contains(document.activeElement)) box.current?.focus() }}>
               {t(pm ? 'time.pm' : 'time.am')}

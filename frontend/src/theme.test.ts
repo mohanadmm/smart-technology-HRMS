@@ -19,7 +19,7 @@ test('cn() knows every custom text, shadow and spacing name in index.css, and no
   const found: Record<string, Set<string>> = { text: new Set(), shadow: new Set(), spacing: new Set() }
   for (const [, group, name] of themeInline().matchAll(/--(text|shadow|spacing)-([a-z0-9]+(?:-[a-z0-9]+)*)(?:--[a-z-]+)?\s*:/g)) found[group].add(name)
   expect(Object.fromEntries(Object.entries(found).map(([g, s]) => [g, [...s].sort()]))).toEqual(
-    Object.fromEntries(Object.entries(THEME_NAMES ?? {}).map(([g, s]) => [g, [...s].sort()])),
+    Object.fromEntries(Object.entries(THEME_NAMES).map(([g, s]) => [g, [...s].sort()])),
   )
 })
 
@@ -35,9 +35,10 @@ test('cn() keeps the touch floor next to a caller size, and an explicit opt-out 
 })
 
 // The touch floor is min-h-tap / min-w-tap, and the only shadow is shadow-float; the old spellings must not come back.
-test('the kit uses no viewport-width 44 px, no removed shadow and no backdrop filter', () => {
+// Pages are not scanned yet: they keep their own heights and shadow-1 until UI-3 moves them.
+test('the kit uses no fixed 44 px, no shadow but shadow-float and no backdrop filter', () => {
   const dir = `${import.meta.dirname}/components`
-  const banned = /(?:[a-z-]+:)*(?:min-)?(?:h|w|size)-11\b|shadow-[12]\b|backdrop-brightness/g
+  const banned = /(?:[a-z-]+:)*(?:min-)?(?:h|w|size)-11\b|(?<![\w-])(?:min-)?(?:h|size)-\[[\d.]+(?:px|rem)\]|\bshadow-(?!float\b|none\b)[\w[(-]+|backdrop-brightness/g
   const hits = readdirSync(dir, { recursive: true, encoding: 'utf8' })
     .filter((f) => /\.tsx?$/.test(f) && !f.includes('.test.'))
     .flatMap((f) => [...readFileSync(`${dir}/${f}`, 'utf8').matchAll(banned)].map((m) => `${f}: ${m[0]}`))
