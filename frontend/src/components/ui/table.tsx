@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 
+/** Lists use DataList; this is for matrices (attendance grid, fare matrix, permission matrix) and the day-sheet rows. */
 export function Table({ className, ...props }: React.ComponentProps<'table'>) {
   return (
     <div className="relative w-full overflow-x-auto scrollbar-thin">

@@ -1,10 +1,11 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Download, Plus } from 'lucide-react'
+import { Download, Plus, Users } from 'lucide-react'
 import { useState } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { expect, test, vi } from 'vitest'
 import '@/i18n'
+import { DataList, type DataListProps } from '@/components/common/DataList'
 import { PageHeader } from '@/components/common/PageHeader'
 import { RowActions } from '@/components/common/RowActions'
 import { StatRow } from '@/components/common/StatRow'
@@ -210,4 +211,76 @@ test('StatRow tiles with select are pressed toggles', async () => {
   expect(present).toHaveAttribute('aria-pressed', 'false')
   await user.click(present)
   expect(pick).toHaveBeenCalledWith('present')
+})
+
+type Person = { id: string; name: string; site: string; pay: string; code: string }
+const people: Person[] = [
+  { id: '1', name: 'أحمد علي', site: 'سموحة', pay: '1,250.00', code: 'E-1' },
+  { id: '2', name: 'منى سعيد', site: 'العجمي', pay: '980.50', code: 'E-2' },
+]
+const list = (over: Partial<DataListProps<Person>> = {}) => (
+  <DataList<Person>
+    label="الموظفون"
+    rows={people}
+    rowKey={(p) => p.id}
+    title={{ header: 'الاسم', cell: (p) => p.name }}
+    fields={[
+      { header: 'الموقع', cell: (p) => p.site },
+      { header: 'الأجر', cell: (p) => p.pay, numeric: true },
+      { header: 'الكود', cell: (p) => p.code, tableFrom: 'xl' },
+    ]}
+    status={{ header: 'الحالة', cell: () => 'نشط' }}
+    actions={(p) => <Button variant="ghost" size="sm">فتح {p.name}</Button>}
+    empty={{ icon: Users, title: 'لا يوجد موظفون', action: <Button>إضافة موظف</Button> }}
+    {...over}
+  />
+)
+
+test('DataList is one table that becomes a card per row below 640 px, labelled by its own headers', () => {
+  render(list())
+  const table = screen.getByRole('table', { name: 'الموظفون' })
+  expect(table).toHaveClass('max-sm:block')
+  expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['الاسم', 'الموقع', 'الأجر', 'الكود', 'الحالة', 'الإجراءات'])
+  expect(within(table).getAllByRole('rowgroup')[0]).toHaveClass('max-sm:sr-only')
+  const rows = within(table).getAllByRole('row').slice(1)
+  expect(rows).toHaveLength(2)
+  expect(rows[0]).toHaveClass('max-sm:grid')
+  const cells = within(rows[0]).getAllByRole('cell')
+  expect(cells.map((c) => c.textContent)).toEqual(['أحمد علي', 'الموقعسموحة', 'الأجر1,250.00', 'الكودE-1', 'نشط', 'فتح أحمد علي'])
+  // the card label is the column header, hidden from the table layout and from screen readers (the thead already names it)
+  const label = within(cells[1]).getByText('الموقع')
+  expect(label).toHaveClass('sm:hidden')
+  expect(label).toHaveAttribute('aria-hidden', 'true')
+})
+
+test('DataList end-aligns numeric columns and hides a tableFrom column only in the narrow table', () => {
+  render(list())
+  const [head] = screen.getAllByRole('row')
+  const cells = within(screen.getAllByRole('row')[1]).getAllByRole('cell')
+  expect(within(head).getByText('الأجر')).toHaveClass('text-end')
+  expect(cells[2]).toHaveClass('text-end', 'whitespace-nowrap')
+  expect(within(head).getByText('الكود')).toHaveClass('sm:max-xl:hidden')
+  expect(cells[3]).toHaveClass('sm:max-xl:hidden')
+  expect(cells[3]).toHaveTextContent('E-1')
+})
+
+test('DataList shows a skeleton while loading, an error instead of the empty state, and the empty state with its one action', () => {
+  const { rerender } = render(list({ loading: true }))
+  expect(screen.getByLabelText('جارٍ التحميل…')).toHaveAttribute('aria-busy', 'true')
+  expect(screen.queryByRole('table')).toBeNull()
+  rerender(list({ rows: [], error: new Error('تعذّر التحميل') }))
+  expect(screen.getByRole('alert')).toHaveTextContent('تعذّر التحميل')
+  expect(screen.queryByText('لا يوجد موظفون')).toBeNull()
+  rerender(list({ rows: [] }))
+  expect(screen.getByText('لا يوجد موظفون')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'إضافة موظف' })).toBeInTheDocument()
+  expect(screen.queryByRole('table')).toBeNull()
+})
+
+test('DataList paginates only when there is more than one page', () => {
+  const page = { page: 1, pageSize: 2, total: 2, onPageChange: () => {} }
+  const { rerender } = render(list({ page }))
+  expect(screen.queryByRole('button', { name: 'التالي' })).toBeNull()
+  rerender(list({ page: { ...page, total: 3 } }))
+  expect(screen.getByRole('button', { name: 'التالي' })).toBeInTheDocument()
 })
