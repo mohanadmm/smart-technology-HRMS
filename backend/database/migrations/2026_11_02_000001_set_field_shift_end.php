@@ -10,21 +10,14 @@ return new class extends Migration
 {
     public function up(): void
     {
-        $this->move('16:00', '17:00');
-    }
-
-    public function down(): void
-    {
-        $this->move('17:00', '16:00');
-    }
-
-    private function move(string $from, string $to): void
-    {
-        $setting = Setting::where(['key' => 'worker_shift_end', 'value' => $from])->first();
+        $setting = Setting::where(['key' => 'worker_shift_end', 'value' => '16:00'])->first();
         if ($setting !== null) {
-            $setting->value = $to;
+            $setting->value = '17:00';
             $setting->save();
         }
         BusinessRules::forgetCache();
     }
+
+    // Nothing to undo safely: a 17:00 here may be HR's own choice.
+    public function down(): void {}
 };

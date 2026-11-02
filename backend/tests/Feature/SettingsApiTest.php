@@ -107,17 +107,17 @@ class SettingsApiTest extends TestCase
         $id = DB::table('settings')->where('key', 'worker_shift_end')->value('id');
         $audits = fn () => DB::table('audit_log')->where(['entity_type' => 'settings', 'entity_id' => $id])->count();
 
-        $migration->down();
-        $this->assertSame('16:00', $rules->all()['worker_shift_end']);
+        $rules->update(['worker_shift_end' => '16:00']);   // as before the migration
         $before = $audits();
         $migration->up();
         $this->assertSame('17:00', $rules->all()['worker_shift_end']);
         $this->assertSame($before + 1, $audits());
+        $migration->down();
+        $this->assertSame('17:00', $rules->all()['worker_shift_end']);   // down() leaves it: HR may have chosen 17:00
 
         $rules->update(['worker_shift_end' => '15:30']);   // HR's edit
         $before = $audits();
         $migration->up();
-        $migration->down();
         $this->assertSame('15:30', $rules->all()['worker_shift_end']);
         $this->assertSame($before, $audits());
     }
