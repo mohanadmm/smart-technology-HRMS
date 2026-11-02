@@ -58,6 +58,11 @@ const bulkOk = () => vi.fn((_url: string, init?: RequestInit) => json(200, { dat
 const officePeriod = () => json(200, { data: { ...period, group: 'office', start: '2026-10-01', end: '2026-10-31' } })
 const sent = (fn: ReturnType<typeof vi.fn>, call = 0) => JSON.parse(String((fn.mock.calls[call][1] as RequestInit).body))
 const table = async () => screen.findByRole('table')
+/** Opens a table row's ⋯ menu (named by `trigger`) and picks `item` from it. */
+const menu = async (trigger: string, item: string) => {
+  await user.click(within(screen.getByRole('table')).getByRole('button', { name: trigger }))
+  await user.click(await screen.findByRole('menuitem', { name: item }))
+}
 
 test('the day sheet is the default tab and ?tab=grid shows the grid', async () => {
   const getPeriod = vi.fn((_url: string) => json(200, { data: period }))
@@ -223,7 +228,6 @@ test('P on a missing engineer posts his last site in one bulk request', async ()
   mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
   edit()
   const tbl = await table()
-  expect(within(tbl).getByRole('button', { name: 'مرضي Engineer-1' })).toBeDisabled() // no active sick leave type
   await user.click(within(tbl).getByRole('button', { name: 'حاضر Engineer-1' }))
   await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
   expect(sent(bulk)).toEqual({ date: '2026-10-18', rows: [{ employee_id: 'e1', version: null, site_id: 's1' }] })
@@ -323,7 +327,8 @@ test.each([
 ])('%s names nobody: the toast is the plain message', async (_, status, code, message) => {
   mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': () => json(status, { error: { code, message } }) })
   edit()
-  await user.click(within(await table()).getByRole('button', { name: 'غياب Engineer-1' }))
+  await table()
+  await menu('إجراءات أخرى Engineer-1', 'غياب')
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message))
 })
 
@@ -333,7 +338,7 @@ test('a row in flight is not sent again', async () => {
   edit()
   const tbl = await table()
   await user.click(within(tbl).getByRole('button', { name: 'حاضر Engineer-1' }))
-  await user.click(within(tbl).getByRole('button', { name: 'غياب Engineer-1' }))
+  await menu('إجراءات أخرى Engineer-1', 'غياب')
   await user.click(screen.getByRole('button', { name: /^تسجيل الباقين حاضرين/ }))
   expect(bulk).toHaveBeenCalledTimes(1)
 })
@@ -765,7 +770,8 @@ test('undo rewrites a stored day in full, from the button too', async () => {
   const bulk = bulkOk()
   mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
   edit()
-  await user.click(within(await table()).getByRole('button', { name: 'غياب Engineer-2' }))
+  await table()
+  await menu('إجراءات أخرى Engineer-2', 'غياب')
   await waitFor(() => expect(undoButton()).toHaveAttribute('aria-disabled', 'false'))
   await user.click(undoButton())
   await waitFor(() => expect(bulk).toHaveBeenCalledTimes(2))
@@ -830,7 +836,7 @@ const presentThenAbsent = async () => {
   edit()
   await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' }))
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
-  await user.click(within(screen.getByRole('table')).getByRole('button', { name: 'غياب Engineer-1' }))
+  await menu('إجراءات أخرى Engineer-1', 'غياب')
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (2)'))
   await user.click(undoButton())
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
@@ -858,7 +864,8 @@ test('an undo on one day never rebases the same employee\'s entry for another da
   await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' })) // 2026-10-18: a new row at v1
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
   await user.click(within(screen.getByRole('group', { name: 'أيام الفترة' })).getByRole('button', { name: /^2026-10-17/ }))
-  await user.click(within(await table()).getByRole('button', { name: 'غياب Engineer-1' })) // 2026-10-17: v1 → v2
+  await table()
+  await menu('إجراءات أخرى Engineer-1', 'غياب') // 2026-10-17: v1 → v2
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (2)'))
   await user.click(undoButton()) // 2026-10-17 back to v1's day, now v3
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
@@ -876,7 +883,7 @@ test('Undo does nothing while a write is in flight', async () => {
   edit()
   await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' }))
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
-  await user.click(within(screen.getByRole('table')).getByRole('button', { name: 'غياب Engineer-2' }))
+  await menu('إجراءات أخرى Engineer-2', 'غياب')
   await waitFor(() => expect(bulk).toHaveBeenCalledTimes(2))
   expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
   await user.click(undoButton())
@@ -900,7 +907,7 @@ test('in English the site chips, cohorts, last site and toasts use the English n
   expect(within(tbl).getByText('Site-1 EN')).toBeInTheDocument() // Engineer-2's present chip
   expect(within(tbl).getByText('Last site: Site-1 EN')).toBeInTheDocument()
   expect(within(screen.getByRole('group', { name: 'By last site' })).getByRole('button', { name: /^Site-1 EN/ })).toBeInTheDocument()
-  await user.click(within(tbl).getByRole('button', { name: 'Absent: Engineer-1 EN' }))
+  await menu('More actions: Engineer-1 EN', 'Absent')
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Someone else just changed Engineer-1 EN; the sheet was reloaded. Check it and try again.'))
 })
 
@@ -1049,18 +1056,17 @@ test('office totals say present, not at a site', async () => {
 })
 
 // Gate 2b, D3 round 2: the table fits its card at every width where it shows
-test('below 2xl the table row actions are icons named by their tooltip; the labels come back at 2xl', async () => {
+test('below 2xl the table Present is an icon named by its tooltip; the label comes back at 2xl; ⋯ is always an icon with a tooltip', async () => {
   mockFetch(routes)
   edit()
   const tr = within(await table()).getByText('Engineer-1').closest('tr')!
-  for (const action of ['حاضر', 'غياب', 'مرضي', 'التفاصيل']) {
-    const button = within(tr).getByRole('button', { name: `${action} Engineer-1` })
-    expect(button).toHaveAttribute('title', action)
-    expect(within(button).getByText(action)).toHaveClass('hidden', '2xl:inline')
-  }
-  // a card keeps its labelled buttons and no tooltip
+  const present = within(tr).getByRole('button', { name: 'حاضر Engineer-1' })
+  expect(present).toHaveAttribute('title', 'حاضر')
+  expect(within(present).getByText('حاضر')).toHaveClass('hidden', '2xl:inline')
+  expect(within(tr).getByRole('button', { name: 'إجراءات أخرى Engineer-1' })).toHaveAttribute('title', 'إجراءات أخرى')
+  // a card keeps its labelled Present and no tooltip
   const card = within(screen.getByRole('list', { name: 'الموظف' })).getByText('Engineer-1').closest('li')!
-  expect(within(card).getByRole('button', { name: 'التفاصيل Engineer-1' })).not.toHaveAttribute('title')
+  expect(within(card).getByRole('button', { name: 'حاضر Engineer-1' })).not.toHaveAttribute('title')
   expect(within(within(card).getByRole('button', { name: 'حاضر Engineer-1' })).getByText('حاضر')).not.toHaveClass('hidden')
 })
 
@@ -1111,3 +1117,49 @@ test('a reader gets no select-page box on the cards', async () => {
   expect(screen.queryByRole('checkbox', { name: 'تحديد كل الصفحة' })).not.toBeInTheDocument()
 })
 
+
+// S2b: row buttons (owner decision 3)
+test('a row keeps Present and puts Absent, Sick and Details in its ⋯ menu', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  const tr = within(await table()).getByText('Engineer-1').closest('tr')!
+  expect(within(tr).queryByRole('button', { name: /^(غياب|مرضي|التفاصيل) / })).not.toBeInTheDocument()
+  await user.click(within(tr).getByRole('button', { name: 'إجراءات أخرى Engineer-1' }))
+  const items = await screen.findAllByRole('menuitem')
+  expect(items.map((i) => i.textContent)).toEqual(['غياب', 'مرضي', 'التفاصيل'])
+  expect(items[1]).toHaveAttribute('aria-disabled', 'true') // no active sick leave type
+  await user.click(items[0])
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk).rows).toEqual([{ employee_id: 'e1', version: null, site_id: 'sa' }])
+})
+
+test('Details in the ⋯ menu opens the day editor', async () => {
+  mockFetch({ ...routes, 'GET /api/v1/attendance/days/e1/2026-10-18': () => json(200, { data: { ...blank, state: 'missing', date: '2026-10-18', employee_id: 'e1', type: 'engineer',
+    fields: ['in_time'], leave_day_fields: [], hints: {}, period: { start: '2026-09-26', end: '2026-10-25', is_locked: false } } }) })
+  edit()
+  await table()
+  await menu('إجراءات أخرى Engineer-1', 'التفاصيل')
+  expect(await screen.findByRole('dialog', { name: 'يوم 2026-10-18 — Engineer-1' })).toBeInTheDocument()
+})
+
+test('Present looks pressed on a row already present, like a badge', async () => {
+  mockFetch(routes)
+  edit()
+  const tbl = await table()
+  const on = within(tbl).getByRole('button', { name: 'حاضر Engineer-2' })
+  expect(on).toHaveAttribute('aria-pressed', 'true')
+  expect(on).toHaveClass('aria-pressed:bg-success/10')
+  expect(within(tbl).getByRole('button', { name: 'حاضر Engineer-1' })).toHaveAttribute('aria-pressed', 'false')
+})
+
+test('the bulk bar and the paste dialog still offer Present, Absent and Sick', async () => {
+  mockFetch(routes)
+  edit()
+  await user.click(within(await table()).getByRole('checkbox', { name: 'تحديد Engineer-1' }))
+  const bar = screen.getByRole('group', { name: 'إجراءات المحدد' })
+  for (const b of ['حاضر', 'غياب', 'مرضي']) expect(within(bar).getByRole('button', { name: b })).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'لصق أرقام' }))
+  const dialog = screen.getByRole('dialog', { name: 'لصق الأرقام الوظيفية' })
+  for (const b of ['حاضر', 'غياب', 'مرضي']) expect(within(dialog).getByRole('button', { name: b })).toBeInTheDocument()
+})

@@ -538,7 +538,8 @@
         "details": "التفاصيل",
         "present": "حاضر",
         "absent": "غياب",
-        "sick": "مرضي"
+        "sick": "مرضي",
+        "more": "إجراءات أخرى"
       },
       "lateBy": "متأخر {{minutes}} د",
       "lastSite": "آخر موقع: {{site}}",

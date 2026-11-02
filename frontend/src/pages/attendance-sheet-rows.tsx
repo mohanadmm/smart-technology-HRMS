@@ -1,9 +1,10 @@
-import { CalendarOff, Check, CircleHelp, Clock, Eye, type LucideIcon, Stethoscope, UserX } from 'lucide-react'
+import { CalendarOff, Check, CircleHelp, Clock, Ellipsis, Eye, type LucideIcon, Stethoscope, UserX } from 'lucide-react'
 import { useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatTime, localName, type Row, TimeInput, to24 } from '@/components/form'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type SheetAction, type SheetRow, statusOf } from '@/lib/day-sheet'
 import { cn } from '@/lib/utils'
@@ -20,7 +21,7 @@ const LOOK: Record<Status, { cls: string; text: string; icon: LucideIcon }> = {
   leave: { cls: 'bg-info-bg border-info-border', text: 'text-info', icon: CalendarOff },
   derived: { cls: 'border-dashed bg-muted', text: 'text-muted-foreground', icon: CalendarOff },
 }
-// the row and bulk-bar quick actions: [action, label key, icon, status tone]
+// the quick actions: [action, label key, icon, status tone]. The bulk bar and the paste dialog show all three; a row shows Present and puts the rest in its ⋯ menu
 export const QUICK: [SheetAction, string, LucideIcon, string][] = [
   [{ kind: 'present' }, 'attendance.sheet.action.present', Check, 'text-success hover:bg-success-bg hover:border-success-border'],
   [{ kind: 'leave', code: 'absent' }, 'attendance.sheet.action.absent', UserX, 'text-destructive hover:bg-destructive-bg hover:border-destructive-border'],
@@ -76,14 +77,41 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
     </label>
   )
   // compact (the table): icon-only below 2xl, named by its tooltip; the aria-label always names the action and the employee
-  const quick = (r: SheetRow, h: string, compact = false) => QUICK.map(([action, label, Icon, tone]) => (
-    <Button key={label} type="button" variant="outline" size="sm" className={cn(FOCUS, h, 'px-2.5', tone)} disabled={pending.has(r.employee.id) || noLeave(action) || noSite(action, r)}
-      {...(compact && { title: t(label) })} {...(noSite(action, r) && { title: t('attendance.sheet.noLastSite'), 'aria-describedby': noSiteId })}
-      aria-label={t('attendance.sheet.rowAction', { action: t(label), name: name(r) })} onClick={() => onApply(action, r, t('attendance.sheet.actionOn', { action: t(label), name: name(r) }))}>
-      <Icon aria-hidden />
-      <span className={cn(compact && 'hidden 2xl:inline')}>{t(label)}</span>
-    </Button>
-  ))
+  const present = (r: SheetRow, h: string, compact = false) => {
+    const [action, label, Icon, tone] = QUICK[0]
+    const s = status(r)
+    return (
+      <Button type="button" variant="outline" size="sm" className={cn(FOCUS, h, 'px-2.5', tone, 'aria-pressed:border-success/25 aria-pressed:bg-success/10')} aria-pressed={s === 'present' || s === 'late'}
+        disabled={pending.has(r.employee.id) || noSite(action, r)} {...(compact && { title: t(label) })} {...(noSite(action, r) && { title: t('attendance.sheet.noLastSite'), 'aria-describedby': noSiteId })}
+        aria-label={t('attendance.sheet.rowAction', { action: t(label), name: name(r) })} onClick={() => onApply(action, r, t('attendance.sheet.actionOn', { action: t(label), name: name(r) }))}>
+        <Icon aria-hidden />
+        <span className={cn(compact && 'hidden 2xl:inline')}>{t(label)}</span>
+      </Button>
+    )
+  }
+  // ⋯: the other quick actions and Details. Not modal, so the day editor it opens never inherits a blocked page
+  const more = (r: SheetRow, h: string) => (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className={cn(FOCUS, h, 'px-2.5')} title={t('attendance.sheet.action.more')}
+          aria-label={t('attendance.sheet.rowAction', { action: t('attendance.sheet.action.more'), name: name(r) })}>
+          <Ellipsis aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {QUICK.slice(1).map(([action, label, Icon]) => (
+          <DropdownMenuItem key={label} disabled={pending.has(r.employee.id) || noLeave(action)} onSelect={() => onApply(action, r, t('attendance.sheet.actionOn', { action: t(label), name: name(r) }))}>
+            <Icon aria-hidden />
+            {t(label)}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuItem onSelect={() => onOpenDay(r.employee, date)}>
+          <Eye aria-hidden />
+          {t('attendance.sheet.action.details')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
   const inTime = (r: SheetRow, h: string) => (
     <InTime key={`${r.employee.id}/${r.day.version}`} was={r.day.in_time ? String(r.day.in_time).slice(0, 5) : ''} className={h} disabled={pending.has(r.employee.id)} label={t('attendance.sheet.inTime', { name: name(r) })}
       onCommit={(v) => onApply({ kind: 'time', in_time: v }, r, t('attendance.sheet.actionOn', { action: t('attendance.day.in_time'), name: name(r) }))} />
@@ -172,8 +200,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-1.5">
-                    {editable && quick(r, 'h-9', true)}
-                    {details(r, 'h-9', true)}
+                    {editable ? <>{present(r, 'h-9', true)}{more(r, 'h-9')}</> : details(r, 'h-9', true)}
                   </div>
                 </TableCell>
                 <TableCell className={cn('border-s', !selected.has(r.employee.id) && 'bg-muted/40')}>{totals(r, true)}</TableCell>
@@ -202,11 +229,10 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
               </div>
               {pill(r)}
             </div>
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0">{office && editable ? inTime(r, 'h-11') : where(r)}</div>
-              {details(r, 'h-11')}
+              <div className="flex gap-2">{editable ? <>{present(r, 'h-11')}{more(r, 'h-11')}</> : details(r, 'h-11')}</div>
             </div>
-            {editable && <div className="grid grid-cols-3 gap-2">{quick(r, 'h-11')}</div>}
             {/* not on a row already at a site today: there the disabled Present is no problem to explain */}
             {editable && noSite({ kind: 'present' }, r) && status(r) !== 'present' && <p className="-mt-1.5 text-xs text-muted-foreground">{t('attendance.sheet.noLastSite')}</p>}
             <div className="border-t pt-3">

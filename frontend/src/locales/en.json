@@ -538,7 +538,8 @@
         "details": "Details",
         "present": "Present",
         "absent": "Absent",
-        "sick": "Sick"
+        "sick": "Sick",
+        "more": "More actions"
       },
       "lateBy": "Late {{minutes}} min",
       "lastSite": "Last site: {{site}}",
