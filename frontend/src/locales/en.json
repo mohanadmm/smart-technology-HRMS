@@ -552,7 +552,6 @@
       "actionCount": "{{action}} ({{count}})",
       "select": "Select {{name}}",
       "selectPage": "Select this page",
-      "inTime": "In time, {{name}}",
       "rest": "Mark the rest present ({{count}})",
       "sweep": "All present",
       "sweepFor": "Mark the rest of {{cohort}} present",
@@ -562,7 +561,8 @@
         "setSite": "Set site",
         "pickSite": "Choose a site",
         "clear": "Clear",
-        "apply": "Apply"
+        "apply": "Apply",
+        "times": "Edit times"
       },
       "matched": "{{count}} matched",
       "unknown": "Not on this sheet: {{ids}}",
@@ -587,7 +587,8 @@
       },
       "undo": "Undo ({{count}})",
       "search": "Search by name or employee ID",
-      "found": "{{shown}} of {{total}}"
+      "found": "{{shown}} of {{total}}",
+      "overBy": "OT {{minutes}} min"
     },
     "import": {
       "desc": "Download the period's template (one employee per row, one day per column), pick the site or day type in each cell, then upload it to review the changes before saving.",

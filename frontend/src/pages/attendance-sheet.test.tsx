@@ -1163,3 +1163,117 @@ test('the bulk bar and the paste dialog still offer Present, Absent and Sick', a
   const dialog = screen.getByRole('dialog', { name: 'لصق الأرقام الوظيفية' })
   for (const b of ['حاضر', 'غياب', 'مرضي']) expect(within(dialog).getByRole('button', { name: b })).toBeInTheDocument()
 })
+
+// S2b: times on the rows
+const timed = row(2, 'Engineer-2', { state: 'stored', source: 'entered', version: 1, site_id: 's1', in_time: '08:45:00', out_time: '18:00:00' }, { last_site_id: 's1', hints: { late_minutes: 45, ot_minutes: 75 } })
+const timedRoutes = { ...routes, 'GET /api/v1/attendance/sheet': () => sheet([engineers[0], timed, engineers[2]]) }
+
+test('a present field row shows its arrival and departure with the late and OT hints; other rows have no time boxes', async () => {
+  mockFetch(timedRoutes)
+  edit()
+  const tbl = await table()
+  const heads = within(tbl).getAllByRole('columnheader').map((h) => h.textContent)
+  expect(heads).toEqual(expect.arrayContaining(['وقت الحضور', 'وقت الانصراف']))
+  const tr = rowOf('Engineer-2')
+  expect(within(tr).getByRole('textbox', { name: 'وقت الحضور Engineer-2' })).toHaveValue('8:45')
+  expect(within(tr).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' })).toHaveValue('6:00')
+  expect(within(tr).getByText('متأخر 45 د')).toHaveClass('text-warning')
+  expect(within(tr).getByText('إضافي 75 د')).toHaveClass('text-warning')
+  expect(within(rowOf('Engineer-1')).queryByRole('textbox')).not.toBeInTheDocument()
+  expect(within(rowOf('Engineer-3')).queryByRole('textbox')).not.toBeInTheDocument()
+})
+
+test('a field row\'s departure edit posts out_time with its site_id', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...timedRoutes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await table()
+  const tr = rowOf('Engineer-2')
+  const out = within(tr).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' })
+  await user.clear(out)
+  await user.type(out, '3:00{Enter}')
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk)).toEqual({ date: '2026-10-18', rows: [{ employee_id: 'e2', version: 1, site_id: 's1', out_time: '15:00' }] })
+})
+
+test('the time pair is one unit: Tab from arrival to departure and typing there sends nothing until focus leaves the pair', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...timedRoutes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await table()
+  const tr = rowOf('Engineer-2')
+  const arrival = within(tr).getByRole('textbox', { name: 'وقت الحضور Engineer-2' })
+  await user.clear(arrival)
+  await user.type(arrival, '0900')
+  await user.tab()
+  await user.tab()
+  await user.tab()
+  const departure = within(tr).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' })
+  expect(departure).toHaveFocus()
+  await user.clear(departure)
+  await user.type(departure, '1800')
+  expect(bulk).not.toHaveBeenCalled()
+  await user.click(document.body)
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk).rows).toEqual([{ employee_id: 'e2', version: 1, site_id: 's1', in_time: '09:00' }])
+})
+
+test('focus selects the time, so typing 845 replaces 8:00, even after an AM/PM click', async () => {
+  const bulk = bulkOk()
+  const day = { state: 'stored', source: 'entered', version: 1, site_id: 's1', in_time: '08:00:00', out_time: '17:00:00' }
+  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => sheet([row(2, 'Engineer-2', day, { last_site_id: 's1' })]), 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await table()
+  const tr = rowOf('Engineer-2')
+  const arrival = within(tr).getByRole('textbox', { name: 'وقت الحضور Engineer-2' })
+  await user.click(arrival)
+  await user.click(within(tr).getAllByRole('button', { name: 'صباحًا' })[0]) // its mousedown keeps the cursor, and the selection, in the box
+  await user.keyboard('845')
+  expect(arrival).toHaveValue('845')
+  await user.click(document.body)
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk).rows).toEqual([{ employee_id: 'e2', version: 1, site_id: 's1', in_time: '08:45' }])
+})
+
+test('10:30 with no AM/PM is never written as 10:30 AM', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...routes, 'GET /api/v1/attendance/period': officePeriod, 'GET /api/v1/attendance/sheet': () => sheet(office, 'office'), 'POST /api/v1/attendance/days/bulk': bulk })
+  edit('/attendance?group=office')
+  const input = within(await table()).getByLabelText('وقت الحضور Office-2')
+  await user.type(input, '10:30')
+  fireEvent.blur(input)
+  expect(toast.error).toHaveBeenCalledWith('اختر ص أو م.')
+  expect(input).toHaveValue('')
+  await new Promise((r) => setTimeout(r, 20))
+  expect(bulk).not.toHaveBeenCalled()
+})
+
+test('office rows keep the in-time only', async () => {
+  mockFetch({ ...routes, 'GET /api/v1/attendance/period': officePeriod, 'GET /api/v1/attendance/sheet': () => sheet(office, 'office') })
+  edit('/attendance?group=office')
+  const tbl = await table()
+  expect(within(tbl).getAllByRole('textbox', { name: /^وقت الحضور/ })).toHaveLength(2)
+  expect(within(tbl).queryByRole('textbox', { name: /^وقت الانصراف/ })).not.toBeInTheDocument()
+  expect(within(tbl).queryByRole('columnheader', { name: 'وقت الانصراف' })).not.toBeInTheDocument()
+})
+
+test('on a card the two time boxes stack below sm and sit side by side from sm', async () => {
+  mockFetch(timedRoutes)
+  edit()
+  await table()
+  const card = within(screen.getByRole('list', { name: 'الموظف' })).getByText('Engineer-2').closest('li')!
+  const departure = within(card).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' })
+  const pair = departure.closest('.grid.sm\\:grid-cols-2')
+  expect(pair).toContainElement(within(card).getByRole('textbox', { name: 'وقت الحضور Engineer-2' }))
+  expect(card.querySelector('.w-44')).toBeNull()
+})
+
+test('a locked sheet shows the times as plain text', async () => {
+  mockFetch({ ...timedRoutes, 'GET /api/v1/attendance/period': () => json(200, { data: { ...period, is_locked: true } }) })
+  edit()
+  await table()
+  const tr = rowOf('Engineer-2')
+  expect(within(tr).queryByRole('textbox')).not.toBeInTheDocument()
+  expect(within(tr).getByText('8:45 ص')).toBeInTheDocument()
+  expect(within(tr).getByText('6:00 م')).toBeInTheDocument()
+})

@@ -1,8 +1,8 @@
 import { CalendarOff, Check, CircleHelp, Clock, Ellipsis, Eye, type LucideIcon, Stethoscope, UserX } from 'lucide-react'
-import { useId, useRef, useState } from 'react'
+import { type ReactNode, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { formatTime, localName, type Row, TimeInput, to24 } from '@/components/form'
+import { formatTime, localName, type Row, TimeInput } from '@/components/form'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -10,6 +10,7 @@ import { type SheetAction, type SheetRow, statusOf } from '@/lib/day-sheet'
 import { cn } from '@/lib/utils'
 
 export type Status = ReturnType<typeof statusOf>
+type TimeField = 'in_time' | 'out_time'
 
 export const FOCUS = 'outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-ring'
 // "missing" (no record) and "absent" (غ) never share a look: different tokens, icon and border style
@@ -112,9 +113,30 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
       </DropdownMenuContent>
     </DropdownMenu>
   )
-  const inTime = (r: SheetRow, h: string) => (
-    <InTime key={`${r.employee.id}/${r.day.version}`} was={r.day.in_time ? String(r.day.in_time).slice(0, 5) : ''} className={h} disabled={pending.has(r.employee.id)} label={t('attendance.sheet.inTime', { name: name(r) })}
-      onCommit={(v) => onApply({ kind: 'time', in_time: v }, r, t('attendance.sheet.actionOn', { action: t('attendance.day.in_time'), name: name(r) }))} />
+  /**
+   * A row's times, each placed by `cell`: office rows the in-time, present field rows arrival and departure with the server's late/OT
+   * hints; boxes while the day is editable, plain text otherwise. Keyed by the stored times, so a refetch never wipes typing.
+   */
+  const times = (r: SheetRow, cell: (field: TimeField, node: ReactNode) => ReactNode) => {
+    const fields: TimeField[] = office ? ['in_time'] : status(r) === 'present' ? ['in_time', 'out_time'] : []
+    if (!fields.length) return null
+    const late = r.hints.late_minutes ?? 0
+    const over = r.hints.ot_minutes ?? 0
+    const hint = (f: TimeField) => (office ? undefined : f === 'in_time' ? (late > 0 ? t('attendance.sheet.lateBy', { minutes: late }) : undefined) : over > 0 ? t('attendance.sheet.overBy', { minutes: over }) : undefined)
+    if (!editable) return fields.map((f) => cell(f, <><span className="text-sm">{formatTime(r.day[f], lang)}</span><Hint text={hint(f)} /></>))
+    return (
+      <TimeCells key={`${r.employee.id}/${r.day.in_time}/${r.day.out_time}`} cell={cell} disabled={pending.has(r.employee.id)}
+        cells={fields.map((f) => ({ field: f, was: r.day[f] ? String(r.day[f]).slice(0, 5) : '', label: t('attendance.sheet.rowAction', { action: t(`attendance.day.${f}`), name: name(r) }), hint: hint(f) }))}
+        onCommit={(v) => onApply({ kind: 'time', ...v }, r, t('attendance.sheet.actionOn', { action: t(v.in_time && v.out_time ? 'attendance.sheet.bulk.times' : v.in_time ? 'attendance.day.in_time' : 'attendance.day.out_time'), name: name(r) }))} />
+    )
+  }
+  const tableCell = (f: TimeField, node: ReactNode) => <TableCell key={f} className="align-top">{node}</TableCell>
+  // a card labels each box above it; the pair stacks below sm (≈309 px of card at 375) and sits side by side from sm
+  const cardCell = (f: TimeField, node: ReactNode) => (
+    <div key={f}>
+      <p aria-hidden className="mb-1.5 text-xs font-medium text-muted-foreground">{t(`attendance.day.${f}`)}</p>
+      {node}
+    </div>
   )
   const pill = (r: SheetRow) => {
     const s = status(r)
@@ -133,8 +155,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
     )
   }
   const where = (r: SheetRow) => {
-    if (office && editable) return inTime(r, 'h-9')
-    if (office) return <span className="text-sm tabular">{formatTime(r.day.in_time, lang)}</span>
+    if (office) return null
     const s = status(r)
     if (s === 'present') return <span className="rounded-md border bg-card px-2 py-0.5 text-xs">{siteName(r.day.site_id)}</span>
     if (s === 'missing' && r.last_site_id) return <span className="text-xs text-muted-foreground">{t('attendance.sheet.lastSite', { site: siteName(r.last_site_id) })}</span>
@@ -178,6 +199,8 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
               <TableHead>{t('attendance.employee')}</TableHead>
               {office && <TableHead>{t('attendance.day.in_time')}</TableHead>}
               <TableHead>{t('common.status')}</TableHead>
+              {!office && <TableHead>{t('attendance.day.in_time')}</TableHead>}
+              {!office && <TableHead>{t('attendance.day.out_time')}</TableHead>}
               <TableHead><span className="sr-only">{t('common.actions')}</span></TableHead>
               <TableHead className="border-s">{t('attendance.sheet.totals')}</TableHead>
             </TableRow>
@@ -191,13 +214,14 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
                   <bdi className="font-medium">{name(r)}</bdi>
                   {r.employee.department && <div className="text-xs text-muted-foreground">{r.employee.department}</div>}
                 </TableCell>
-                {office && <TableCell>{where(r)}</TableCell>}
+                {office && times(r, tableCell)}
                 <TableCell>
                   <div className="flex items-center gap-1.5">
                     {pill(r)}
-                    {!office && where(r)}
+                    {where(r)}
                   </div>
                 </TableCell>
+                {!office && (times(r, tableCell) ?? <><TableCell /><TableCell /></>)}
                 <TableCell>
                   <div className="flex items-center justify-end gap-1.5">
                     {editable ? <>{present(r, 'h-9', true)}{more(r, 'h-9')}</> : details(r, 'h-9', true)}
@@ -230,9 +254,10 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
               {pill(r)}
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="min-w-0">{office && editable ? inTime(r, 'h-11') : where(r)}</div>
+              <div className="min-w-0">{where(r)}</div>
               <div className="flex gap-2">{editable ? <>{present(r, 'h-11')}{more(r, 'h-11')}</> : details(r, 'h-11')}</div>
             </div>
+            {(office || status(r) === 'present') && <div className="grid gap-3 sm:grid-cols-2">{times(r, cardCell)}</div>}
             {/* not on a row already at a site today: there the disabled Present is no problem to explain */}
             {editable && noSite({ kind: 'present' }, r) && status(r) !== 'present' && <p className="-mt-1.5 text-xs text-muted-foreground">{t('attendance.sheet.noLastSite')}</p>}
             <div className="border-t pt-3">
@@ -246,29 +271,49 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
   )
 }
 
+/** A server late/OT hint under a time, in the warning tone. */
+function Hint({ text }: { text?: string }) {
+  return text ? <p className="mt-1 flex items-center gap-1 text-xs text-warning"><Clock className="size-3.5 shrink-0" aria-hidden />{text}</p> : null
+}
+
 /**
- * The office in-time on the sheet. It is applied only when focus leaves it (Enter in the box leaves it; an AM/PM click moves the cursor
- * into the box, it never writes). Escape, a blank, an unreadable time or one with no AM/PM puts the stored one back. A new day version
- * remounts it (its `key`).
+ * A row's time boxes, one unit: nothing is written while focus moves between them; when it leaves them, the changed times go out in one
+ * write (Enter in a box leaves it; an AM/PM click keeps the cursor in its box, it never writes). Escape, a blank, an unreadable time or
+ * one still waiting for AM/PM (a "10:30" with neither chosen is never read as morning) puts the stored time back. Focus selects the
+ * time, so typing replaces it. `cell` places each box (a table cell, a card slot).
  */
-function InTime({ was, label, className, disabled, onCommit }: { was: string; label: string; className: string; disabled: boolean; onCommit: (v: string) => void }) {
+function TimeCells({ cells, disabled, onCommit, cell }: {
+  cells: { field: TimeField; was: string; label: string; hint?: string }[]
+  disabled: boolean
+  onCommit: (times: Partial<Record<TimeField, string>>) => void
+  cell: (field: TimeField, node: ReactNode) => ReactNode
+}) {
   const { t } = useTranslation()
-  const [v, setV] = useState(was)
-  // the sheet's own Escape blurs the box before React re-renders, so the blur reads the value from here, not from `v`
-  const latest = useRef(was)
-  const put = (x: string) => { latest.current = x; setV(x) }
-  const box = useRef<HTMLDivElement>(null)
-  const done = (x: string) => {
-    const ok = /^\d{2}:\d{2}$/.test(x) ? x : was
-    // a time with no AM/PM chosen, or an unreadable one, is never written: say why, then put the stored time back
-    if (x && ok !== x) toast.error(t(to24(x, null) === 'period' ? 'time.choosePeriod' : 'time.invalid'))
-    put(ok)
-    if (ok !== was) onCommit(ok)
+  const stored = () => Object.fromEntries(cells.map((c) => [c.field, { v: c.was, needs: false }]))
+  const [draft, setDraft] = useState<Record<string, { v: string; needs: boolean }>>(stored)
+  const boxes = useRef<(HTMLDivElement | null)[]>([])
+  const done = () => {
+    const out: Partial<Record<TimeField, string>> = {}
+    const next = { ...draft }
+    for (const c of cells) {
+      const { v, needs } = draft[c.field]
+      const ok = !needs && /^\d{2}:\d{2}$/.test(v) ? v : c.was
+      // say why a typed time is not written, then put the stored one back
+      if (v && ok !== v) toast.error(t(needs ? 'time.choosePeriod' : 'time.invalid'))
+      next[c.field] = { v: ok, needs: false }
+      if (ok !== c.was) out[c.field] = ok
+    }
+    setDraft(next)
+    if (Object.keys(out).length) onCommit(out)
   }
-  return (
-    <div ref={box} className="w-44" onBlur={(e) => { if (!box.current?.contains(e.relatedTarget)) done(latest.current) }}
-      onKeyDown={(e) => { if (e.key === 'Escape') put(was); else if (e.key === 'Enter' && e.target instanceof HTMLInputElement) e.target.blur() }}>
-      <TimeInput value={v} label={label} aria-label={label} quietHint className={className} disabled={disabled} onChange={put} />
+  return cells.map((c, i) => cell(c.field, (
+    <div ref={(el) => { boxes.current[i] = el }} onBlur={(e) => { if (!boxes.current.some((b) => b?.contains(e.relatedTarget))) done() }}
+      onKeyDown={(e) => { if (e.key === 'Escape') setDraft(stored()); else if (e.key === 'Enter' && e.target instanceof HTMLInputElement) e.target.blur() }}>
+      {/* mouseup would drop the selection a click's focus just made */}
+      <TimeInput value={draft[c.field].v} label={c.label} aria-label={c.label} quietHint disabled={disabled}
+        onFocus={(e) => e.currentTarget.setSelectionRange(0, e.currentTarget.value.length)} onMouseUp={(e) => e.preventDefault()}
+        onChange={(v, needs) => setDraft((d) => ({ ...d, [c.field]: { v, needs } }))} />
+      <Hint text={c.hint} />
     </div>
-  )
+  )))
 }

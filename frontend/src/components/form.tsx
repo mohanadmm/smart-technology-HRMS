@@ -142,10 +142,10 @@ export function stopAtMissingPeriod(from: Element): boolean {
 /**
  * A 12-hour time: a box for the hour and minutes plus an AM/PM (ص/م) choice. `value` in and out is "HH:MM" (24-hour), '' for none.
  * A blank value has no AM/PM chosen; a 12-hour time typed without one is never guessed: the box asks for the choice, and it, like an
- * unreadable entry, goes out as typed; a Save calls `stopAtMissingPeriod` first. `label` names the AM/PM group; `quietHint` keeps the
+ * unreadable entry, goes out as typed (with `needsPeriod` set, so "10:30" is not mistaken for 10:30); a Save calls `stopAtMissingPeriod` first. `label` names the AM/PM group; `quietHint` keeps the
  * hint for screen readers only; the rest goes to the box.
  */
-export function TimeInput({ value, onChange, label, quietHint, className, disabled, ...rest }: { value: string; onChange: (v: string) => void; label: string; quietHint?: boolean } & Omit<React.ComponentProps<'input'>, 'value' | 'onChange' | 'onBlur' | 'type'>) {
+export function TimeInput({ value, onChange, label, quietHint, className, disabled, ...rest }: { value: string; onChange: (v: string, needsPeriod: boolean) => void; label: string; quietHint?: boolean } & Omit<React.ComponentProps<'input'>, 'value' | 'onChange' | 'onBlur' | 'type'>) {
   const { t } = useTranslation()
   const descId = useId()
   const root = useRef<HTMLDivElement>(null)
@@ -161,7 +161,7 @@ export function TimeInput({ value, onChange, label, quietHint, className, disabl
     const v = r === '' || isHhmm(r) ? r : text
     setDraft({ text, pm })
     setShown(v)
-    onChange(v)
+    onChange(v, r === 'period')
   }
   const needsChoice = to24(draft.text, draft.pm) === 'period'
   return (
