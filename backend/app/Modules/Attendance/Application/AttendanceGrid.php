@@ -103,14 +103,12 @@ final class AttendanceGrid
         $lastSites = $g === EmployeeType::Office ? [] : $this->lastSites(array_column($employed, 'id'), $date);
 
         $missing = array_fill_keys($p->days(), 0);
-        $off = array_fill_keys($p->days(), false);
         foreach ($days as $byDate) {
             foreach ($byDate as $d) {
                 $missing[$d['date']] += $d['state'] === 'missing' ? 1 : 0;
-                // A weekly off or holiday: derived while open, stored with source derived once locked (calculations §13).
-                $off[$d['date']] = $off[$d['date']] || $d['state'] === 'derived' || $d['source'] === 'derived';
             }
         }
+        $off = $this->days->offDays($p);
 
         $rows = [];
         foreach ($employed as $e) {

@@ -187,6 +187,15 @@ final class EffectiveDays
         return [];
     }
 
+    /** @return array<string, bool> date → the group's weekly off or an official holiday, from the calendar (the rows do not matter) */
+    public function offDays(Period $p): array
+    {
+        $weeklyOff = $this->weeklyOff($p->group, $this->rules->all());
+        $holidays = array_flip(OfficialHoliday::whereBetween('date', [$p->start, $p->end])->pluck('date')->all());
+
+        return array_combine($p->days(), array_map(fn (string $d) => OffDays::leaveCodeFor($d, $weeklyOff, isset($holidays[$d])) !== null, $p->days()));
+    }
+
     /**
      * @param  array<string, string>  $s  the settings
      * @return list<string> lowercase weekday names
