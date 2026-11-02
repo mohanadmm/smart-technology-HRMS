@@ -82,6 +82,7 @@ Outside-Alex minutes are paid at ×1, with no multiplier, as in the Excel.
 Each day records: scheduled in/out (default **08:00–17:00**), actual in/out, site, outside-Alex money, transport (full / half / none), advance. Weekly off **Friday**.
 
 - Scheduled in/out are stored on each day; they default to **08:00–17:00** (`worker_shift_start`/`worker_shift_end`) or the pay-row override. Late minutes = max(0, actual in − scheduled in); OT minutes = max(0, time worked − **8** h), as below. Both are shown as hints.
+- ⚠️ Every default Present stores actual in/out 08:00–17:00 (§13), and permanent workers' OT is computed from the times, so each default day pays **60 OT minutes** unless HR edits the times (client question 20).
 - ⚠️ Late minutes do not wrap around midnight: scheduled 00:00 with arrival 23:50 the day before gives 1,430 late minutes; scheduled 23:50 with arrival 00:10 gives 0. Must a scheduled start that crosses midnight wrap?
 
 - Hours worked = actual out − actual in. If out is earlier than in, the shift crossed midnight: add 24 h.
@@ -176,9 +177,12 @@ What the day sheet (كشف اليوم) shows for one group and date, then how it
 - Missing per date = number of employees whose day on that date is missing. Future dates count 0.
 - Office on time / late: a present office day is on time when the section 1 lateness hint is 0 and late when it is above 0. A present day with no in time counts as on time.
 - Present on a field row at a work site, through the bulk write (the sheet, the attendance import, the manager's day), stores
-  arrival = field shift start and departure = field shift end when the row sends no time and keeps none (P28). Office rows and
-  leave days get none. Single-day entry stores what it sends.
-- A date is off (tinted on the strip and the grid) when some employee's day on it is derived, or stored by a lock as derived.
+  arrival = field shift start and departure = field shift end when the day is new or changes kind to a work day, for each time
+  the row does not send (a sent empty time stays empty). Re-marking a present day, or moving it to another work site, fills
+  nothing. A default that would end before it starts (a shift crossing midnight) is not filled for engineers and day laborers;
+  a permanent worker's day may cross midnight. Office rows and leave days get none. Single-day entry stores what it sends.
+- A date is off (tinted on the strip and the grid) when it is the group's weekly off or an official holiday (§2a), whatever
+  the days stored on it.
 
 The sheet saves through bulk marking, under the same day rules as single-day entry:
 - All or nothing: if any row is stale (changed since loading) or breaks a rule, nothing is saved and every stale row is reported.
