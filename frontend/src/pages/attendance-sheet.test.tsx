@@ -231,7 +231,7 @@ test('P on a missing engineer posts his last site in one bulk request', async ()
   await user.click(within(tbl).getByRole('button', { name: 'حاضر Engineer-1' }))
   await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
   expect(sent(bulk)).toEqual({ date: '2026-10-18', rows: [{ employee_id: 'e1', version: null, site_id: 's1' }] })
-  await waitFor(() => expect(toast.success).toHaveBeenCalledWith('تم تسجيل 1'))
+  await waitFor(() => expect(toast.success).toHaveBeenCalledWith('تم تسجيل 1', expect.objectContaining({ action: expect.objectContaining({ label: 'تراجع' }) })))
 })
 
 test('a cohort sweep marks only the missing members of that site', async () => {
@@ -1376,4 +1376,23 @@ test('the times dialog keeps Apply disabled while both boxes are blank or a box 
   expect(apply).toBeEnabled()
   await user.click(within(dialog).getByRole('button', { name: 'إلغاء' }))
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+// S2b: Undo on the success toast
+test('the success toast carries Undo; one toast id, so a newer write replaces it, and its Undo puts back the newest write', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' }))
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
+  await menu('إجراءات أخرى Engineer-2', 'غياب')
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (2)'))
+  const [[, first], [, second]] = vi.mocked(toast.success).mock.calls as unknown as [string, { id: string; action: { onClick: () => void } }][]
+  expect(first.id).toBeTruthy()
+  expect(second.id).toBe(first.id)
+  second.action.onClick()
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(3))
+  expect(sent(bulk, 2).rows.map((r: { employee_id: string }) => r.employee_id)).toEqual(['e2'])
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
+  expect(undoButton()).toBeInTheDocument() // the Undo button stays
 })

@@ -18,7 +18,8 @@
     "name": "Name",
     "saved": "Changes saved.",
     "status": "Status",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "undo": "Undo"
   },
   "app": {
     "name": "Smart Technology HRMS",

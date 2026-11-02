@@ -36,6 +36,7 @@ const KPIS: [Filter, string, StatTone][] = [
   ['absent', 'attendance.sheet.kpi.absent', 'destructive'],
 ]
 const UNDO_DEPTH = 15
+const APPLIED_TOAST = 'attendance-sheet-applied'
 const OFFICE_KPIS: [Filter, string, StatTone][] = [KPIS[0], ['present', 'attendance.sheet.kpi.onTime', 'success'], ['late', 'attendance.sheet.kpi.late', 'warning'], KPIS[2], KPIS[3]]
 
 /**
@@ -137,7 +138,8 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
     const before = out.map((b) => free.find((r) => r.employee.id === b.employee_id)!)
     const after = await write(date, out, before, 'attendance.sheet.toast.conflict')
     if (!after) return null
-    toast.success(t('attendance.sheet.toast.applied', { count: out.length }))
+    // one toast id: a newer write replaces this toast, so its Undo is always the newest write's
+    toast.success(t('attendance.sheet.toast.applied', { count: out.length }), { id: APPLIED_TOAST, action: { label: t('common.undo'), onClick: () => void undo() } })
     const done = { label, before, after }
     undos.current = [...undos.current, { ...done, date }].slice(-UNDO_DEPTH)
     setUndoCount(undos.current.length)
