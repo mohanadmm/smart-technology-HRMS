@@ -14,12 +14,12 @@ import { FOCUS, QUICK } from './attendance-sheet-rows'
 type Batch = ReturnType<typeof parseBatch>
 
 /** The live badges under the paste box: how many rows it hits, the IDs not on the sheet, and the 500-ID cap. */
-export function BatchPreview({ batch, count }: { batch: Batch; count: number }) {
+function BatchPreview({ batch, count }: { batch: Batch; count: number }) {
   const { t, i18n } = useTranslation()
   return (
     <>
       <Badge variant={count ? 'default' : 'neutral'}>{t('attendance.sheet.matched', { count })}</Badge>
-      {batch.unknown.length > 0 && <Badge variant="warning">{t('attendance.sheet.unknown', { ids: new Intl.ListFormat(intlLocale(i18n.language)).format(batch.unknown) })}</Badge>}
+      {batch.unknown.length > 0 && <Badge variant="warning" className="whitespace-normal">{t('attendance.sheet.unknown', { ids: new Intl.ListFormat(intlLocale(i18n.language)).format(batch.unknown) })}</Badge>}
       {batch.capped && <Badge variant="warning">{t('attendance.sheet.capped', { max: MAX_BATCH })}</Badge>}
     </>
   )
@@ -66,8 +66,9 @@ export function PasteDialog({ open, onOpenChange, rows, leaveSite, onApply }: {
         </DialogBody>
         {/* Present is the dialog's one solid action; Absent and Sick are ghost */}
         <DialogFooter>
-          {QUICK.map(([action, label, Icon, tone], i) => (
-            <Button key={label} type="button" variant={i ? 'ghost' : 'default'} className={cn(FOCUS, i > 0 && tone)} disabled={!ids?.matches.length || (action.kind === 'leave' && !leaveSite(action.code))}
+          {QUICK.map(([action, label, Icon, tone]) => (
+            // a ghost has no border, so the tone's hover:border-* is dropped
+            <Button key={label} type="button" variant={action.kind === 'present' ? 'default' : 'ghost'} className={cn(FOCUS, action.kind !== 'present' && tone.replace(/ hover:border-\S+/, ''))} disabled={!ids?.matches.length || (action.kind === 'leave' && !leaveSite(action.code))}
               onClick={() => void run(action, t(label))}>
               <Icon aria-hidden />
               {t(label)}

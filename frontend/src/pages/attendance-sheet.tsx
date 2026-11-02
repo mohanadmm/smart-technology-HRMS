@@ -281,7 +281,7 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
           <div className="border-b px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
               {/* Enter does nothing here: the search only filters */}
-              <SearchInput value={query} onChange={(v) => { setQuery(v); setPage(1) }} placeholder={t('attendance.sheet.search')} />
+              <SearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); unselect() }} placeholder={t('attendance.sheet.search')} />
               {editable && (
                 <Button type="button" variant="ghost" size="sm" className={FOCUS} onClick={() => setPasting(true)}>
                   <ClipboardPaste aria-hidden />

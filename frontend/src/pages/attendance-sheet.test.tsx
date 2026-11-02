@@ -494,6 +494,9 @@ test.each([
     expect(screen.queryByRole('button', { name: /^تسجيل (الباقين|باقي)/ })).not.toBeInTheDocument()
     expect(within(tbl).queryByRole('textbox', { name: /^وقت الحضور/ })).toBeNull()
     expect(container.querySelector('[aria-pressed][aria-label="صباحًا"]')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'لصق أرقام' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^تراجع/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'ابحث بالاسم أو الرقم الوظيفي' })).toBeInTheDocument() // a reader can still search
     unmount()
   }
 })
@@ -617,6 +620,21 @@ test('Enter in the search sends nothing and selects nothing', async () => {
   expect(bulk).not.toHaveBeenCalled()
 })
 
+test('typing a search clears the selection, so a bulk action never writes hidden rows', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  const tbl = await table()
+  await user.click(within(tbl).getByRole('checkbox', { name: 'تحديد Engineer-1' }))
+  await user.click(within(tbl).getByRole('checkbox', { name: 'تحديد Engineer-2' }))
+  await user.type(search(), 'Engineer-2')
+  expect(screen.queryByRole('group', { name: 'إجراءات المحدد' })).not.toBeInTheDocument()
+  await user.clear(search())
+  expect(screen.queryByRole('group', { name: 'إجراءات المحدد' })).not.toBeInTheDocument()
+  expect(within(screen.getByRole('table')).getByRole('checkbox', { name: 'تحديد Engineer-1' })).not.toBeChecked()
+  expect(bulk).not.toHaveBeenCalled()
+})
+
 test('P, J, / and Ctrl+Z do nothing', async () => {
   const bulk = bulkOk()
   mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
@@ -642,7 +660,6 @@ test('the bulk bar sits after the rows card, under no overflow box, and sticks t
   expect(bar.previousElementSibling).toContainElement(screen.getByRole('table'))
 })
 
-
 test('the paste dialog applies Absent to the pasted list and reports unknown IDs', async () => {
   const bulk = bulkOk()
   mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
@@ -653,7 +670,7 @@ test('the paste dialog applies Absent to the pasted list and reports unknown IDs
   await user.type(within(dialog).getByRole('textbox', { name: 'الأرقام الوظيفية' }), '1{Enter}2{Enter}99')
   expect(within(dialog).getByRole('status')).toHaveTextContent('2 مطابق')
   expect(within(dialog).getByText('2 مطابق')).toHaveClass('rounded-md', 'bg-primary/10') // a kit Badge
-  expect(within(dialog).getByText('غير موجود في الكشف: 99')).toHaveClass('bg-warning/10')
+  expect(within(dialog).getByText('غير موجود في الكشف: 99')).toHaveClass('bg-warning/10', 'whitespace-normal') // a long ID list wraps at 375 px
   // one solid action, the rest ghost
   expect(within(dialog).getByRole('button', { name: 'حاضر' })).toHaveClass('bg-primary')
   for (const b of ['غياب', 'مرضي']) {
@@ -729,7 +746,6 @@ test('a card shows the no-last-site reason next to its disabled Present', async 
   const other = within(screen.getByRole('list', { name: 'الموظف' })).getByText('Engineer-1').closest('li')!
   expect(within(other).queryByText('بدون موقع سابق')).not.toBeInTheDocument()
 })
-
 
 test('Undo restores the previous day', async () => {
   const bulk = vi.fn((_url: string, init?: RequestInit) => json(200, { data: JSON.parse(String(init?.body)).rows.map((r: { employee_id: string }) => ({ employee_id: r.employee_id, version: bulk.mock.calls.length === 1 ? 1 : null })) }))

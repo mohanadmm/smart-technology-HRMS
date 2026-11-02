@@ -12,7 +12,7 @@ export type Status = ReturnType<typeof statusOf>
 
 export const FOCUS = 'outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-ring'
 // "missing" (no record) and "absent" (غ) never share a look: different tokens, icon and border style
-export const LOOK: Record<Status, { cls: string; text: string; icon: LucideIcon }> = {
+const LOOK: Record<Status, { cls: string; text: string; icon: LucideIcon }> = {
   missing: { cls: 'border-dashed bg-warning-bg border-warning-border', text: 'text-warning', icon: CircleHelp },
   present: { cls: 'bg-success-bg border-success-border', text: 'text-success', icon: Check },
   late: { cls: 'bg-warning-bg border-warning-border', text: 'text-warning', icon: Clock },
