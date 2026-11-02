@@ -34,13 +34,23 @@ test('cn() keeps the touch floor next to a caller size, and an explicit opt-out 
   expect(cn('shadow-float', 'shadow-none')).toBe('shadow-none')
 })
 
-// The touch floor is min-h-tap / min-w-tap, and the only shadow is shadow-float; the old spellings must not come back.
-// Pages are not scanned yet: they keep their own heights and shadow-1 until UI-3 moves them.
-test('the kit uses no fixed 44 px, no shadow but shadow-float and no backdrop filter', () => {
-  const dir = `${import.meta.dirname}/components`
-  const banned = /(?:[a-z-]+:)*(?:min-)?(?:h|w|size)-11\b|(?<![\w-])(?:min-)?(?:h|size)-\[[\d.]+(?:px|rem)\]|\bshadow-(?!float\b|none\b)[\w[(-]+|backdrop-brightness/g
-  const hits = readdirSync(dir, { recursive: true, encoding: 'utf8' })
+// The touch floor is min-h-tap / min-w-tap, the only shadow is shadow-float, and figures are tabular everywhere (index.css sets it on
+// html), so the old spellings must not come back. Pages join as UI-3 sweeps them: each slice deletes its own SKIP entries, and
+// pages/site-day.tsx stays until its owner's hand-over.
+const SKIP = [
+  'pages/attendance-day.tsx',
+  'pages/attendance-import.tsx',
+  'pages/attendance.tsx',
+  'pages/holidays.tsx',
+  'pages/settings.tsx',
+  'pages/site-day.tsx',
+  'pages/sites.tsx',
+]
+test('the kit and the swept pages use no fixed 44 px, no shadow but shadow-float, no tabular class and no backdrop filter', () => {
+  const banned = /(?:[a-z-]+:)*(?:min-)?(?:h|w|size)-11\b|(?<![\w-])(?:min-)?(?:h|size)-\[[\d.]+(?:px|rem)\]|\bshadow-(?!float\b|none\b)[\w[(-]+|backdrop-brightness|(?<![\w-])tabular(?:-nums)?\b/g
+  const hits = (f: string) => [...readFileSync(`${import.meta.dirname}/${f}`, 'utf8').matchAll(banned)].map((m) => `${f}: ${m[0]}`)
+  const files = ['components', 'pages'].flatMap((dir) => readdirSync(`${import.meta.dirname}/${dir}`, { recursive: true, encoding: 'utf8' }).map((f) => `${dir}/${f}`))
     .filter((f) => /\.tsx?$/.test(f) && !f.includes('.test.'))
-    .flatMap((f) => [...readFileSync(`${dir}/${f}`, 'utf8').matchAll(banned)].map((m) => `${f}: ${m[0]}`))
-  expect(hits).toEqual([])
+  expect(files.filter((f) => !SKIP.includes(f)).flatMap(hits)).toEqual([])
+  expect(SKIP.filter((f) => !hits(f).length)).toEqual([]) // a swept page leaves SKIP
 })

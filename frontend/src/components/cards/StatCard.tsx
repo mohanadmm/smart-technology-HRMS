@@ -14,7 +14,7 @@ export function MiniStat({ label, value, icon: Icon }: { label: string; value: R
         </div>
       )}
       <div className="min-w-0">
-        <div className="text-lg leading-tight font-semibold tabular">{value}</div>
+        <div className="text-lg leading-tight font-semibold">{value}</div>
         <div className="truncate text-xs text-muted-foreground">{label}</div>
       </div>
     </div>
