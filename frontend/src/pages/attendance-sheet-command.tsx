@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MAX_BATCH, parseBatch, type SheetAction, type SheetRow, statusOf } from '@/lib/day-sheet'
 import { cn } from '@/lib/utils'
-import { FOCUS, QUICK } from './attendance-sheet-rows'
+import { QUICK } from './attendance-sheet-rows'
 
 type Batch = ReturnType<typeof parseBatch>
 
@@ -68,7 +68,7 @@ export function PasteDialog({ open, onOpenChange, rows, leaveSite, onApply }: {
         <DialogFooter>
           {QUICK.map(([action, label, Icon, tone]) => (
             // a ghost has no border, so the tone's hover:border-* is dropped
-            <Button key={label} type="button" variant={action.kind === 'present' ? 'default' : 'ghost'} className={cn(FOCUS, action.kind !== 'present' && tone.replace(/ hover:border-\S+/, ''))} disabled={!ids?.matches.length || (action.kind === 'leave' && !leaveSite(action.code))}
+            <Button key={label} type="button" variant={action.kind === 'present' ? 'default' : 'ghost'} className={cn(action.kind !== 'present' && tone.replace(/ hover:border-\S+/, ''))} disabled={!ids?.matches.length || (action.kind === 'leave' && !leaveSite(action.code))}
               onClick={() => void run(action, t(label))}>
               <Icon aria-hidden />
               {t(label)}

@@ -1100,7 +1100,7 @@ test('the cards have their own select-page box: it selects and clears the page a
   const list = screen.getByRole('list', { name: 'الموظف' })
   const all = screen.getAllByRole('checkbox', { name: 'تحديد كل الصفحة' }).find((el) => !el.closest('table'))
   expect(all).toBeDefined()
-  expect(all!.closest('label')).toHaveClass('xl:hidden', 'min-h-11') // a 44 px line, hidden where the table header has its own
+  expect(all!.closest('label')).toHaveClass('xl:hidden', 'min-h-tap') // a touch-height line, hidden where the table header has its own
   await user.click(within(list).getAllByRole('checkbox')[0])
   expect(all).toHaveProperty('indeterminate', true)
   await user.click(all!)
@@ -1395,4 +1395,14 @@ test('the success toast carries Undo; one toast id, so a newer write replaces it
   expect(sent(bulk, 2).rows.map((r: { employee_id: string }) => r.employee_id)).toEqual(['e2'])
   await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
   expect(undoButton()).toBeInTheDocument() // the Undo button stays
+})
+
+// S2b: class sweep
+test('row controls use the kit touch floor, with no fixed heights; the status pill is a kit badge', async () => {
+  mockFetch(routes)
+  edit()
+  const tr = within(await table()).getByText('Engineer-1').closest('tr')!
+  for (const b of within(tr).getAllByRole('button')) expect(b.className).not.toMatch(/(^|\s)h-(9|11)(\s|$)/)
+  expect(within(tr).getByRole('checkbox').closest('label')).toHaveClass('min-h-tap', 'min-w-tap')
+  expect(within(tr).getAllByText('غير مسجل')[0]).toHaveClass('rounded-md', 'font-semibold', 'bg-warning-bg') // the pill, before the totals' label
 })

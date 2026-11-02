@@ -3,16 +3,16 @@ import { type ReactNode, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatTime, localName, type Row, TimeInput } from '@/components/form'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { type SheetAction, type SheetRow, statusOf } from '@/lib/day-sheet'
-import { cn } from '@/lib/utils'
+import { cn, FOCUS } from '@/lib/utils'
 
 export type Status = ReturnType<typeof statusOf>
 type TimeField = 'in_time' | 'out_time'
 
-export const FOCUS = 'outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-ring'
 // "missing" (no record) and "absent" (غ) never share a look: different tokens, icon and border style
 const LOOK: Record<Status, { cls: string; text: string; icon: LucideIcon }> = {
   missing: { cls: 'border-dashed bg-warning-bg border-warning-border', text: 'text-warning', icon: CircleHelp },
@@ -73,17 +73,17 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
   // the select-page box: in the table header from xl, on its own line above the cards below it
   const pageCheck = <input type="checkbox" className={cn(FOCUS, 'size-4 accent-primary')} checked={pageAll} ref={(el) => { if (el) el.indeterminate = pageSome && !pageAll }} onChange={() => onToggle(pageIds, !pageAll)} />
   const check = (r: SheetRow) => (
-    <label className="flex size-11 cursor-pointer items-center justify-center">
+    <label className="flex min-h-tap min-w-tap cursor-pointer items-center justify-center">
       <input type="checkbox" className={cn(FOCUS, 'size-4 accent-primary')} checked={selected.has(r.employee.id)} onChange={(e) => onToggle([r.employee.id], e.target.checked)} />
       <span className="sr-only">{t('attendance.sheet.select', { name: name(r) })}</span>
     </label>
   )
   // compact (the table): icon-only below 2xl, named by its tooltip; the aria-label always names the action and the employee
-  const present = (r: SheetRow, h: string, compact = false) => {
+  const present = (r: SheetRow, compact = false) => {
     const [action, label, Icon, tone] = QUICK[0]
     const s = status(r)
     return (
-      <Button type="button" variant="outline" size="sm" className={cn(FOCUS, h, 'px-2.5', tone, 'aria-pressed:border-success/25 aria-pressed:bg-success/10')} aria-pressed={s === 'present' || s === 'late'}
+      <Button type="button" variant="outline" size="sm" className={cn('px-2.5', tone, 'aria-pressed:border-success/25 aria-pressed:bg-success/10')} aria-pressed={s === 'present' || s === 'late'}
         disabled={pending.has(r.employee.id) || noSite(action, r)} {...(compact && { title: t(label) })} {...(noSite(action, r) && { title: t('attendance.sheet.noLastSite'), 'aria-describedby': noSiteId })}
         aria-label={t('attendance.sheet.rowAction', { action: t(label), name: name(r) })} onClick={() => onApply(action, r, t('attendance.sheet.actionOn', { action: t(label), name: name(r) }))}>
         <Icon aria-hidden />
@@ -92,10 +92,10 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
     )
   }
   // ⋯: the other quick actions and Details. Not modal, so the day editor it opens never inherits a blocked page
-  const more = (r: SheetRow, h: string) => (
+  const more = (r: SheetRow) => (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className={cn(FOCUS, h, 'px-2.5')} title={t('attendance.sheet.action.more')}
+        <Button type="button" variant="outline" size="sm" className="px-2.5" title={t('attendance.sheet.action.more')}
           aria-label={t('attendance.sheet.rowAction', { action: t('attendance.sheet.action.more'), name: name(r) })}>
           <Ellipsis aria-hidden />
         </Button>
@@ -149,10 +149,10 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
       : s === 'absent' ? t('attendance.sheet.kpi.absent')
       : leave ? leaveName(r, leave) : t('attendance.state.derived')
     return (
-      <span className={cn('inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold whitespace-nowrap', cls, text)}>
-        <Icon className="size-3.5 shrink-0" aria-hidden />
+      <Badge variant="outline" className={cn('font-semibold', cls, text)}>
+        <Icon className="shrink-0" aria-hidden />
         {label}
-      </span>
+      </Badge>
     )
   }
   // a field row's site: the day's site when present, else the last site on a missing row, else «choose a site»; a pick writes that site
@@ -189,8 +189,8 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
     if (s === 'missing' && r.last_site_id) return <span className="text-xs text-muted-foreground">{t('attendance.sheet.lastSite', { site: siteName(r.last_site_id) })}</span>
     return null
   }
-  const details = (r: SheetRow, cls: string, compact = false) => (
-    <Button type="button" variant="outline" size="sm" className={cn(FOCUS, cls, compact && 'px-2.5')} {...(compact && { title: t('attendance.sheet.action.details') })}
+  const details = (r: SheetRow, compact = false) => (
+    <Button type="button" variant="outline" size="sm" className={cn(compact && 'px-2.5')} {...(compact && { title: t('attendance.sheet.action.details') })}
       aria-label={t('attendance.sheet.rowAction', { action: t('attendance.sheet.action.details'), name: name(r) })} onClick={() => onOpenDay(r.employee, date)}>
       {compact && <Eye aria-hidden />}
       <span className={cn(compact && 'hidden 2xl:inline')}>{t('attendance.sheet.action.details')}</span>
@@ -201,7 +201,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
     <div className={table ? 'grid w-max grid-cols-[auto_auto] gap-x-4 gap-y-0.5' : 'grid grid-cols-4 gap-3'}>
       {TOTALS.map(([k, tone, label]) => (
         <div key={k} className={table ? 'flex items-baseline gap-1' : 'min-w-14'}>
-          <div className={cn('text-sm font-semibold tabular', r.totals[k] ? tone : 'text-muted-foreground')}>{r.totals[k]}</div>
+          <div className={cn('text-sm font-semibold', r.totals[k] ? tone : 'text-muted-foreground')}>{r.totals[k]}</div>
           <div className={cn('text-[11px] text-muted-foreground', !table && 'truncate')}>{t(office && k === 'worked' ? 'attendance.present' : label)}</div>
         </div>
       ))}
@@ -217,7 +217,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
             <TableRow>
               {editable && (
                 <TableHead className="w-0 px-1 first:ps-2">
-                  <label className="flex size-11 cursor-pointer items-center justify-center">
+                  <label className="flex min-h-tap min-w-tap cursor-pointer items-center justify-center">
                     {pageCheck}
                     <span className="sr-only">{t('attendance.sheet.selectPage')}</span>
                   </label>
@@ -237,7 +237,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
             {rows.map((r) => (
               <TableRow key={r.employee.id} className={cn(selected.has(r.employee.id) && SELECTED)}>
                 {editable && <TableCell className="px-1 py-0 first:ps-2">{check(r)}</TableCell>}
-                <TableCell className="tabular text-muted-foreground">{r.employee.code}</TableCell>
+                <TableCell className="text-muted-foreground">{r.employee.code}</TableCell>
                 <TableCell className="whitespace-normal">
                   <bdi className="font-medium">{name(r)}</bdi>
                   {r.employee.department && <div className="text-xs text-muted-foreground">{r.employee.department}</div>}
@@ -252,7 +252,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
                 {!office && (times(r, tableCell) ?? <><TableCell /><TableCell /></>)}
                 <TableCell>
                   <div className="flex items-center justify-end gap-1.5">
-                    {editable ? <>{present(r, 'h-9', true)}{more(r, 'h-9')}</> : details(r, 'h-9', true)}
+                    {editable ? <>{present(r, true)}{more(r)}</> : details(r, true)}
                   </div>
                 </TableCell>
                 <TableCell className={cn('border-s', !selected.has(r.employee.id) && 'bg-muted/40')}>{totals(r, true)}</TableCell>
@@ -262,8 +262,8 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
         </Table>
       </div>
       {editable && (
-        <label className="flex min-h-11 cursor-pointer items-center gap-1.5 border-b ps-1.5 pe-4 text-sm font-medium xl:hidden">
-          <span className="flex size-11 items-center justify-center">{pageCheck}</span>
+        <label className="flex min-h-tap cursor-pointer items-center gap-1.5 border-b ps-1.5 pe-4 text-sm font-medium xl:hidden">
+          <span className="flex min-h-tap min-w-tap items-center justify-center">{pageCheck}</span>
           {t('attendance.sheet.selectPage')}
         </label>
       )}
@@ -274,7 +274,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
               {editable && <div className="-my-2.5 -ms-2.5">{check(r)}</div>}
               <div className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">
-                  <span className="tabular text-muted-foreground">{r.employee.code}</span>
+                  <span className="text-muted-foreground">{r.employee.code}</span>
                   <bdi className="truncate font-medium">{name(r)}</bdi>
                 </span>
                 {r.employee.department && <div className="truncate text-xs text-muted-foreground">{r.employee.department}</div>}
@@ -283,7 +283,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0">{where(r)}</div>
-              <div className="flex gap-2">{editable ? <>{present(r, 'h-11')}{more(r, 'h-11')}</> : details(r, 'h-11')}</div>
+              <div className="flex gap-2">{editable ? <>{present(r)}{more(r)}</> : details(r)}</div>
             </div>
             {(office || status(r) === 'present') && <div className="grid gap-3 sm:grid-cols-2">{times(r, cardCell)}</div>}
             {/* not on a row already at a site today: there the disabled Present is no problem to explain */}

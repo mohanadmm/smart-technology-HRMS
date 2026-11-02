@@ -17,9 +17,9 @@ import { ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { type BulkRow, bulkRows, MAX_BATCH, matches, type SheetAction, type SheetRow, statusOf, undoRows } from '@/lib/day-sheet'
 import { queryKey, SITES, useApi, useSave } from '@/lib/query'
-import { cn } from '@/lib/utils'
+import { cn, FOCUS } from '@/lib/utils'
 import { PasteDialog, TimesDialog } from './attendance-sheet-command'
-import { FOCUS, QUICK, SheetRows, type Status } from './attendance-sheet-rows'
+import { QUICK, SheetRows, type Status } from './attendance-sheet-rows'
 
 type Filter = 'all' | 'missing' | 'present' | 'late' | 'leave' | 'absent'
 type Sheet = { group: string; date: string; days: { date: string; missing: number }[]; rows: SheetRow[] }
@@ -266,7 +266,7 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
                 </button>
                 {/* a field cohort sweeps to its own site; the "no last site" cohort has none to sweep to */}
                 {editable && (office || key) && (
-                  <Button type="button" variant="outline" size="sm" className={cn(FOCUS, 'text-success')} disabled={done === total}
+                  <Button type="button" variant="outline" size="sm" className="text-success" disabled={done === total}
                     aria-label={t('attendance.sheet.sweepFor', { cohort: cohortName(key) })}
                     onClick={() => void apply({ kind: 'present' }, rows.filter((r) => cohortOf(r) === key && isMissing(r)), t('attendance.sheet.sweepFor', { cohort: cohortName(key) }))}>
                     <CheckCheck aria-hidden />
@@ -286,19 +286,19 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
               {/* Enter does nothing here: the search only filters */}
               <SearchInput value={query} onChange={(v) => { setQuery(v); setPage(1); unselect() }} placeholder={t('attendance.sheet.search')} />
               {editable && (
-                <Button type="button" variant="ghost" size="sm" className={FOCUS} onClick={() => setPasting(true)}>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setPasting(true)}>
                   <ClipboardPaste aria-hidden />
                   {t('attendance.sheet.paste.button')}
                 </Button>
               )}
               {editable && (
-                <Button type="button" variant="ghost" size="sm" className={cn(FOCUS, 'aria-disabled:cursor-not-allowed aria-disabled:opacity-50')} aria-disabled={!undoCount || pending.size > 0} onClick={() => void undo()}>
+                <Button type="button" variant="ghost" size="sm" className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50" aria-disabled={!undoCount || pending.size > 0} onClick={() => void undo()}>
                   <Undo2 aria-hidden />
                   {t('attendance.sheet.undo', { count: undoCount })}
                 </Button>
               )}
               {editable && (
-                <Button type="button" size="sm" className={cn(FOCUS, 'ms-auto')} disabled={!rest.length} onClick={() => void apply({ kind: 'present' }, rest, t('attendance.sheet.rest', { count: rest.length }))}>
+                <Button type="button" size="sm" className="ms-auto" disabled={!rest.length} onClick={() => void apply({ kind: 'present' }, rest, t('attendance.sheet.rest', { count: rest.length }))}>
                   <CheckCheck aria-hidden />
                   {t('attendance.sheet.rest', { count: rest.length })}
                 </Button>
@@ -326,12 +326,12 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
         <ActionBar label={t('attendance.sheet.bulk.label')}>
           <span className="me-auto text-sm font-semibold">{t('attendance.sheet.bulk.count', { count: picked.length })}</span>
           {QUICK.map(([action, label, Icon, tone]) => (
-            <Button key={label} type="button" variant="outline" size="sm" className={cn(FOCUS, tone)} disabled={noLeave(action)} onClick={() => bulk(action, t(label))}>
+            <Button key={label} type="button" variant="outline" size="sm" className={tone} disabled={noLeave(action)} onClick={() => bulk(action, t(label))}>
               <Icon aria-hidden />
               {t(label)}
             </Button>
           ))}
-          <Button type="button" variant="outline" size="sm" className={FOCUS} onClick={() => setTiming(true)}>
+          <Button type="button" variant="outline" size="sm" onClick={() => setTiming(true)}>
             <Clock aria-hidden />
             {t('attendance.sheet.bulk.times')}
           </Button>
@@ -342,13 +342,13 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
                 <SelectField name="bulk_site" label={t('attendance.sheet.bulk.setSite')} values={{ bulk_site: siteChoice }} errs={{}} blank={t('attendance.sheet.bulk.pickSite')}
                   options={workSites.map((s) => [s.id, localName(s, lang)])} set={(_, v) => setSiteChoice(v)} />
               </div>
-              <Button type="button" variant="outline" size="sm" className={FOCUS} disabled={!siteChoice}
+              <Button type="button" variant="outline" size="sm" disabled={!siteChoice}
                 onClick={() => bulk({ kind: 'site', siteId: siteChoice }, t('attendance.sheet.actionOn', { action: t('attendance.sheet.bulk.setSite'), name: siteName(siteChoice) }))}>
                 {t('attendance.sheet.bulk.apply')}
               </Button>
             </div>
           )}
-          <Button type="button" variant="ghost" size="sm" className={FOCUS} onClick={unselect}>{t('attendance.sheet.bulk.clear')}</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={unselect}>{t('attendance.sheet.bulk.clear')}</Button>
         </ActionBar>
       )}
       {editable && timing && (
