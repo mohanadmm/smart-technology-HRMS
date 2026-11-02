@@ -315,3 +315,23 @@ test('hovering an off cell darkens its tint instead of lightening it', async () 
   expect(off).not.toHaveClass('hover:bg-muted')
   expect(screen.getByRole('button', { name: 'Engineer-2 2026-10-31: Site-1' })).toHaveClass('hover:bg-muted')
 })
+
+// jsdom does not paint, so this pins the structure: with collapsed borders Chromium leaves a 1 px band at each row line of a sticky
+// cell unpainted at some sub-pixel offsets, and a tinted off column scrolling under it shows through. Separate borders that each cell
+// owns close the band; the last row leaves its line to the legend.
+test('the grid cells own their row lines, so nothing shows through the sticky name column', async () => {
+  onMonday()
+  mockFetch(weekRoutes)
+  renderWithAuth(<AttendancePage />, ['attendance.view.all'], { path: '/attendance?group=engineer&tab=grid' })
+  const table = await screen.findByRole('table')
+  expect(table).toHaveClass('border-separate', 'border-spacing-0')
+  const [head, ...days] = await screen.findAllByRole('columnheader')
+  expect(head).toHaveClass('sticky', 'border-b')
+  expect(days[0]).toHaveClass('border-b')
+  expect(days[3]).toHaveClass('border-b-2', 'border-primary') // today keeps its underline
+  expect(days[3]).not.toHaveClass('border-b')
+  const [first, last] = [screen.getByText('Engineer-1').closest('td')!, screen.getByText('Engineer-2').closest('td')!]
+  expect(first).toHaveClass('sticky', 'border-b')
+  expect(screen.getByRole('button', { name: 'Engineer-1 2026-10-30: جمعة' }).closest('td')).toHaveClass('border-b')
+  expect(last.closest('tbody')).toHaveClass('[&_tr:last-child>td]:border-b-0')
+})

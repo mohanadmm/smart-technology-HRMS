@@ -228,22 +228,24 @@ function Grid({ group, start, onOpenDay }: { group: string; start: string; onOpe
   if (!grid.length) return <EmptyState icon={Users} title={t('attendance.empty')} />
   return (
     <>
-      <Table ref={showToday}>
+      {/* each cell owns its row line: with collapsed borders a sticky cell leaves a 1 px band unpainted at some sub-pixel offsets,
+          and a tinted off column scrolling under the names shows through it */}
+      <Table ref={showToday} className="border-separate border-spacing-0">
         <TableHeader>
           <TableRow>
-            <TableHead className="sticky start-0 z-10 bg-muted">{t('attendance.employee')}</TableHead>
+            <TableHead className="sticky start-0 z-10 border-b bg-muted">{t('attendance.employee')}</TableHead>
             {grid[0].days.map(({ date }) => (
-              <TableHead key={date} aria-current={date === today ? 'date' : undefined} className={cn('min-w-14 px-1 py-1 text-center normal-case tracking-normal first:ps-1 last:pe-1', offDays.has(date) && OFF, date === today && 'border-b-2 border-primary bg-accent text-accent-foreground')}>
+              <TableHead key={date} aria-current={date === today ? 'date' : undefined} className={cn('min-w-14 border-b px-1 py-1 text-center normal-case tracking-normal first:ps-1 last:pe-1', offDays.has(date) && OFF, date === today && 'border-b-2 border-primary bg-accent text-accent-foreground')}>
                 <div>{t(`weekdayShort.${weekdayOf(date)}`)}</div>
                 <div className={cn('text-sm font-semibold', date !== today && 'text-foreground')}>{Number(date.slice(8))}</div>
               </TableHead>
             ))}
           </TableRow>
         </TableHeader>
-        <TableBody>
+        <TableBody className="[&_tr:last-child>td]:border-b-0">
           {grid.map(({ employee, days }) => (
             <TableRow key={employee.id}>
-              <TableCell className="sticky start-0 z-10 bg-card">
+              <TableCell className="sticky start-0 z-10 border-b bg-card">
                 <span className="flex items-center gap-2">
                   <span className="tabular text-muted-foreground">{employee.code}</span>
                   <bdi>{localName(employee, i18n.language)}</bdi>
@@ -253,7 +255,7 @@ function Grid({ group, start, onOpenDay }: { group: string; start: string; onOpe
                 const text = label(d)
                 const off = d.state === 'future' || d.state === 'not_employed'
                 return (
-                  <TableCell key={d.date} className={cn('px-0.5 py-1 first:ps-0.5 last:pe-0.5', offDays.has(d.date) && OFF)}>
+                  <TableCell key={d.date} className={cn('border-b px-0.5 py-1 first:ps-0.5 last:pe-0.5', offDays.has(d.date) && OFF)}>
                     <button type="button" disabled={off} aria-label={`${localName(employee, i18n.language)} ${d.date}: ${text}`} className={cn(CELL, LOOK[d.state], offDays.has(d.date) && d.state !== 'missing' && 'hover:bg-muted-foreground/15')} onClick={() => onOpenDay(employee, d.date)}>
                       {off ? <span aria-hidden>—</span> : text}
                     </button>
