@@ -412,8 +412,8 @@
     "leave_days_under_one_year": "أيام الإجازة لمن خدمته أقل من سنة",
     "leave_days_one_year_plus": "أيام الإجازة لمن أتم سنة أو أكثر",
     "leave_casual_days": "أيام الإجازة العارضة",
-    "worker_shift_start": "بدء وردية العمال المثبتين",
-    "worker_shift_end": "انتهاء وردية العمال المثبتين"
+    "worker_shift_start": "بدء وردية العاملين بالمواقع",
+    "worker_shift_end": "انتهاء وردية العاملين بالمواقع"
   },
   "weekday": {
     "saturday": "السبت",
