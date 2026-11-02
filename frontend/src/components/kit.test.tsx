@@ -1,8 +1,11 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Download, Plus } from 'lucide-react'
 import { useState } from 'react'
+import { MemoryRouter } from 'react-router-dom'
 import { expect, test, vi } from 'vitest'
 import '@/i18n'
+import { PageHeader } from '@/components/common/PageHeader'
 import { RowActions } from '@/components/common/RowActions'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { Alert } from '@/components/common/Alert'
@@ -81,7 +84,7 @@ test('Alert announces danger and success but leaves a static note silent', () =>
 })
 
 test('ErrorBanner draws a danger Alert with only the messages no field shows', () => {
-  render(<ErrorBanner err={new ApiError('VALIDATION', 'invalid', 422, [{ field: 'name', message: 'الاسم مطلوب' }, { field: 'x', message: 'خطأ آخر' }])} shown={['name']} />)
+  render(<ErrorBanner err={new ApiError('VALIDATION', 'invalid', 422, [{ code: 'required', field: 'name', message: 'الاسم مطلوب' }, { code: 'invalid', field: 'x', message: 'خطأ آخر' }])} shown={['name']} />)
   const alert = screen.getByRole('alert')
   expect(alert).toHaveTextContent('خطأ آخر')
   expect(alert).not.toHaveTextContent('الاسم مطلوب')
@@ -137,4 +140,37 @@ test('ActionBar holds a count, Clear, actions and a button that opens a dialog',
   expect(within(bar).getByRole('button', { name: 'مسح' })).toBeInTheDocument()
   await user.click(within(bar).getByRole('button', { name: 'تعديل الأوقات' }))
   expect(await screen.findByRole('dialog', { name: 'تعديل الأوقات' })).toBeInTheDocument()
+})
+
+test('PageHeader draws one solid main action after at most two ghost alternatives', async () => {
+  const add = vi.fn()
+  render(
+    <PageHeader
+      title="المواقع"
+      description="من 26 أكتوبر إلى 25 نوفمبر"
+      action={{ label: 'إضافة موقع', icon: Plus, onClick: add }}
+      secondary={[{ label: 'تصدير', icon: Download, onClick: () => {} }, { label: 'استيراد', onClick: () => {} }]}
+    />,
+  )
+  expect(screen.getByRole('heading', { level: 1, name: 'المواقع' })).toBeInTheDocument()
+  const buttons = screen.getAllByRole('button')
+  expect(buttons.map((b) => b.textContent)).toEqual(['تصدير', 'استيراد', 'إضافة موقع'])
+  expect(buttons.filter((b) => b.className.includes('bg-primary'))).toEqual([buttons[2]])
+  expect(buttons[2]).toHaveClass('max-sm:w-full')
+  for (const b of buttons.slice(0, 2)) expect(b.className).not.toMatch(/\bbg-primary\b|\bborder\b/)
+  await user.click(buttons[2])
+  expect(add).toHaveBeenCalledOnce()
+})
+
+test('PageHeader renders a `to` action as a link styled as the solid button', () => {
+  render(<MemoryRouter><PageHeader title="الموظفون" action={{ label: 'إضافة موظف', to: '/employees/new' }} /></MemoryRouter>)
+  const link = screen.getByRole('link', { name: 'إضافة موظف' })
+  expect(link).toHaveAttribute('href', '/employees/new')
+  expect(link).toHaveClass('bg-primary')
+  expect(screen.queryByRole('button')).toBeNull()
+})
+
+test('PageHeader still renders legacy actions until employees.tsx moves', () => {
+  render(<PageHeader title="الموظفون" actions={<button type="button">قديم</button>} />)
+  expect(screen.getByRole('button', { name: 'قديم' })).toBeInTheDocument()
 })
