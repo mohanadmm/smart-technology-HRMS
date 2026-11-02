@@ -33,9 +33,8 @@ const TOTALS = [['worked', 'text-success', 'attendance.sheet.kpi.worked'], ['lea
 /**
  * One page of the day sheet: a table from xl up, cards below it (below xl the table is wider than its card, in both groups). Below 2xl
  * the table's actions are icons, and its totals always sit in two columns, so the table fits its card. Writes go back through `onApply` (the sheet's `apply()`).
- * `cursor` is the keyboard row (J/K): it carries `aria-current` and a ring.
  */
-export function SheetRows({ rows, office, editable, date, sites, selected, pending, cursor, leaveSite, onToggle, onApply, onOpenDay }: {
+export function SheetRows({ rows, office, editable, date, sites, selected, pending, leaveSite, onToggle, onApply, onOpenDay }: {
   rows: SheetRow[]
   office: boolean
   editable: boolean
@@ -43,7 +42,6 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
   sites: Row[]
   selected: ReadonlySet<string>
   pending: ReadonlySet<string>
-  cursor: string | null
   leaveSite: (code: string) => string | undefined
   onToggle: (ids: string[], on: boolean) => void
   onApply: (action: SheetAction, row: SheetRow, label: string) => void
@@ -121,8 +119,6 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
       <span className={cn(compact && 'hidden 2xl:inline')}>{t('attendance.sheet.action.details')}</span>
     </Button>
   )
-  // the keyboard cursor: aria-current plus an inset ring (the sheet scrolls it into view)
-  const here = (r: SheetRow) => (r.employee.id === cursor ? true : undefined)
   // the table's totals: two content-sized columns of "number label" (fr tracks let the labels overlap); a card spreads four across
   const totals = (r: SheetRow, table = false) => (
     <div className={table ? 'grid w-max grid-cols-[auto_auto] gap-x-4 gap-y-0.5' : 'grid grid-cols-4 gap-3'}>
@@ -160,7 +156,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
           </TableHeader>
           <TableBody>
             {rows.map((r) => (
-              <TableRow key={r.employee.id} aria-current={here(r)} className={cn(selected.has(r.employee.id) && SELECTED, here(r) && 'ring-2 ring-primary ring-inset')}>
+              <TableRow key={r.employee.id} className={cn(selected.has(r.employee.id) && SELECTED)}>
                 {editable && <TableCell className="px-1 py-0 first:ps-2">{check(r)}</TableCell>}
                 <TableCell className="tabular text-muted-foreground">{r.employee.code}</TableCell>
                 <TableCell className="whitespace-normal">
@@ -194,7 +190,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
       )}
       <ul aria-label={t('attendance.employee')} className="divide-y xl:hidden">
         {rows.map((r) => (
-          <li key={r.employee.id} aria-current={here(r)} className={cn('space-y-3 p-4', selected.has(r.employee.id) && SELECTED, here(r) && 'ring-2 ring-primary ring-inset')}>
+          <li key={r.employee.id} className={cn('space-y-3 p-4', selected.has(r.employee.id) && SELECTED)}>
             <div className="flex items-start justify-between gap-3">
               {editable && <div className="-my-2.5 -ms-2.5">{check(r)}</div>}
               <div className="min-w-0 flex-1">
