@@ -103,7 +103,7 @@ export function DataList<T>({ label, rows, rowKey, title, fields = [], status, a
                     <span aria-hidden="true" className="shrink-0 text-muted-foreground sm:hidden">
                       {f.header}
                     </span>
-                    <div className="min-w-0 max-sm:text-end">{f.cell(r)}</div>
+                    <div className="min-w-0 [overflow-wrap:anywhere] max-sm:text-end">{f.cell(r)}</div>
                   </td>
                 ))}
                 {status && (

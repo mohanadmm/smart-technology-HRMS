@@ -6,7 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { expect, test, vi } from 'vitest'
 import '@/i18n'
 import { DataList, type DataListProps } from '@/components/common/DataList'
-import { PageHeader } from '@/components/common/PageHeader'
+import { type HeaderAction, PageHeader } from '@/components/common/PageHeader'
 import { RowActions } from '@/components/common/RowActions'
 import { StatRow } from '@/components/common/StatRow'
 import { StatusBadge } from '@/components/common/StatusBadge'
@@ -164,6 +164,10 @@ test('PageHeader draws one solid main action after at most two ghost alternative
   expect(add).toHaveBeenCalledOnce()
 })
 
+// @ts-expect-error a link cannot be disabled, so `disabled` is only accepted with onClick
+const linkCannotBeDisabled: HeaderAction = { label: 'x', to: '/', disabled: true }
+void linkCannotBeDisabled
+
 test('PageHeader renders a `to` action as a link styled as the solid button', () => {
   render(<MemoryRouter><PageHeader title="الموظفون" action={{ label: 'إضافة موظف', to: '/employees/new' }} /></MemoryRouter>)
   const link = screen.getByRole('link', { name: 'إضافة موظف' })
@@ -195,6 +199,8 @@ test('StatRow draws exactly one hero figure, untoned, and tones only the seconda
   expect(screen.getByText('تم تسجيل 90 من 120')).toBeInTheDocument()
   expect(row.querySelector('[style*="width: 75%"]')).not.toBeNull()
   expect(screen.queryAllByRole('button')).toHaveLength(0)
+  // the visible label names each tile; an aria-label would make it read twice
+  for (const tile of within(row).getAllByRole('group')) expect(tile).not.toHaveAttribute('aria-label')
 })
 
 test('StatRow tiles with select are pressed toggles', async () => {
@@ -248,6 +254,8 @@ test('DataList is one table that becomes a card per row below 640 px, labelled b
   const cells = within(rows[0]).getAllByRole('cell')
   expect(cells.map((c) => c.textContent)).toEqual(['أحمد علي', 'الموقعسموحة', 'الأجر1,250.00', 'الكودE-1', 'نشط', 'فتح أحمد علي'])
   // the card label is the column header, hidden from the table layout and from screen readers (the thead already names it)
+  // a UUID has no break point; it must wrap inside the card instead of being clipped
+  expect(within(cells[1]).getByText('سموحة')).toHaveClass('min-w-0', '[overflow-wrap:anywhere]', 'max-sm:text-end')
   const label = within(cells[1]).getByText('الموقع')
   expect(label).toHaveClass('sm:hidden')
   expect(label).toHaveAttribute('aria-hidden', 'true')

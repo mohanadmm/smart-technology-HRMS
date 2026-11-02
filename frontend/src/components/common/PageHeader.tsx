@@ -3,10 +3,9 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 
-/** `disabled` applies to an onClick action only; a link cannot be disabled. */
-export type HeaderAction = { label: string; icon?: LucideIcon; disabled?: boolean } & (
-  | { onClick: () => void; to?: never }
-  | { to: string; onClick?: never }
+export type HeaderAction = { label: string; icon?: LucideIcon } & (
+  | { onClick: () => void; to?: never; disabled?: boolean }
+  | { to: string; onClick?: never; disabled?: never }
 )
 type Current = {
   /** The screen's one main action: always a solid default Button, full width below 640 px (rules 5, 6). */

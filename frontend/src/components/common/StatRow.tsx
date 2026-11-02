@@ -45,7 +45,7 @@ function Tile({ stat, figure, progress }: { stat: Stat; figure: string; progress
       {body}
     </button>
   ) : (
-    <div role="group" aria-label={stat.label} className={tile}>
+    <div role="group" className={tile}>
       {body}
     </div>
   )
