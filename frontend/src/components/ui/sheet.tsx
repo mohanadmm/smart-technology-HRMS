@@ -47,3 +47,13 @@ export const SheetTitle = ({ className, ...props }: React.ComponentProps<typeof 
 export const SheetDescription = ({ className, ...props }: React.ComponentProps<typeof SheetPrimitive.Description>) => (
   <SheetPrimitive.Description className={cn('text-[13px] text-muted-foreground', className)} {...props} />
 )
+
+/** Mirrors DialogHeader: title and description, with room at the end for the close button. */
+export function SheetHeader({ className, ...props }: React.ComponentProps<'div'>) {
+  return <div className={cn('flex flex-col gap-1 border-b px-5 py-4 pe-14', className)} {...props} />
+}
+
+/** Mirrors DialogFooter: pinned under the sheet's scrolling body; the main action is last (first on a phone, stacked on top). */
+export function SheetFooter({ className, ...props }: React.ComponentProps<'div'>) {
+  return <div className={cn('mt-auto flex flex-col-reverse gap-2 border-t px-5 py-3 sm:flex-row sm:items-center sm:justify-end', className)} {...props} />
+}
