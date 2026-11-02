@@ -11,7 +11,7 @@ export type Row = Record<string, any> // eslint-disable-line @typescript-eslint/
 export type Errs = Record<string, string>
 
 export const selectCls =
-  'flex h-9 w-full rounded-md border border-input bg-card px-3 text-sm max-sm:h-11 max-sm:text-base outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive'
+  'flex h-9 w-full rounded-lg border border-input bg-card px-3 text-sm min-h-tap outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive'
 
 export const toErrs = (e: unknown): Errs =>
   e instanceof ApiError ? Object.fromEntries(e.details.filter((d) => d.field).map((d) => [d.field!, d.message])) : {}
@@ -169,15 +169,15 @@ export function TimeInput({ value, onChange, label, quietHint, className, disabl
         <Input {...rest} ref={box} type="text" dir="ltr" inputMode="numeric" autoComplete="off" placeholder="--:--" disabled={disabled} value={draft.text}
           aria-invalid={rest['aria-invalid'] || needsChoice || undefined} data-needs-period={needsChoice || undefined} aria-describedby={[rest['aria-describedby'], descId].filter(Boolean).join(' ')}
           // the shared focus ring, except on a box that needs AM/PM or has an error: there it turns to the warning colour
-          className={cn('h-11 flex-1 tabular sm:h-9 rtl:text-right', (rest['aria-invalid'] || needsChoice) && 'focus-visible:border-destructive focus-visible:outline-destructive', className)}
+          className={cn('flex-1 tabular rtl:text-right', (rest['aria-invalid'] || needsChoice) && 'focus-visible:border-destructive focus-visible:outline-destructive', className)}
           onChange={(e) => emit(e.target.value, draft.pm)}
           onBlur={() => { const v = to24(draft.text, draft.pm); if (isHhmm(v)) setDraft(to12(v)) }} />
-        {/* an inset outline, not a border, draws the frame: the buttons fill the box's full height (44 px on a phone) */}
-        <div role="group" aria-label={t('time.period', { field: label })} className="flex shrink-0 overflow-hidden rounded-md bg-card outline-1 -outline-offset-1 outline-solid outline-input">
+        {/* an inset outline, not a border, draws the frame: the buttons fill the box's full height (44 px on touch) */}
+        <div role="group" aria-label={t('time.period', { field: label })} className="flex shrink-0 overflow-hidden rounded-lg bg-card outline-1 -outline-offset-1 outline-solid outline-input">
           {[false, true].map((pm) => (
             // mousedown keeps the cursor where it is, so a click here is not the box being left; from outside, the click moves it into the box
             <button key={String(pm)} type="button" aria-pressed={draft.pm === pm} aria-label={t(pm ? 'time.pmName' : 'time.amName')} disabled={disabled}
-              className="min-w-11 px-2 text-sm font-semibold text-muted-foreground outline-none hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:bg-primary aria-pressed:text-primary-foreground sm:min-w-9"
+              className="w-9 min-w-tap px-2 text-sm font-semibold text-muted-foreground outline-none hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:bg-primary aria-pressed:text-primary-foreground"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => { emit(draft.text, pm); if (!root.current?.contains(document.activeElement)) box.current?.focus() }}>
               {t(pm ? 'time.pm' : 'time.am')}

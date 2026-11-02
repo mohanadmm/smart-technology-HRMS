@@ -18,8 +18,20 @@ const css = readFileSync(`${import.meta.dirname}/index.css`, 'utf8')
 // the keys only: the files in public/, which the build copies to the site root
 const published = Object.keys(import.meta.glob('../public/*')).map((f) => f.replace('../public', ''))
 
-// iPhone zooms into a field whose font is under 16 px; below sm every field is 16 px, from sm up it keeps today's 14 px.
-test('every kit field is 16 px below sm and 14 px from sm up', () => {
+// Each `@media (pointer: coarse)` block: its body and its brace depth in the stylesheet (0 = outside every @layer).
+const bare = css.replace(/\/\*[\s\S]*?\*\//g, '')
+const coarse = [...bare.matchAll(/@media \(pointer: coarse\)\s*\{/g)].map((m) => {
+  const start = m.index + m[0].length
+  let depth = 0
+  for (const c of bare.slice(0, m.index)) depth += c === '{' ? 1 : c === '}' ? -1 : 0
+  let end = start
+  for (let open = 1; open; end++) open += bare[end] === '{' ? 1 : bare[end] === '}' ? -1 : 0
+  return { depth, body: bare.slice(start, end - 1) }
+})
+const fieldRule = coarse.find((b) => /\binput\b[\s\S]*\btextarea\b[\s\S]*\bselect\b[\s\S]*font-size: 16px;/.test(b.body))
+
+// iPhone and iPad zoom into a field whose font is under 16 px; one stylesheet rule sets 16 px on a touch screen, a mouse keeps 14 px.
+test('every field is 16 px on a coarse pointer', () => {
   render(
     <>
       <Input aria-label="input" />
@@ -30,17 +42,18 @@ test('every kit field is 16 px below sm and 14 px from sm up', () => {
   )
   for (const name of ['input', 'textarea', 'trigger', 'native']) {
     const cls = (screen.getByLabelText(name) as HTMLElement).className.split(' ')
-    expect(cls, name).toContain('max-sm:text-base')
+    expect(cls, name).not.toContain('max-sm:text-base')
     expect(cls, name).toContain('text-sm')
   }
+  expect(fieldRule, 'the @media (pointer: coarse) field rule').toBeDefined()
 })
 
-test('a caller that shrinks a field still gets 16 px on a phone', () => {
-  render(<Input aria-label="small" className="text-xs" />)
-  expect(screen.getByLabelText('small').className.split(' ')).toContain('max-sm:text-base')
+// Unlayered CSS beats every utility, so a caller's text-xs cannot undo it.
+test('a caller that shrinks a field still gets 16 px on a coarse pointer', () => {
+  expect(fieldRule?.depth).toBe(0)
 })
 
-test('buttons, fields and tabs are 44 px tall below sm, whatever the size', () => {
+test('every kit control has the touch floor, whatever the size', () => {
   render(
     <>
       <Button>default</Button>
@@ -50,16 +63,24 @@ test('buttons, fields and tabs are 44 px tall below sm, whatever the size', () =
       <Button size="icon" aria-label="icon" />
       <Button size="icon-sm" aria-label="icon-sm" />
       <Button size="sm" className="h-7">override</Button>
+      <Button size="icon" className="size-8 max-sm:size-9" aria-label="shrunk" />
       <Input aria-label="input" />
       <Select><SelectTrigger aria-label="trigger"><SelectValue /></SelectTrigger></Select>
       <select aria-label="native" className={selectCls} />
       <Tabs defaultValue="a"><TabsList><TabsTrigger value="a">tab</TabsTrigger></TabsList></Tabs>
     </>,
   )
-  for (const name of ['default', 'sm', 'xs', 'lg', 'override']) expect(screen.getByRole('button', { name }).className, name).toMatch(/(^| )max-sm:h-11( |$)/)
-  for (const name of ['icon', 'icon-sm']) expect(screen.getByRole('button', { name }).className, name).toMatch(/(^| )max-sm:size-11( |$)/)
-  for (const name of ['input', 'trigger', 'native']) expect(screen.getByLabelText(name).className, name).toMatch(/(^| )max-sm:h-11( |$)/)
-  expect(screen.getByRole('tab', { name: 'tab' }).className).toMatch(/(^| )max-sm:h-11( |$)/)
+  const cls = (el: HTMLElement) => el.className.split(' ')
+  for (const name of ['default', 'sm', 'xs', 'lg', 'override', 'icon', 'icon-sm', 'shrunk']) expect(cls(screen.getByRole('button', { name })), name).toContain('min-h-tap')
+  for (const name of ['icon', 'icon-sm', 'shrunk']) expect(cls(screen.getByRole('button', { name })), name).toContain('min-w-tap')
+  for (const name of ['input', 'trigger', 'native']) expect(cls(screen.getByLabelText(name)), name).toContain('min-h-tap')
+  expect(cls(screen.getByRole('tab', { name: 'tab' }))).toContain('min-h-tap')
+})
+
+// 24 px is the WCAG 2.2 AA floor on any pointer; 44 px on touch only, so mouse layouts stay dense.
+test('the tap size is 24 px, and 44 px on a coarse pointer', () => {
+  expect(css.match(/\n:root \{[^}]*?--tap: ([^;]+);/)?.[1]).toBe('1.5rem')
+  expect(coarse.some((b) => /:root \{\s*--tap: 2\.75rem;/.test(b.body))).toBe(true)
 })
 
 test('the manifest is valid and its icons exist', () => {

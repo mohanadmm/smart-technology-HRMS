@@ -125,6 +125,8 @@
   --info-border: #bfdbfe;
   --destructive-bg: #fef3f2;
   --destructive-border: #fecdca;
+  /* The dim layer behind a dialog or sheet, the same in both themes. */
+  --scrim: rgb(0 0 0 / 0.7);
 
   --elevation-2: 0 8px 24px -4px rgb(0 0 0 / 0.14), 0 2px 8px -2px rgb(0 0 0 / 0.08);
 
@@ -259,6 +261,7 @@
   --color-info-border: var(--info-border);
   --color-destructive-bg: var(--destructive-bg);
   --color-destructive-border: var(--destructive-border);
+  --color-scrim: var(--scrim);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);

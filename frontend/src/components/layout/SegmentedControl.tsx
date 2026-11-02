@@ -29,9 +29,9 @@ export function SegmentedControl<T extends string>({
             title={option.label}
             onClick={() => onChange(option.value)}
             className={cn(
-              'grid h-8 min-w-8 place-items-center max-sm:h-11 max-sm:min-w-11 rounded-lg px-1.5 text-table font-medium text-muted-foreground transition-colors hover:text-foreground',
+              'grid h-8 min-h-tap min-w-tap place-items-center rounded-lg px-1.5 text-table font-medium text-muted-foreground transition-colors hover:text-foreground',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-              on && 'bg-card text-foreground shadow-1',
+              on && 'bg-card text-foreground ring-1 ring-border',
             )}
           >
             {option.content}

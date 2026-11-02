@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { cn, THEME_NAMES } from '@/lib/utils'
 
@@ -32,4 +32,14 @@ test('cn() keeps the touch floor next to a caller size, and an explicit opt-out 
   expect(cn('size-9 min-h-tap min-w-tap', 'max-sm:size-9')).toBe('size-9 min-h-tap min-w-tap max-sm:size-9')
   expect(cn('min-h-tap', 'min-h-0')).toBe('min-h-0')
   expect(cn('shadow-float', 'shadow-none')).toBe('shadow-none')
+})
+
+// The touch floor is min-h-tap / min-w-tap, and the only shadow is shadow-float; the old spellings must not come back.
+test('the kit uses no viewport-width 44 px, no removed shadow and no backdrop filter', () => {
+  const dir = `${import.meta.dirname}/components`
+  const banned = /(?:[a-z-]+:)*(?:min-)?(?:h|w|size)-11\b|shadow-[12]\b|backdrop-brightness/g
+  const hits = readdirSync(dir, { recursive: true, encoding: 'utf8' })
+    .filter((f) => /\.tsx?$/.test(f) && !f.includes('.test.'))
+    .flatMap((f) => [...readFileSync(`${dir}/${f}`, 'utf8').matchAll(banned)].map((m) => `${f}: ${m[0]}`))
+  expect(hits).toEqual([])
 })
