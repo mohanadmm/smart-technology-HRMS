@@ -214,6 +214,12 @@ final class AttendanceDays
                 $values[$field] ??= $default;
             }
         }
+        // The field shift on Present (calculations §13): bulk writes only; save() (PUT) stores exactly what it is sent.
+        if ($keepUnsent && $type !== EmployeeType::Office && $site !== null && ! $isLeave) {
+            $shift = EffectiveDays::fieldShift($employee, $date, $settings ?? $this->rules->all());
+            $values['in_time'] ??= $shift['start'];
+            $values['out_time'] ??= $shift['end'];
+        }
 
         $this->assertRules($type, $siteRule, $values);
         if ($dryRun) {
