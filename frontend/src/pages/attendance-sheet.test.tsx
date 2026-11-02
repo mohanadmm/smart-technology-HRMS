@@ -117,7 +117,7 @@ test('missing and absent rows look different', async () => {
   mockFetch(routes)
   open()
   const tbl = await table()
-  const status = (name: string) => within(within(tbl).getByText(name).closest('tr')!).getAllByRole('cell')[2] // code, employee, status
+  const status = (name: string) => within(within(tbl).getByText(name).closest('tr')!).getAllByRole('cell')[1] // employee (with its code), status
   const missing = within(status('Engineer-1')).getByText('غير مسجل')
   const absent = within(status('Engineer-3')).getByText('غياب')
   expect(missing).toHaveClass('bg-warning-bg', 'border-warning-border', 'text-warning')
@@ -198,6 +198,16 @@ test('51 rows paginate at 50', async () => {
   expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(2)
   await user.click(screen.getByRole('button', { name: /^غير مسجل/ })) // a filter goes back to page 1
   expect(screen.getByText('عرض 1–50 من 51')).toBeInTheDocument()
+})
+
+test('the xl table has no code column: the code sits before the name in the employee cell, so the table fits 1280 in English', async () => {
+  mockFetch(routes)
+  edit()
+  const tbl = await table()
+  expect(within(tbl).queryByRole('columnheader', { name: 'الرقم الوظيفي' })).not.toBeInTheDocument()
+  const name = within(tbl).getByText('Engineer-1')
+  expect(name.parentElement).toHaveClass('flex-wrap') // code and name wrap apart rather than widen the column
+  expect(name.previousElementSibling).toHaveTextContent('1')
 })
 
 test('the employee code sits in its own element apart from the name', async () => {
@@ -742,15 +752,16 @@ test('an action that changes nothing says so and sends nothing', async () => {
   expect(bulk).not.toHaveBeenCalled()
 })
 
-test('a card shows the no-last-site reason next to its disabled Present', async () => {
+test('an editable card with no last site shows the «اختر موقعًا» chip and no muted no-last-site line; Present keeps the reason for screen readers', async () => {
   mockFetch(routes)
   edit()
   await table()
   const card = within(screen.getByRole('list', { name: 'الموظف' })).getByText('Engineer-3').closest('li')!
-  expect(within(card).getByRole('button', { name: 'حاضر Engineer-3' })).toBeDisabled()
-  expect(within(card).getByText('بدون موقع سابق')).not.toHaveClass('sr-only')
-  const other = within(screen.getByRole('list', { name: 'الموظف' })).getByText('Engineer-1').closest('li')!
-  expect(within(other).queryByText('بدون موقع سابق')).not.toBeInTheDocument()
+  const present = within(card).getByRole('button', { name: 'حاضر Engineer-3' })
+  expect(present).toBeDisabled()
+  expect(present).toHaveAccessibleDescription('بدون موقع سابق')
+  expect(within(card).getByRole('button', { name: 'تعيين موقع: اختر موقعًا، Engineer-3' })).toBeInTheDocument()
+  expect(within(card).queryByText('بدون موقع سابق')).not.toBeInTheDocument()
 })
 
 test('Undo restores the previous day', async () => {
@@ -1015,18 +1026,6 @@ test('a cohort chip grows to its full label and carries the full name as its tit
   expect(cohorts).toHaveClass('flex', 'flex-wrap') // not a fixed column grid that cuts the label at 1024
   expect(within(cohorts).getByText('بدون موقع سابق')).toHaveAttribute('title', 'بدون موقع سابق')
   expect(within(cohorts).getByText('Site-1')).toHaveAttribute('title', 'Site-1')
-})
-
-test('the no-last-site hint shows on a missing card, not on one already stored at a site today', async () => {
-  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => sheet([
-    row(5, 'Engineer-5', { state: 'stored', source: 'entered', version: 1, site_id: 's1' }), // at Site-1 today, no last site before it
-    row(6, 'Engineer-6', {}),
-  ]) })
-  edit()
-  await table()
-  const card = (name: string) => within(screen.getByRole('list', { name: 'الموظف' })).getByText(name).closest('li')!
-  expect(within(card('Engineer-5')).queryByText('بدون موقع سابق')).not.toBeInTheDocument()
-  expect(within(card('Engineer-6')).getByText('بدون موقع سابق')).toBeInTheDocument()
 })
 
 test('a selected card carries the same selected tint as its row, and the row tint spans the totals cell', async () => {

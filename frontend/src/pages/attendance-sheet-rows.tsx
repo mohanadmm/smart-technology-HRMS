@@ -226,7 +226,6 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
                   </label>
                 </TableHead>
               )}
-              <TableHead>{t('employee.code')}</TableHead>
               <TableHead>{t('attendance.employee')}</TableHead>
               {office && <TableHead>{t('attendance.day.in_time')}</TableHead>}
               <TableHead>{t('common.status')}</TableHead>
@@ -240,9 +239,12 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
             {rows.map((r) => (
               <TableRow key={r.employee.id} className={cn(selected.has(r.employee.id) && SELECTED)}>
                 {editable && <TableCell className="px-1 py-0 first:ps-2">{check(r)}</TableCell>}
-                <TableCell className="text-muted-foreground">{r.employee.code}</TableCell>
+                {/* the code shares the employee cell (no column of its own): in English the "Employee ID" header alone pushed the table past its card at 1280 */}
                 <TableCell className="whitespace-normal">
-                  <bdi className="font-medium">{name(r)}</bdi>
+                  <span className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="text-muted-foreground">{r.employee.code}</span>
+                    <bdi className="font-medium">{name(r)}</bdi>
+                  </span>
                   {r.employee.department && <div className="text-xs text-muted-foreground">{r.employee.department}</div>}
                 </TableCell>
                 {office && times(r, tableCell)}
@@ -289,8 +291,6 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
               <div className="flex gap-2">{editable ? <>{present(r)}{more(r)}</> : details(r)}</div>
             </div>
             {(office || status(r) === 'present') && <div className="grid gap-3 sm:grid-cols-2">{times(r, cardCell)}</div>}
-            {/* not on a row already at a site today: there the disabled Present is no problem to explain */}
-            {editable && noSite({ kind: 'present' }, r) && status(r) !== 'present' && <p className="-mt-1.5 text-xs text-muted-foreground">{t('attendance.sheet.noLastSite')}</p>}
             <div className="border-t pt-3">
               <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">{t('attendance.sheet.totals')}</p>
               {totals(r)}
