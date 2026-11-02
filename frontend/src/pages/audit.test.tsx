@@ -106,3 +106,14 @@ test('clear filters resets the query and the page', async () => {
   expect(screen.queryByRole('button', { name: 'مسح عوامل التصفية' })).toBeNull()
   expect(String(list.mock.calls[0][0])).not.toContain('entity_type')
 })
+
+test('each entry is a row of the audit table whose phone card labels the actor and the record id', async () => {
+  mockFetch({ 'GET /api/v1/audit-log': () => json(200, { data: [entry({ entity_id: 'abc-123' })], meta: { pagination } }) })
+  renderWithAuth(<AuditPage />, ['audit_log.view.all'])
+  const table = await screen.findByRole('table', { name: 'سجل التدقيق' })
+  const row = within(table).getAllByRole('row')[1]
+  const actor = within(row).getAllByRole('cell').find((c) => c.textContent?.includes('منى'))!
+  expect(within(actor).getByText('المنفِّذ')).toHaveAttribute('aria-hidden', 'true')
+  expect(within(row).getByText('معرّف السجل')).toBeInTheDocument()
+  expect(within(row).getByText('abc-123')).toBeInTheDocument()
+})
