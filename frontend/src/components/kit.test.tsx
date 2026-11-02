@@ -7,6 +7,7 @@ import { expect, test, vi } from 'vitest'
 import '@/i18n'
 import { PageHeader } from '@/components/common/PageHeader'
 import { RowActions } from '@/components/common/RowActions'
+import { StatRow } from '@/components/common/StatRow'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { Alert } from '@/components/common/Alert'
 import { ErrorBanner, intlLocale } from '@/components/form'
@@ -173,4 +174,40 @@ test('PageHeader renders a `to` action as a link styled as the solid button', ()
 test('PageHeader still renders legacy actions until employees.tsx moves', () => {
   render(<PageHeader title="الموظفون" actions={<button type="button">قديم</button>} />)
   expect(screen.getByRole('button', { name: 'قديم' })).toBeInTheDocument()
+})
+
+test('StatRow draws exactly one hero figure, untoned, and tones only the secondary numbers', () => {
+  render(
+    <StatRow
+      label="ملخص اليوم"
+      hero={{ label: 'الإجمالي', value: 120, detail: 'تم تسجيل 90 من 120', progress: 0.75 }}
+      stats={[{ label: 'حاضر', value: 80, tone: 'success' }, { label: 'غائب', value: 10, tone: 'destructive' }, { label: 'متبقي', value: 30 }]}
+    />,
+  )
+  const row = screen.getByRole('group', { name: 'ملخص اليوم' })
+  const kpi = row.querySelectorAll('.text-kpi')
+  expect(kpi).toHaveLength(1)
+  expect(kpi[0]).toHaveTextContent('120')
+  expect(kpi[0].className).not.toMatch(/text-(?:success|warning|destructive|info)\b/)
+  expect(screen.getByText('80')).toHaveClass('text-lg', 'text-success')
+  expect(screen.getByText('30')).toHaveClass('text-lg')
+  expect(screen.getByText('تم تسجيل 90 من 120')).toBeInTheDocument()
+  expect(row.querySelector('[style*="width: 75%"]')).not.toBeNull()
+  expect(screen.queryAllByRole('button')).toHaveLength(0)
+})
+
+test('StatRow tiles with select are pressed toggles', async () => {
+  const pick = vi.fn()
+  render(
+    <StatRow
+      label="ملخص"
+      hero={{ label: 'الإجمالي', value: 5, select: { pressed: true, onSelect: () => pick('all') } }}
+      stats={[{ label: 'حاضر', value: 3, select: { pressed: false, onSelect: () => pick('present') } }]}
+    />,
+  )
+  expect(screen.getByRole('button', { name: /الإجمالي/ })).toHaveAttribute('aria-pressed', 'true')
+  const present = screen.getByRole('button', { name: /حاضر/ })
+  expect(present).toHaveAttribute('aria-pressed', 'false')
+  await user.click(present)
+  expect(pick).toHaveBeenCalledWith('present')
 })
