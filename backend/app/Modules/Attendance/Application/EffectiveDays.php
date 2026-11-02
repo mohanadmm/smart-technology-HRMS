@@ -124,15 +124,29 @@ final class EffectiveDays
     }
 
     /**
+     * The field shift (engineer, permanent worker, day laborer): the pay-row shift, else worker_shift_start/end (calculations §2, §13).
+     *
+     * @param  array<string, mixed>  $employee
+     * @param  array<string, string>  $s  the settings
+     * @return array{start: string, end: string}
+     */
+    public static function fieldShift(array $employee, string $date, array $s): array
+    {
+        $shift = Employment::shiftOn($employee, $date);
+
+        return ['start' => $shift['start'] ?? $s['worker_shift_start'], 'end' => $shift['end'] ?? $s['worker_shift_end']];
+    }
+
+    /**
      * @param  array<string, mixed>  $employee
      * @param  array<string, string>  $s  the settings
      * @return array{scheduled_in: string, scheduled_out: string, transport: string}
      */
     private static function defaults(array $employee, string $date, array $s): array
     {
-        $shift = Employment::shiftOn($employee, $date);
+        $shift = self::fieldShift($employee, $date, $s);
 
-        return ['scheduled_in' => $shift['start'] ?? $s['worker_shift_start'], 'scheduled_out' => $shift['end'] ?? $s['worker_shift_end'], 'transport' => 'full'];
+        return ['scheduled_in' => $shift['start'], 'scheduled_out' => $shift['end'], 'transport' => 'full'];
     }
 
     /** @return array<string, mixed> */
@@ -160,8 +174,9 @@ final class EffectiveDays
 
             return ['late_minutes' => DayRules::officeLateMinutes($day['in_time'], $start, (int) $s['office_grace_minutes'])];
         }
-        if ($type === EmployeeType::PermanentWorker && $day['site_id'] !== null && $day['leave_code'] === null && $day['in_time'] !== null && $day['out_time'] !== null) {
-            $scheduledIn = $day['scheduled_in'] ?? self::defaults($employee, $day['date'], $s)['scheduled_in'];
+        // Field types; for engineers and day laborers a hint only: payroll reads their stored minutes (calculations §2).
+        if ($type !== EmployeeType::Office && $day['site_id'] !== null && $day['leave_code'] === null && $day['in_time'] !== null && $day['out_time'] !== null) {
+            $scheduledIn = $day['scheduled_in'] ?? self::fieldShift($employee, $day['date'], $s)['start'];
             /** @var numeric-string $dayHours */
             $dayHours = $s['day_hours'];
             $m = DayRules::workerMinutes($scheduledIn, $day['in_time'], $day['out_time'], $dayHours);
