@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Alert } from '@/components/common/Alert'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -23,11 +24,11 @@ export function ErrorBanner({ err, shown }: { err: unknown; shown: string[] }) {
       ? err.details.filter((d) => !d.field || !shown.includes(d.field)).map((d) => d.message)
       : [err instanceof Error ? err.message : String(err)]
   return msgs.length ? (
-    <div role="alert" className="rounded-md border border-destructive p-3 text-sm text-destructive">
+    <Alert tone="danger">
       {msgs.map((m, i) => (
         <p key={i}>{m}</p>
       ))}
-    </div>
+    </Alert>
   ) : null
 }
 

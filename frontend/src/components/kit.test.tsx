@@ -4,10 +4,12 @@ import { expect, test, vi } from 'vitest'
 import '@/i18n'
 import { RowActions } from '@/components/common/RowActions'
 import { StatusBadge } from '@/components/common/StatusBadge'
-import { intlLocale } from '@/components/form'
+import { Alert } from '@/components/common/Alert'
+import { ErrorBanner, intlLocale } from '@/components/form'
 import { Pagination } from '@/components/tables/Pagination'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ApiError } from '@/lib/api'
 
 const user = userEvent.setup()
 
@@ -58,4 +60,25 @@ test('Arabic numbers and dates use Latin digits', () => {
   expect(intlLocale('ar')).toBe('ar-EG-u-nu-latn')
   expect(intlLocale('en')).toBe('en')
   expect(new Intl.NumberFormat(intlLocale('ar'), { minimumFractionDigits: 2 }).format(7.5)).toBe('7.50')
+})
+
+test('Alert announces danger and success but leaves a static note silent', () => {
+  const { rerender } = render(<Alert tone="danger">تعذّر الحفظ</Alert>)
+  expect(screen.getByRole('alert')).toHaveTextContent('تعذّر الحفظ')
+  rerender(<Alert tone="success" title="تم">تم الاستيراد</Alert>)
+  expect(screen.getByRole('status')).toHaveTextContent('تمتم الاستيراد')
+  for (const tone of ['info', 'neutral', 'warning'] as const) {
+    rerender(<Alert tone={tone}>ملاحظة</Alert>)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.getByText('ملاحظة')).toBeInTheDocument()
+  }
+})
+
+test('ErrorBanner draws a danger Alert with only the messages no field shows', () => {
+  render(<ErrorBanner err={new ApiError('VALIDATION', 'invalid', 422, [{ field: 'name', message: 'الاسم مطلوب' }, { field: 'x', message: 'خطأ آخر' }])} shown={['name']} />)
+  const alert = screen.getByRole('alert')
+  expect(alert).toHaveTextContent('خطأ آخر')
+  expect(alert).not.toHaveTextContent('الاسم مطلوب')
+  expect(alert).toHaveClass('bg-destructive-bg')
 })
