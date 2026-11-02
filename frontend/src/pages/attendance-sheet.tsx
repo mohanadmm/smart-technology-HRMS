@@ -139,7 +139,11 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
     const after = await write(date, out, before, 'attendance.sheet.toast.conflict')
     if (!after) return null
     // one toast id: a newer write replaces this toast, so its Undo is always the newest write's
-    toast.success(t('attendance.sheet.toast.applied', { count: out.length }), { id: APPLIED_TOAST, action: { label: t('common.undo'), onClick: () => void undo() } })
+    // its Undo follows the bar's: while a write is in flight it does nothing, and preventing the default keeps the toast up
+    toast.success(t('attendance.sheet.toast.applied', { count: out.length }), {
+      id: APPLIED_TOAST,
+      action: { label: t('common.undo'), onClick: (e) => { if (flight.current.size) e.preventDefault(); else void undo() } },
+    })
     const done = { label, before, after }
     undos.current = [...undos.current, { ...done, date }].slice(-UNDO_DEPTH)
     setUndoCount(undos.current.length)
@@ -151,6 +155,7 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
     const entry = undos.current.at(-1)
     // any write in flight blocks undo: its entry is pushed only when it lands, so the newest entry may not be the newest write yet
     if (!entry || flight.current.size) return
+    toast.dismiss(APPLIED_TOAST) // its Undo stood for the entry undone now; left up, it would undo an older one
     undos.current = undos.current.slice(0, -1)
     setUndoCount(undos.current.length)
     const out = undoRows(entry.before, entry.after)
@@ -315,7 +320,7 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
         ) : (
           <>
             <SheetRows rows={pageRows} office={office} editable={editable} date={date} sites={sites} selected={selected} pending={pending} leaveSite={leaveSite}
-              onToggle={toggle} onApply={(action, r, label) => void apply(action, [r], label)} onOpenDay={onOpenDay} />
+              onToggle={toggle} onApply={(action, r, label) => apply(action, [r], label)} onOpenDay={onOpenDay} />
             <Pagination page={page} pageSize={PER_PAGE} total={shown.length} onPageChange={setPage} />
           </>
         )}

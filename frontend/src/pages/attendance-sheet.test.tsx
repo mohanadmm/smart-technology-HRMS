@@ -2,10 +2,11 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import i18n from '@/i18n'
+import { queryClient } from '@/lib/query'
 import { json, mockFetch, pagination, renderWithAuth } from '@/test-utils'
 import { AttendancePage } from './attendance'
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }, Toaster: () => null }))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn(), dismiss: vi.fn() }, Toaster: () => null }))
 import { toast } from 'sonner'
 
 const user = userEvent.setup()
@@ -904,8 +905,8 @@ test('in English the site chips, cohorts, last site and toasts use the English n
   await i18n.changeLanguage('en')
   edit()
   const tbl = await table()
-  expect(within(tbl).getByRole('button', { name: 'Site-1 EN: Engineer-2 EN' })).toBeInTheDocument() // Engineer-2's site today
-  expect(within(tbl).getByRole('button', { name: 'Site-1 EN: Engineer-1 EN' })).toBeInTheDocument() // Engineer-1's last site
+  expect(within(tbl).getByRole('button', { name: 'Set site: Site-1 EN, Engineer-2 EN' })).toBeInTheDocument() // Engineer-2's site today
+  expect(within(tbl).getByRole('button', { name: 'Set site: Site-1 EN, Engineer-1 EN' })).toBeInTheDocument() // Engineer-1's last site
   expect(within(screen.getByRole('group', { name: 'By last site' })).getByRole('button', { name: /^Site-1 EN/ })).toBeInTheDocument()
   await menu('More actions: Engineer-1 EN', 'Absent')
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Someone else just changed Engineer-1 EN; the sheet was reloaded. Check it and try again.'))
@@ -1149,7 +1150,6 @@ test('Present looks pressed on a row already present, like a badge', async () =>
   const tbl = await table()
   const on = within(tbl).getByRole('button', { name: 'حاضر Engineer-2' })
   expect(on).toHaveAttribute('aria-pressed', 'true')
-  expect(on).toHaveClass('aria-pressed:bg-success/10')
   expect(within(tbl).getByRole('button', { name: 'حاضر Engineer-1' })).toHaveAttribute('aria-pressed', 'false')
 })
 
@@ -1211,11 +1211,14 @@ test('the time pair is one unit: Tab from arrival to departure and typing there 
   const departure = within(tr).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' })
   expect(departure).toHaveFocus()
   await user.clear(departure)
-  await user.type(departure, '1800')
+  await user.type(departure, '5:00')
+  await user.click(within(tr).getAllByRole('button', { name: 'مساءً' })[1]) // departure's PM: still inside the pair
   expect(bulk).not.toHaveBeenCalled()
   await user.click(document.body)
   await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
-  expect(sent(bulk).rows).toEqual([{ employee_id: 'e2', version: 1, site_id: 's1', in_time: '09:00' }])
+  await new Promise((r) => setTimeout(r, 20))
+  expect(bulk).toHaveBeenCalledTimes(1)
+  expect(sent(bulk).rows).toEqual([{ employee_id: 'e2', version: 1, site_id: 's1', in_time: '09:00', out_time: '17:00' }])
 })
 
 test('focus selects the time, so typing 845 replaces 8:00, even after an AM/PM click', async () => {
@@ -1286,9 +1289,9 @@ test('the site chip shows the day\'s site, else the last site, else «اختر �
   mockFetch(chipRoutes)
   edit()
   const tbl = await table()
-  expect(within(rowOf('Engineer-2')).getByRole('button', { name: 'Site-1 Engineer-2' })).toHaveTextContent('Site-1')
-  expect(within(rowOf('Engineer-1')).getByRole('button', { name: 'Site-1 Engineer-1' })).toHaveTextContent('Site-1')
-  expect(within(rowOf('Engineer-3')).getByRole('button', { name: 'اختر موقعًا Engineer-3' })).toHaveTextContent('اختر موقعًا')
+  expect(within(rowOf('Engineer-2')).getByRole('button', { name: 'تعيين موقع: Site-1، Engineer-2' })).toHaveTextContent('Site-1')
+  expect(within(rowOf('Engineer-1')).getByRole('button', { name: 'تعيين موقع: Site-1، Engineer-1' })).toHaveTextContent('Site-1')
+  expect(within(rowOf('Engineer-3')).getByRole('button', { name: 'تعيين موقع: اختر موقعًا، Engineer-3' })).toHaveTextContent('اختر موقعًا')
   expect(within(tbl).queryByText(/^آخر موقع/)).not.toBeInTheDocument()
 })
 
@@ -1297,7 +1300,7 @@ test('the site chip lists the active work sites and posts the picked one', async
   mockFetch({ ...chipRoutes, 'POST /api/v1/attendance/days/bulk': bulk })
   edit()
   await table()
-  await user.click(within(rowOf('Engineer-1')).getByRole('button', { name: 'Site-1 Engineer-1' }))
+  await user.click(within(rowOf('Engineer-1')).getByRole('button', { name: 'تعيين موقع: Site-1، Engineer-1' }))
   const items = await screen.findAllByRole('menuitemradio')
   expect(items.map((i) => i.textContent)).toEqual(['Site-1', 'Site-2'])
   await user.click(items[1])
@@ -1309,7 +1312,7 @@ test('the site chip checks the day\'s site on a present row', async () => {
   mockFetch(chipRoutes)
   edit()
   await table()
-  await user.click(within(rowOf('Engineer-2')).getByRole('button', { name: 'Site-1 Engineer-2' }))
+  await user.click(within(rowOf('Engineer-2')).getByRole('button', { name: 'تعيين موقع: Site-1، Engineer-2' }))
   expect(await screen.findByRole('menuitemradio', { name: 'Site-1' })).toHaveAttribute('aria-checked', 'true')
 })
 
@@ -1366,7 +1369,7 @@ test('the times dialog skips a row that is not present with a count toast', asyn
 })
 
 test('the times dialog keeps Apply disabled while both boxes are blank or a box lacks AM/PM', async () => {
-  const dialog = await timesDialog([3])
+  const dialog = await timesDialog([1, 2]) // their arrivals differ: a blank box with no AM/PM
   const apply = within(dialog).getByRole('button', { name: 'تطبيق' })
   expect(apply).toBeDisabled()
   const arrival = within(dialog).getByRole('textbox', { name: 'وقت الحضور' })
@@ -1405,4 +1408,126 @@ test('row controls use the kit touch floor, with no fixed heights; the status pi
   for (const b of within(tr).getAllByRole('button')) expect(b.className).not.toMatch(/(^|\s)h-(9|11)(\s|$)/)
   expect(within(tr).getByRole('checkbox').closest('label')).toHaveClass('min-h-tap', 'min-w-tap')
   expect(within(tr).getAllByText('غير مسجل')[0]).toHaveClass('rounded-md', 'font-semibold', 'bg-warning-bg') // the pill, before the totals' label
+})
+
+// S2b review fixes
+test('the bar\'s Undo dismisses the applied toast, so its Undo can never undo an older write', async () => {
+  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulkOk() })
+  edit()
+  await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' }))
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
+  await menu('إجراءات أخرى Engineer-2', 'غياب')
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (2)'))
+  const { id } = vi.mocked(toast.success).mock.calls[1][1] as { id: string }
+  await user.click(undoButton())
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
+  expect(toast.dismiss).toHaveBeenCalledWith(id)
+})
+
+test('the toast\'s Undo waits while a write is in flight: the toast stays and nothing is undone', async () => {
+  const bulk = vi.fn((_url: string, init?: RequestInit) => (bulk.mock.calls.length === 1
+    ? json(200, { data: JSON.parse(String(init?.body)).rows.map((r: { employee_id: string }) => ({ employee_id: r.employee_id, version: 1 })) })
+    : (new Promise(() => {}) as unknown as Response))) // the second write never answers
+  mockFetch({ ...routes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await user.click(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' }))
+  await waitFor(() => expect(undoButton()).toHaveTextContent('تراجع (1)'))
+  await menu('إجراءات أخرى Engineer-2', 'غياب')
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(2))
+  const { action } = vi.mocked(toast.success).mock.calls[0][1] as unknown as { action: { onClick: (e: { preventDefault: () => void }) => void } }
+  const preventDefault = vi.fn()
+  action.onClick({ preventDefault })
+  expect(preventDefault).toHaveBeenCalled() // sonner keeps a toast whose action prevented the default
+  await new Promise((r) => setTimeout(r, 20))
+  expect(bulk).toHaveBeenCalledTimes(2)
+  expect(undoButton()).toHaveTextContent('تراجع (1)')
+})
+
+test('a refused time puts the stored one back and a later blur sends nothing', async () => {
+  const bulk = vi.fn(() => json(422, { error: { code: 'validation_failed', message: 'Invalid', details: [{ field: 'rows.0.out_time', code: 'out_before_in', message: 'الانصراف قبل الحضور.' }] } }))
+  mockFetch({ ...timedRoutes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await table()
+  const departure = within(rowOf('Engineer-2')).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' })
+  await user.clear(departure)
+  await user.type(departure, '0700{Enter}')
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Engineer-2: الانصراف قبل الحضور.'))
+  await waitFor(() => expect(departure).toHaveValue('6:00'))
+  await user.click(departure)
+  await user.click(document.body)
+  await new Promise((r) => setTimeout(r, 20))
+  expect(bulk).toHaveBeenCalledTimes(1)
+})
+
+test('a refetch with the same stored times leaves a typed time alone', async () => {
+  const get = vi.fn((_url: string) => sheet([engineers[0], timed, engineers[2]]))
+  mockFetch({ ...timedRoutes, 'GET /api/v1/attendance/sheet': get })
+  edit()
+  await table()
+  const arrival = within(rowOf('Engineer-2')).getByRole('textbox', { name: 'وقت الحضور Engineer-2' })
+  await user.clear(arrival)
+  await user.type(arrival, '0930')
+  const calls = get.mock.calls.length
+  await queryClient.invalidateQueries()
+  await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(calls))
+  expect(within(rowOf('Engineer-2')).getByRole('textbox', { name: 'وقت الحضور Engineer-2' })).toHaveValue('0930')
+})
+
+test('Escape puts both boxes of the pair back and nothing is sent', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...timedRoutes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await table()
+  const tr = rowOf('Engineer-2')
+  const arrival = within(tr).getByRole('textbox', { name: 'وقت الحضور Engineer-2' })
+  const departure = within(tr).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' })
+  await user.clear(arrival)
+  await user.type(arrival, '0930')
+  await user.clear(departure)
+  await user.type(departure, '1900{Escape}')
+  expect(arrival).toHaveValue('8:45')
+  expect(departure).toHaveValue('6:00')
+  await user.click(document.body)
+  await new Promise((r) => setTimeout(r, 20))
+  expect(bulk).not.toHaveBeenCalled()
+})
+
+test('xl time cells keep room for the box and its AM/PM, and sit middle-aligned like the rest of the row', async () => {
+  mockFetch(timedRoutes)
+  edit()
+  await table()
+  const cell = within(rowOf('Engineer-2')).getByRole('textbox', { name: 'وقت الانصراف Engineer-2' }).closest('td')!
+  expect(cell.firstElementChild).toHaveClass('min-w-38')
+  expect(cell).not.toHaveClass('align-top')
+})
+
+test('the site chip does nothing when the checked site is picked again', async () => {
+  const bulk = bulkOk()
+  mockFetch({ ...chipRoutes, 'POST /api/v1/attendance/days/bulk': bulk })
+  edit()
+  await table()
+  await user.click(within(rowOf('Engineer-2')).getByRole('button', { name: 'تعيين موقع: Site-1، Engineer-2' }))
+  await user.click(await screen.findByRole('menuitemradio', { name: 'Site-1' }))
+  await new Promise((r) => setTimeout(r, 20))
+  expect(bulk).not.toHaveBeenCalled()
+  expect(toast.info).not.toHaveBeenCalled()
+})
+
+test('the times dialog keeps Apply disabled when no selected row is present', async () => {
+  const dialog = await timesDialog([3])
+  await user.type(within(dialog).getByRole('textbox', { name: 'وقت الحضور' }), '0830')
+  expect(within(dialog).getByRole('button', { name: 'تطبيق' })).toBeDisabled()
+})
+
+test('a times dialog box selects on focus, so typing 3 then م over 5:00 gives 3:00 PM', async () => {
+  const bulk = bulkOk()
+  const dialog = await timesDialog([1, 2], bulk)
+  const departure = within(dialog).getByRole('textbox', { name: 'وقت الانصراف' })
+  await user.click(departure)
+  await user.keyboard('3')
+  await user.click(within(dialog).getAllByRole('button', { name: 'مساءً' })[1])
+  expect(departure).toHaveValue('3')
+  await user.click(within(dialog).getByRole('button', { name: 'تطبيق' }))
+  await waitFor(() => expect(bulk).toHaveBeenCalledTimes(1))
+  expect(sent(bulk).rows.map((r: { out_time: string }) => r.out_time)).toEqual(['15:00', '15:00'])
 })

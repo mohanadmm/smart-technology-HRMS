@@ -1,15 +1,15 @@
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { intlLocale, TimeInput } from '@/components/form'
+import { intlLocale, isHhmm, TimeInput } from '@/components/form'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { MAX_BATCH, parseBatch, type SheetAction, type SheetRow, statusOf } from '@/lib/day-sheet'
+import { hhmm, MAX_BATCH, parseBatch, type SheetAction, type SheetRow, statusOf } from '@/lib/day-sheet'
 import { cn } from '@/lib/utils'
-import { QUICK } from './attendance-sheet-rows'
+import { QUICK, selectOnFocus } from './attendance-sheet-rows'
 
 type Batch = ReturnType<typeof parseBatch>
 
@@ -84,8 +84,9 @@ const TIMES = ['in_time', 'out_time'] as const
 
 /**
  * Bulk arrival/departure for a selection. A box starts with the time every present row shares, else blank («mixed values»); a blank box
- * changes nothing, and so does a shared value left as it is. Apply waits until a box holds a new time and none still needs AM/PM. Only present (or late) rows are written; the rest
- * are skipped with a count toast. `onApply` is the sheet's `apply()` and resolves true once the rows are written.
+ * changes nothing, and so does a shared value left as it is. Apply waits for a present row in the selection, a box with a new time and
+ * none still needing AM/PM. Only present (or late) rows are written; the rest are skipped with a count toast. `onApply` is the sheet's
+ * `apply()` and resolves true once the rows are written.
  */
 export function TimesDialog({ rows, office, onOpenChange, onApply }: {
   rows: SheetRow[]
@@ -97,7 +98,7 @@ export function TimesDialog({ rows, office, onOpenChange, onApply }: {
   const ids = { in_time: useId(), out_time: useId() }
   const here = rows.filter((r) => ['present', 'late'].includes(statusOf(r, office)))
   const shared = (f: (typeof TIMES)[number]) => {
-    const all = new Set(here.map((r) => String(r.day[f] ?? '').slice(0, 5)))
+    const all = new Set(here.map((r) => hhmm(r.day[f]) ?? ''))
     return all.size === 1 ? [...all][0] : null // null: the rows differ
   }
   const [start] = useState(() => Object.fromEntries(TIMES.map((f) => [f, shared(f)])))
@@ -105,7 +106,7 @@ export function TimesDialog({ rows, office, onOpenChange, onApply }: {
   const mixed = TIMES.filter((f) => start[f] === null)
   // a box counts once it holds a time other than the one it opened with (a shared value left alone changes nothing)
   const given = TIMES.filter((f) => box[f].v && box[f].v !== start[f])
-  const ready = given.length > 0 && TIMES.every((f) => !box[f].v || (!box[f].needs && /^\d{2}:\d{2}$/.test(box[f].v)))
+  const ready = here.length > 0 && given.length > 0 && TIMES.every((f) => !box[f].v || (!box[f].needs && isHhmm(box[f].v)))
 
   async function run() {
     const skipped = rows.length - here.length
@@ -126,7 +127,7 @@ export function TimesDialog({ rows, office, onOpenChange, onApply }: {
           {TIMES.map((f) => (
             <div key={f} className="grid gap-1.5">
               <Label>{t(`attendance.day.${f}`)}</Label>
-              <TimeInput value={box[f].v} label={t(`attendance.day.${f}`)} aria-label={t(`attendance.day.${f}`)} aria-describedby={mixed.includes(f) ? ids[f] : undefined}
+              <TimeInput value={box[f].v} label={t(`attendance.day.${f}`)} aria-label={t(`attendance.day.${f}`)} aria-describedby={mixed.includes(f) ? ids[f] : undefined} {...selectOnFocus}
                 onChange={(v, needs) => setBox((b) => ({ ...b, [f]: { v, needs } }))} />
               {mixed.includes(f) && <p id={ids[f]} className="text-xs text-muted-foreground">{t('attendance.sheet.times.mixed')}</p>}
             </div>

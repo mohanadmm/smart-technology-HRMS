@@ -596,7 +596,8 @@
         "title": "Edit times",
         "selected": "{{count}} selected. A blank box changes nothing.",
         "mixed": "Mixed values"
-      }
+      },
+      "siteFor": "Set site: {{site}}, {{name}}"
     },
     "import": {
       "desc": "Download the period's template (one employee per row, one day per column), pick the site or day type in each cell, then upload it to review the changes before saving.",

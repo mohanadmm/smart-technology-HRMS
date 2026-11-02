@@ -121,7 +121,7 @@ export function to24(text: string, pm: boolean | null): string | null {
   if (h > 12 || m[1][0] === '0') return `${pad(h)}:${pad(min)}`
   return pm === null ? 'period' : `${pad((h % 12) + (pm ? 12 : 0))}:${pad(min)}`
 }
-const isHhmm = (v: string | null): v is string => !!v && /^\d{2}:\d{2}$/.test(v)
+export const isHhmm = (v: string | null): v is string => !!v && /^\d{2}:\d{2}$/.test(v)
 
 /** "HH:MM" → the box text ("5:30") and whether it is PM; blank or anything else has no AM/PM chosen. */
 const to12 = (v: string): { text: string; pm: boolean | null } => {

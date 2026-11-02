@@ -55,7 +55,8 @@ export function parseBatch(input: string, rows: SheetRow[]): { matches: SheetRow
   return { matches: [...found], unknown: [...unknown], capped, byName: false }
 }
 
-const hhmm = (t: string | number | null) => (t == null ? null : String(t).slice(0, 5))
+/** A stored time ("HH:MM" or "HH:MM:SS") as "HH:MM"; null stays null. */
+export const hhmm = (t: string | number | null) => (t == null ? null : String(t).slice(0, 5))
 
 /** The bulk rows for one action over the chosen rows; rows already in the target state are left out. */
 export function bulkRows(action: SheetAction, rows: SheetRow[], leaveSite: (code: string) => string | undefined, office: boolean): { rows: BulkRow[]; skipped: SheetRow[] } {

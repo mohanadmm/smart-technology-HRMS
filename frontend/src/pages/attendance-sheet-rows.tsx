@@ -1,13 +1,13 @@
 import { CalendarOff, Check, ChevronDown, CircleHelp, Clock, Ellipsis, Eye, type LucideIcon, MapPin, Stethoscope, UserX } from 'lucide-react'
-import { type ReactNode, useId, useRef, useState } from 'react'
+import { type FocusEvent, type MouseEvent, type ReactNode, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { formatTime, localName, type Row, TimeInput } from '@/components/form'
+import { formatTime, isHhmm, localName, type Row, TimeInput } from '@/components/form'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { type SheetAction, type SheetRow, statusOf } from '@/lib/day-sheet'
+import { hhmm, type SheetAction, type SheetRow, statusOf } from '@/lib/day-sheet'
 import { cn, FOCUS } from '@/lib/utils'
 
 export type Status = ReturnType<typeof statusOf>
@@ -46,7 +46,8 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
   pending: ReadonlySet<string>
   leaveSite: (code: string) => string | undefined
   onToggle: (ids: string[], on: boolean) => void
-  onApply: (action: SheetAction, row: SheetRow, label: string) => void
+  /** Resolves truthy once the row is written. */
+  onApply: (action: SheetAction, row: SheetRow, label: string) => Promise<unknown>
   onOpenDay: (employee: Row, date: string) => void
 }) {
   const { t, i18n } = useTranslation()
@@ -127,11 +128,12 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
     if (!editable) return fields.map((f) => cell(f, <><span className="text-sm">{formatTime(r.day[f], lang)}</span><Hint text={hint(f)} /></>))
     return (
       <TimeCells key={`${r.employee.id}/${r.day.in_time}/${r.day.out_time}`} cell={cell} disabled={pending.has(r.employee.id)}
-        cells={fields.map((f) => ({ field: f, was: r.day[f] ? String(r.day[f]).slice(0, 5) : '', label: t('attendance.sheet.rowAction', { action: t(`attendance.day.${f}`), name: name(r) }), hint: hint(f) }))}
+        cells={fields.map((f) => ({ field: f, was: hhmm(r.day[f]) ?? '', label: t('attendance.sheet.rowAction', { action: t(`attendance.day.${f}`), name: name(r) }), hint: hint(f) }))}
         onCommit={(v) => onApply({ kind: 'time', ...v }, r, t('attendance.sheet.actionOn', { action: t(v.in_time && v.out_time ? 'attendance.sheet.bulk.times' : v.in_time ? 'attendance.day.in_time' : 'attendance.day.out_time'), name: name(r) }))} />
     )
   }
-  const tableCell = (f: TimeField, node: ReactNode) => <TableCell key={f} className="align-top">{node}</TableCell>
+  // min-w-38 holds "12:00" and its AM/PM pair, so the auto-width table never crushes them; the status cell wraps instead
+  const tableCell = (f: TimeField, node: ReactNode) => <TableCell key={f} className="px-1.5"><div className="min-w-38">{node}</div></TableCell>
   // a card labels each box above it; the pair stacks below sm (≈309 px of card at 375) and sits side by side from sm
   const cardCell = (f: TimeField, node: ReactNode) => (
     <div key={f}>
@@ -160,19 +162,20 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
     const s = status(r)
     const at = s === 'present' ? r.day.site_id : s === 'missing' ? r.last_site_id : null
     const text = at ? siteName(at) : t('attendance.sheet.bulk.pickSite')
+    const checked = s === 'present' ? (r.day.site_id ?? '') : ''
     return (
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
-          <Button type="button" variant="outline" size="sm" className="max-w-48 min-w-0 px-2.5" disabled={pending.has(r.employee.id)} aria-label={t('attendance.sheet.rowAction', { action: text, name: name(r) })}>
+          <Button type="button" variant="outline" size="sm" className="max-w-48 min-w-0 px-2.5" disabled={pending.has(r.employee.id)} aria-label={t('attendance.sheet.siteFor', { site: text, name: name(r) })}>
             <MapPin aria-hidden />
             <span className="truncate">{text}</span>
             <ChevronDown aria-hidden className="text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          <DropdownMenuRadioGroup value={s === 'present' ? (r.day.site_id ?? '') : ''}>
+          <DropdownMenuRadioGroup value={checked}>
             {workSites.map((x) => (
-              <DropdownMenuRadioItem key={x.id} value={x.id} onSelect={() => onApply({ kind: 'site', siteId: x.id }, r, t('attendance.sheet.actionOn', { action: t('attendance.sheet.bulk.setSite'), name: name(r) }))}>
+              <DropdownMenuRadioItem key={x.id} value={x.id} onSelect={() => x.id !== checked && onApply({ kind: 'site', siteId: x.id }, r, t('attendance.sheet.actionOn', { action: t('attendance.sheet.bulk.setSite'), name: name(r) }))}>
                 {localName(x, lang)}
               </DropdownMenuRadioItem>
             ))}
@@ -244,7 +247,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
                 </TableCell>
                 {office && times(r, tableCell)}
                 <TableCell>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {pill(r)}
                     {where(r)}
                   </div>
@@ -299,6 +302,12 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
   )
 }
 
+/** Spread on a time box: focus selects its text, so typing replaces it (mouseup would drop the selection a click's focus just made). */
+export const selectOnFocus = {
+  onFocus: (e: FocusEvent<HTMLInputElement>) => e.currentTarget.setSelectionRange(0, e.currentTarget.value.length),
+  onMouseUp: (e: MouseEvent) => e.preventDefault(),
+}
+
 /** A server late/OT hint under a time, in the warning tone. */
 function Hint({ text }: { text?: string }) {
   return text ? <p className="mt-1 flex items-center gap-1 text-xs text-warning"><Clock className="size-3.5 shrink-0" aria-hidden />{text}</p> : null
@@ -313,7 +322,8 @@ function Hint({ text }: { text?: string }) {
 function TimeCells({ cells, disabled, onCommit, cell }: {
   cells: { field: TimeField; was: string; label: string; hint?: string }[]
   disabled: boolean
-  onCommit: (times: Partial<Record<TimeField, string>>) => void
+  /** Resolves truthy once written; a refused write puts the stored times back, so a later blur does not send them again. */
+  onCommit: (times: Partial<Record<TimeField, string>>) => Promise<unknown>
   cell: (field: TimeField, node: ReactNode) => ReactNode
 }) {
   const { t } = useTranslation()
@@ -325,21 +335,19 @@ function TimeCells({ cells, disabled, onCommit, cell }: {
     const next = { ...draft }
     for (const c of cells) {
       const { v, needs } = draft[c.field]
-      const ok = !needs && /^\d{2}:\d{2}$/.test(v) ? v : c.was
+      const ok = !needs && isHhmm(v) ? v : c.was
       // say why a typed time is not written, then put the stored one back
       if (v && ok !== v) toast.error(t(needs ? 'time.choosePeriod' : 'time.invalid'))
       next[c.field] = { v: ok, needs: false }
       if (ok !== c.was) out[c.field] = ok
     }
     setDraft(next)
-    if (Object.keys(out).length) onCommit(out)
+    if (Object.keys(out).length) void onCommit(out).then((written) => { if (!written) setDraft(stored()) })
   }
   return cells.map((c, i) => cell(c.field, (
     <div ref={(el) => { boxes.current[i] = el }} onBlur={(e) => { if (!boxes.current.some((b) => b?.contains(e.relatedTarget))) done() }}
       onKeyDown={(e) => { if (e.key === 'Escape') setDraft(stored()); else if (e.key === 'Enter' && e.target instanceof HTMLInputElement) e.target.blur() }}>
-      {/* mouseup would drop the selection a click's focus just made */}
-      <TimeInput value={draft[c.field].v} label={c.label} aria-label={c.label} quietHint disabled={disabled}
-        onFocus={(e) => e.currentTarget.setSelectionRange(0, e.currentTarget.value.length)} onMouseUp={(e) => e.preventDefault()}
+      <TimeInput value={draft[c.field].v} label={c.label} aria-label={c.label} quietHint disabled={disabled} {...selectOnFocus}
         onChange={(v, needs) => setDraft((d) => ({ ...d, [c.field]: { v, needs } }))} />
       <Hint text={c.hint} />
     </div>
