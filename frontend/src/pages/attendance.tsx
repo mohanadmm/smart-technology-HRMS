@@ -21,7 +21,7 @@ import { useAuth } from '@/lib/auth'
 import { SITES, useApi, useList, useSave } from '@/lib/query'
 import { DayEditor } from './attendance-day'
 import { ImportTab } from './attendance-import'
-import { DaySheet } from './attendance-sheet'
+import { DaySheet, OFF } from './attendance-sheet'
 import { NotFoundPage } from './pages'
 
 const GROUPS = ['office', 'engineer', 'permanent_worker', 'day_laborer']
@@ -40,7 +40,6 @@ const LOOK: Record<Day['state'], string> = {
   future: 'text-muted-foreground opacity-50',
   not_employed: 'text-muted-foreground opacity-50',
 }
-const OFF = 'bg-muted-foreground/10' // a weekly-off or holiday column: bg-muted/50 would vanish on the bg-muted head row
 const CELL = 'block min-h-11 w-full min-w-14 max-w-28 truncate rounded-md px-1.5 text-center text-xs transition-colors outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed'
 
 /** `?date=` when it is a real date not after today in Cairo, else today. */

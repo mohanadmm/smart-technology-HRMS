@@ -40,7 +40,7 @@ const office = [
   { ...row(10, 'Office-1', { state: 'stored', source: 'entered', version: 1, in_time: '09:40' }, { hints: { late_minutes: 25 } }), employee: { id: 'e10', code: 10, name_ar: 'Office-1', name_en: 'Office-1', department: 'Accounts' } },
   row(11, 'Office-2', {}),
 ]
-const days = [{ date: '2026-10-17', missing: 2 }, { date: '2026-10-18', missing: 1 }, { date: '2026-10-19', missing: 0 }]
+const days = [{ date: '2026-10-17', missing: 2, off: false }, { date: '2026-10-18', missing: 1, off: false }, { date: '2026-10-19', missing: 0, off: false }]
 const sheet = (rows: object[], group = 'engineer') => json(200, { data: { group, date: '2026-10-18', days, rows } })
 const sites = [
   { id: 's1', name_ar: 'Site-1', name_en: 'Site-1', kind: 'work', leave_code: null, active: true },
@@ -163,6 +163,37 @@ test('the day strip scrolls itself to the date once, never the page and never ag
   await user.click(screen.getByRole('button', { name: /^غير مسجل/ }))
   expect(own()).toHaveLength(1)
   vi.restoreAllMocks()
+})
+
+test('the strip shows the short weekday above the date and tints the days the server marks off', async () => {
+  vi.setSystemTime(new Date('2026-11-03T10:00:00Z'))
+  // Saturday 31 is off from the server (a holiday, say), not from a client rule; Friday 30 is not
+  const week = [{ date: '2026-10-30', missing: 0, off: false }, { date: '2026-10-31', missing: 0, off: true }, { date: '2026-11-02', missing: 1, off: false }, { date: '2026-11-03', missing: 0, off: false }]
+  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => json(200, { data: { group: 'engineer', date: '2026-11-02', days: week, rows: engineers } }) })
+  open('/attendance?group=engineer&date=2026-11-02')
+  const strip = await screen.findByRole('group', { name: 'أيام الفترة' })
+  const day = (d: string) => within(strip).getByRole('button', { name: new RegExp(`^${d}`) })
+  const monday = day('2026-11-02')
+  expect(within(monday).getByText('إثنين').compareDocumentPosition(within(monday).getByText('2')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(monday).toHaveClass('min-w-14') // «أربعاء» fits
+  expect(day('2026-10-31')).toHaveClass('bg-muted-foreground/10')
+  expect(day('2026-10-30')).not.toHaveClass('bg-muted-foreground/10')
+  // the selected day keeps the border and aria-current; today, not selected, only gets accent text
+  expect(monday).toHaveAttribute('aria-current', 'date')
+  expect(monday).toHaveClass('border-primary')
+  const today = day('2026-11-03')
+  expect(today).not.toHaveAttribute('aria-current')
+  expect(today).toHaveClass('text-primary')
+  expect(today).not.toHaveClass('border-primary')
+})
+
+test('in English the strip says Mon above the date', async () => {
+  vi.setSystemTime(new Date('2026-11-03T10:00:00Z'))
+  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => json(200, { data: { group: 'engineer', date: '2026-11-02', days: [{ date: '2026-11-02', missing: 0, off: false }], rows: engineers } }) })
+  await i18n.changeLanguage('en')
+  open('/attendance?group=engineer&date=2026-11-02')
+  const monday = within(await screen.findByRole('group', { name: 'Period days' })).getByRole('button', { name: /^2026-11-02/ })
+  expect(monday).toHaveTextContent(/^Mon2/)
 })
 
 test('field cohorts group by last site and office cohorts by department', async () => {
