@@ -78,9 +78,9 @@ as it writes through `bulk()`. A sent time wins; a kept time (same kind of day, 
 gets the defaults. The historical master import (`hrms:import-master`, `feature/migration-step-1`) does not call `writeCell`, so
 historical rows stay as-is.
 
-**`app/Modules/Attendance/Application/AttendanceGrid.php`, `sheet()`**: `days[]` items gain `off: bool` = some employee's day on that
-date is derived, or stored with `source = 'derived'` (a locked period). The strip needs it; the grid computes the same rule from
-its rows on the client, so `grid()` is unchanged.
+**`app/Modules/Attendance/Application/AttendanceGrid.php`, `sheet()`**: `days[]` items gain `off: bool` = the date is a weekly off
+day or an official holiday (`AttendanceGrid::offDays()`). The strip needs it; the grid marks a column off from its rows on the
+client (some row's day is derived, or stored with `source = 'derived'`), so `grid()` is unchanged.
 
 **API / request rules.** `AttendanceDays::FORMAT` and `BULK_FORMAT` already accept `in_time`/`out_time` (`date_format:H:i`) on
 every row; no rule changes. Visible changes: a day laborer's `fields` lists the times; engineer and laborer days carry `hints`;
@@ -155,7 +155,7 @@ Alexandria, advance taken.* New bullet after it:
 > - Present on a field row at a work site, through the bulk write (the sheet, the attendance import, the manager's day), stores
 >   arrival = field shift start and departure = field shift end when the row sends no time and keeps none (P28). Office rows and
 >   leave days get none. Single-day entry stores what it sends.
-> - A date is off (tinted on the strip and the grid) when some employee's day on it is derived, or stored by a lock as derived.
+> - A date is off (tinted on the strip and the grid) when it is a weekly off day or an official holiday.
 
 ## `docs/client-questions.md` diff (S1 PR)
 
