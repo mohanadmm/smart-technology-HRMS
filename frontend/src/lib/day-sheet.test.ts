@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { bulkRows, DAY_VALUES, type DayValue, parseBatch, type SheetRow, statusOf, undoRows } from './day-sheet'
+import { bulkRows, DAY_VALUES, type DayValue, fold, matches, parseBatch, type SheetRow, statusOf, undoRows } from './day-sheet'
 
 const blank = Object.fromEntries(DAY_VALUES.map((f) => [f, null])) as Record<DayValue, null>
 const row = (code: number, o: { day?: Partial<SheetRow['day']>; last_site_id?: string | null; hints?: SheetRow['hints']; department?: string | null; name_en?: string } = {}): SheetRow => ({
@@ -67,6 +67,43 @@ test('parseBatch says when it searched by name, so a name never writes', () => {
 test('parseBatch searches the department', () => {
   const rows = [row(1, { department: 'Projects' }), row(2, { department: 'Sales' })]
   expect(parseBatch('proj', rows).matches.map((r) => r.employee.code)).toEqual([1])
+})
+
+test.each([
+  ['احمد', 'أحمد'],
+  ['ايمان', 'إيمان'],
+  ['امال', 'آمال'],
+  ['فاطمه', 'فاطمة'],
+  ['مصطفي', 'مصطفى'],
+  ['١٢', '12'],
+  ['ENGINEER', 'engineer'],
+])('fold makes %s and %s the same', (a, b) => {
+  expect(fold(a)).toBe(fold(b))
+})
+
+test('matches finds a row by a folded Arabic name either way round', () => {
+  const r = { ...row(1), employee: { ...row(1).employee, name_ar: 'أحمد فاطمة' } }
+  expect(matches(r, 'احمد')).toBe(true)
+  expect(matches(r, 'فاطمه')).toBe(true)
+  expect(matches({ ...r, employee: { ...r.employee, name_ar: 'احمد' } }, 'أحمد')).toBe(true)
+  expect(matches(r, 'محمود')).toBe(false)
+})
+
+test('matches finds a row by code in Arabic digits, English name in any case, and department', () => {
+  const r = row(12, { name_en: 'Ahmed Ali', department: 'Projects' })
+  expect(matches(r, '١٢')).toBe(true)
+  expect(matches(r, 'AHMED')).toBe(true)
+  expect(matches(r, 'proj')).toBe(true)
+  expect(matches(r, 'sales')).toBe(false)
+})
+
+test('matches lets a blank query through', () => {
+  expect(matches(row(1), '  ')).toBe(true)
+})
+
+test('parseBatch folds a name search', () => {
+  const r = { ...row(1), employee: { ...row(1).employee, name_ar: 'إيمان' } }
+  expect(parseBatch('ايمان', [r, row(2)]).matches.map((x) => x.employee.code)).toEqual([1])
 })
 
 test('bulkRows present uses the last site and skips rows without one', () => {

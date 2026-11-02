@@ -20,17 +20,22 @@ export type SheetAction = { kind: 'present' } | { kind: 'leave'; code: 'absent' 
 
 export const MAX_BATCH = 500
 
-/** A command-bar or pasted batch: employee codes (single, lists, ranges) or else a name search (`byName`; it must never write). */
+/** Search form of a string: ASCII digits, lower case, and the Arabic letters people type interchangeably made one (أ/إ/آ→ا, ة→ه, ى→ي). */
+export const fold = (s: string) => asciiDigits(s).toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي')
+
+/** Whether a sheet row matches a search on its code, Arabic or English name, or department. */
+export const matches = (r: SheetRow, q: string) =>
+  fold(`${r.employee.code} ${r.employee.name_ar} ${r.employee.name_en ?? ''} ${r.employee.department ?? ''}`).includes(fold(q).trim())
+
+/** A pasted batch: employee codes (single, lists, ranges) or else a name search (`byName`; it must never write). */
 export function parseBatch(input: string, rows: SheetRow[]): { matches: SheetRow[]; unknown: string[]; capped: boolean; byName: boolean } {
   const text = asciiDigits(input).trim()
   const tokens = text.split(/[\s,;،]+/).filter(Boolean)
   if (!tokens.every((t) => /^\d+([-–]\d+)?$/.test(t))) {
-    const q = text.toLowerCase()
-    const matches = rows.filter((r) => `${r.employee.code} ${r.employee.name_ar} ${r.employee.name_en ?? ''} ${r.employee.department ?? ''}`.toLowerCase().includes(q))
-    return { matches, unknown: [], capped: false, byName: true }
+    return { matches: rows.filter((r) => matches(r, text)), unknown: [], capped: false, byName: true }
   }
   const byCode = new Map(rows.map((r) => [r.employee.code, r]))
-  const matches = new Set<SheetRow>()
+  const found = new Set<SheetRow>()
   const unknown = new Set<string>()
   let n = 0
   let capped = false
@@ -43,11 +48,11 @@ export function parseBatch(input: string, rows: SheetRow[]): { matches: SheetRow
         break ids
       }
       const r = byCode.get(code)
-      if (r) matches.add(r)
+      if (r) found.add(r)
       else if (lo === hi) unknown.add(t)
     }
   }
-  return { matches: [...matches], unknown: [...unknown], capped, byName: false }
+  return { matches: [...found], unknown: [...unknown], capped, byName: false }
 }
 
 const hhmm = (t: string | number | null) => (t == null ? null : String(t).slice(0, 5))
