@@ -133,6 +133,7 @@ Smart Technology runs HR and payroll today on 6 hand-built Excel workbooks (anal
 
 ## Risks / to tell the client
 - ⚠️ **Backups are manual and not configured.** The client must confirm before we automate them.
+  Employee document files live in `backend/storage/app/private`: copy that folder with every DB dump. Replaced and deleted files are never purged, so it only grows.
 - **Tight scope for 2 devs.** The talent modules ship as lite versions in Month 4. If anything slips, they move first, never payroll.
 - **We need from the client:** remote access (VPN/SSH) to the on-prem server, plus an SMTP mailbox on the company domain. Without remote access, each release needs a site visit.
 - **Rates:** the site-dependent hourly rate is unconfirmed. The rate table supports both a fixed and a per-site rate.
@@ -156,7 +157,7 @@ Status is verified against `main` at `7be93b9` (PR #3 merged) by reading the cod
 |---|---|---|---|---|
 | 1 | The period table (جدول الفترة) is too complicated | 🔁 ❓ | Period grid: employees × days, and a click opens the single-day editor (`frontend/src/pages/attendance.tsx:82`). It has no selection and no bulk action. The client gives no detail on what is hard. | Attendance |
 | 2 | Edit shared fields of several employees at once | ❌ ❓ | `PATCH employees/{id}` edits one employee. There is no bulk endpoint or bulk UI. | Employees |
-| 3 | Upload document copies as image or PDF | ❌ | `employee_documents` stores kind, received/expiry dates and a note only (`2026_10_16_000001_create_employees_tables.php`). It has no file column, no storage disk and no upload endpoint. | Employees |
+| 3 | Upload document copies as image or PDF | ✅ | Files are stored, checked and served (PDF/JPG/PNG/WEBP, 10 MB); the received date was removed (owner, 2026-11-03). Spec: `docs/superpowers/specs/2026-11-03-employee-documents-design.md`. | Employees |
 | 4 | Show HR notes in the outer table, full text on hover | 🔁 ❓ | `hr_notes` is one text field on the employee. It is in `EmployeeService::SENSITIVE` and is not a list column (`frontend/src/pages/employees.tsx:130-139`). The plan above says notes are visible to HR and CEO with an optional reminder date; the reminder is not built. | Employees |
 | 5 | The system is still slow | ❓ | PR #2 (perf architecture) is merged. No measurement exists from the client's server. The known slow path is the import: about 8 queries per changed cell (`AttendanceImport.php:165`). | Foundation |
 | 6 | Move between rows with ↑/↓ and make the current row obvious | 🟡 | The day sheet already moves a cursor row with ↑/↓ and J/K and draws a ring on it (`attendance-sheet.tsx:40,263`, `attendance-sheet-rows.tsx:163`). The period grid has no row cursor. The client may mean the grid, or find the ring too faint. | Attendance |

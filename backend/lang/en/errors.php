@@ -23,6 +23,7 @@ return [
     'code_above_highest' => 'The ID cannot be above :max, the highest ID issued so far.',
     'allowance_value_required' => 'Value is required unless the allowance type is "None".',
     'document_too_large' => 'The file is larger than :max MB.',
+    'payload_too_large' => 'The upload is too large.',
     'document_type' => 'Only PDF, JPG, PNG or WEBP files are accepted.',
     'employee_type' => [
         'office' => 'Office employee',

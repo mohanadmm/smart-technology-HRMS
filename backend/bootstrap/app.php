@@ -19,6 +19,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -92,6 +93,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->render(fn (ThrottleRequestsException $e, Request $request) => ApiEnvelope::error(
             $request, 429, 'rate_limited', __('identity.refusal.rate_limited'),
         )->withHeaders($e->getHeaders()));
+
+        // Thrown by global middleware before SetLocaleFromRequest: the message is in the default locale.
+        $exceptions->render(fn (PostTooLargeException $e, Request $request) => ApiEnvelope::error(
+            $request, 413, 'payload_too_large', __('errors.payload_too_large'),
+        ));
 
         // Anything else on /api/*; HTTP exceptions and HttpResponseException keep their own response.
         $exceptions->render(function (Throwable $e, Request $request) {
