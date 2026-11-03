@@ -56,6 +56,37 @@ class EmployeesApiTest extends TestCase
         $this->postJson('/api/v1/employees', $this->payload(['type' => 'day_laborer', 'salary' => null, 'daily_wage' => '250']))->assertCreated();
     }
 
+    public function test_phone_is_an_egyptian_mobile_number_kept_as_text(): void
+    {
+        foreach (['01012345678', '01112345678', '01212345678', '01512345678'] as $phone) {
+            $this->postJson('/api/v1/employees', $this->payload(['phone' => $phone]))->assertCreated()->assertJsonPath('data.phone', $phone);
+        }
+        $this->postJson('/api/v1/employees', $this->payload(['phone' => null]))->assertCreated()->assertJsonPath('data.phone', null);
+        foreach (['0100', '01312345678', '0101234567', '010123456789', '031234567', '+201012345678', '010 1234 5678', '٠١٠١٢٣٤٥٦٧٨'] as $phone) {
+            $this->postJson('/api/v1/employees', $this->payload(['phone' => $phone]))->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
+        }
+        // TrimStrings would hide the newline before the rule sees it.
+        $this->withoutMiddleware(TrimStrings::class)->postJson('/api/v1/employees', $this->payload(['phone' => "01012345678\n"]))->assertStatus(422);
+        $id = $this->make();
+        $this->patchJson("/api/v1/employees/$id", ['phone' => '0100'])->assertStatus(422);
+    }
+
+    public function test_a_bad_phone_is_explained_in_the_request_language(): void
+    {
+        $this->withHeader('Accept-Language', 'ar')->postJson('/api/v1/employees', $this->payload(['phone' => '0100']))->assertStatus(422)
+            ->assertJsonFragment(['يجب أن يكون رقم الهاتف رقم موبايل مصري من 11 رقمًا يبدأ بـ 010 أو 011 أو 012 أو 015.']);
+        $this->withHeader('Accept-Language', 'en')->postJson('/api/v1/employees', $this->payload(['phone' => '0100']))->assertStatus(422)
+            ->assertJsonFragment(['The phone must be an Egyptian mobile number: 11 digits starting with 010, 011, 012 or 015.']);
+    }
+
+    public function test_the_ceo_receives_hr_notes_in_the_list_and_the_profile(): void
+    {
+        $id = $this->make(['hr_notes' => 'ملاحظة']);
+        $this->signIn('ceo');
+        $this->getJson('/api/v1/employees')->assertOk()->assertJsonPath('data.0.hr_notes', 'ملاحظة');
+        $this->getJson("/api/v1/employees/$id")->assertOk()->assertJsonPath('data.hr_notes', 'ملاحظة');
+    }
+
     public function test_list_filters_by_type_in_force_today_and_searches_arabic(): void
     {
         $id = $this->make();
@@ -118,7 +149,7 @@ class EmployeesApiTest extends TestCase
     public function test_patch_identity_and_soft_delete(): void
     {
         $id = $this->make();
-        $this->patchJson("/api/v1/employees/$id", ['phone' => '0100', 'department' => 'IT'])->assertOk()->assertJsonPath('data.phone', '0100');
+        $this->patchJson("/api/v1/employees/$id", ['phone' => '01012345678', 'department' => 'IT'])->assertOk()->assertJsonPath('data.phone', '01012345678');
         $this->patchJson("/api/v1/employees/$id", ['pay_method' => 'bank'])->assertStatus(422);
         $this->deleteJson("/api/v1/employees/$id")->assertNoContent();
         $this->getJson("/api/v1/employees/$id")->assertNotFound();

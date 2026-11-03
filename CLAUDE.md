@@ -18,12 +18,12 @@ It replaces 6 Excel workbooks. Standalone now; a REST API for the company's Lara
 Mirror the CRM (github.com/mr-h12/smart-technology-CRM, see `docs/adr/0001-mirror-crm-stack.md`): Laravel 13 / PHP 8.4, PostgreSQL 17, Redis queues, Docker; `/api/v1`, UUIDv7 ids, the CRM response envelope; modules `Domain/Application/Infrastructure/Presentation` enforced by deptrac; PHPStan; PHPUnit; the CRM's custom RBAC, audit log and browsershot PDF queue. Frontend keeps the demo's look (Tailwind 4, shadcn/Radix, tokens, fonts) and uses react-i18next; the demo's mock data and DOM-rewrite translator are not carried over.
 
 ## Users and permissions
-- Accounts: Developer, CEO, HR, Manager (5 managers today). **Employees and workers have no accounts.**
-- A manager acts on behalf of their own employees: field attendance, leave, requests, the "signed" mark. A manager covers one or more sites and reaches, on each date, the workers whose home site is one of their sites and the engineers assigned to them. A worker has one dated home site; only HR moves it. Engineers have one dated manager and work at any of that manager's sites. Office staff keep a dated department manager for reference; HR enters their attendance, leave and requests.
+- Accounts: Developer, CEO, HR, Team lead (مسؤول التيم; role slug `manager`, 5 today). **Most employees have no account.** A team lead can also be an employee: HR records and reviews their attendance like anyone else's, and their account permissions stay separate from their pay (the account-to-employee link is not built yet).
+- Team lead is the domain and UI term (decided 2026-11-03); code, permissions and existing assignments keep `manager`. A team lead never sees or sets wages; HR owns wages and rates. A manager acts on behalf of their own employees: field attendance, leave, requests, the "signed" mark. A manager covers one or more sites and reaches, on each date, the workers whose home site is one of their sites and the engineers assigned to them. A worker has one dated home site; only HR moves it. Engineers have one dated manager and work at any of that manager's sites. Office staff keep a dated department manager for reference; HR enters their attendance, leave and requests.
 - Office staff attendance comes from the fingerprint import and HR, not from managers.
 - HR can view and edit everything managers enter. Every manager action notifies HR: instantly for requests, warnings and edits to past days; in a daily digest for routine attendance.
 - Approval flow: manager → HR → (HR chooses) CEO. Escalation is HR's per-request decision, not a rule.
-- Only the Developer role creates accounts and sets or changes passwords. There is no self-service password reset or change.
+- Only the Developer role creates accounts and sets or changes passwords. There is no self-service password reset or change. ⚠️ The owner said on 2026-11-03 that HR handles accounts; HR holds `user.view` but not `user.manage` today. Unchanged until R22 in `docs/client-questions.md` is answered.
 - Roles and permissions are data (CRM-style `resource.action.scope`), editable from the developer console. Check permissions by name, never by role name.
 
 ## Domain
@@ -46,7 +46,7 @@ Employee types, each with its own payroll cycle:
 ## Business rules
 These numbers are **settings** seeded with the values below. Read them from settings and keep them out of code literals:
 - Month = 30 days, day = 8 hours, overtime ×1.5.
-- Lateness multiplier per type: office 1×, engineer 1.5×, workers 2×. Office grace period is 15 minutes.
+- Lateness (decided 2026-11-03, `docs/calculations.md` §0a): a 15-minute grace a day for every type, then chargeable minutes × wage ÷ divisor × **the employee's own multiplier** (office 1, monthly site staff 1.5 or 2, day laborers 2 in October). Divisor 14,400 for monthly staff, 480 for day laborers. A blank multiplier is unresolved, never 0.
 - Office shift 09:00–17:00 (per-employee override). Weekly off per type: office Friday + Saturday, field Friday. Weekly off is paid for monthly staff.
 - Leave: under 1 year of service on Jan 1 → 10 days, 1 year or more → 21 days, 6 of them casual (عارضة) in both cases. The leave year starts Jan 1; nothing carries over. Passing 1 year mid-year alerts HR, who decides. Day laborers have no leave balance.
 - Social insurance (employee and company share) and income tax are **manual fields** HR types per employee per period. Blank means nothing is deducted.
