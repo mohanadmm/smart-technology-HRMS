@@ -242,7 +242,7 @@ test('expiry badges', () => {
       unmount()
       return text
     }
-    expect(badge('2026-11-02')).toContain('منتهي')
+    expect(badge('2026-11-02')).toContain('منتهي الصلاحية')
     expect(badge('2026-11-03')).toContain('ينتهي اليوم')
     expect(badge('2026-12-03')).toContain('ينتهي خلال 30 يومًا')
     expect(badge('2026-12-04')).not.toMatch(/ينتهي|منتهي/)
@@ -266,6 +266,13 @@ test('a row the server sent without its file is plain text, whatever the permiss
   expect(screen.getAllByText(/بايت/)).toHaveLength(1)
 })
 
+test('sizes read in KB under 1 MB and in MB above, one decimal at most', () => {
+  showDocs([doc('work_stub'), { ...doc('photos'), size_bytes: 12.44 * 1024 * 1024 }, { ...doc('other'), size_bytes: 30 * 1024 }])
+  expect(screen.getByText('244.1 كيلوبايت')).toBeInTheDocument()
+  expect(screen.getByText('12.4 ميجابايت')).toBeInTheDocument()
+  expect(screen.getByText('30 كيلوبايت')).toBeInTheDocument()
+})
+
 const DOC_PATH = '/api/v1/employees/e1/documents/d1'
 const d1 = { ...doc('criminal_record', '2027-01-31'), id: 'd1', note: 'قديم' }
 async function rowAction(item: string, user = userEvent.setup()) {
@@ -280,6 +287,7 @@ test('edit details patches kind, expiry and note', async () => {
   mockFetch({ [`PATCH ${DOC_PATH}`]: patch })
   const user = await rowAction('تعديل البيانات')
   const dialog = await screen.findByRole('dialog', { name: 'تعديل البيانات' })
+  expect(dialog).toHaveAccessibleDescription('صحيفة الحالة الجنائية')
   expect(within(dialog).getByLabelText('المستند')).toHaveValue('criminal_record')
   await user.clear(within(dialog).getByLabelText('تاريخ الانتهاء'))
   await user.clear(within(dialog).getByLabelText('ملاحظات'))
@@ -294,8 +302,9 @@ test('delete asks first and sends DELETE', async () => {
   const del = vi.fn(() => new Response(null, { status: 204 }))
   mockFetch({ [`DELETE ${DOC_PATH}`]: del })
   const user = await rowAction('حذف')
-  const dialog = await screen.findByRole('dialog')
-  expect(dialog).toHaveTextContent('حذف هذا المستند؟ سيختفي من القائمة ويبقى سجله في سجل التدقيق.')
+  const dialog = await screen.findByRole('dialog', { name: 'حذف صحيفة الحالة الجنائية؟' })
+  expect(within(dialog).getByText('scan.pdf').tagName).toBe('BDI')
+  expect(dialog).toHaveTextContent('سيختفي من القائمة ويبقى أثره في سجل التدقيق.')
   expect(del).not.toHaveBeenCalled()
   expect(within(dialog).getByRole('button', { name: 'حذف' })).toHaveClass('bg-destructive')
   await user.click(within(dialog).getByRole('button', { name: 'حذف' }))
@@ -371,8 +380,7 @@ test('an image opens as an img built from the stored mime', async () => {
   const { dialog, blobType } = await view({ mime: 'image/png', original_name: 'id.png' })
   const img = await within(dialog).findByRole('img')
   expect(img).toHaveAttribute('src', 'blob:doc-1')
-  expect(img.getAttribute('alt')).toContain('صحيفة الحالة الجنائية')
-  expect(img.getAttribute('alt')).toContain('id.png')
+  expect(img).toHaveAttribute('alt', 'صحيفة الحالة الجنائية: id.png')
   expect(blobType()).toBe('image/png')
 })
 
@@ -394,6 +402,7 @@ test('a PDF without an in-page viewer gets an Open link', async () => {
 test('an unknown stored mime never renders inline', async () => {
   const { dialog, blobType } = await view({ mime: 'text/html' })
   await within(dialog).findByRole('link', { name: 'تنزيل' })
+  expect(within(dialog).queryByRole('link', { name: 'فتح' })).toBeNull() // Open is for PDFs only
   expect(blobType()).toBe('application/octet-stream')
   expect(within(dialog).queryByRole('img')).toBeNull()
   expect(dialog.querySelector('iframe')).toBeNull()
@@ -436,5 +445,6 @@ test('a failed fetch shows Retry', async () => {
 
 test('the viewer says who uploaded the file and when', async () => {
   const { dialog } = await view()
-  expect(dialog).toHaveTextContent(/scan\.pdf.*رُفع في .*2026.* بواسطة HR/)
+  expect(dialog).toHaveTextContent(/scan\.pdf · رُفع في .*2026.* بواسطة HR/)
+  expect(within(dialog).getByText('HR').tagName).toBe('BDI') // a Latin name ending in a digit must not reorder the Arabic sentence
 })

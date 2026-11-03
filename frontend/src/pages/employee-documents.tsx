@@ -1,6 +1,6 @@
 import { FileText, Upload } from 'lucide-react'
 import { Fragment, useEffect, useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 import { DataList } from '@/components/common/DataList'
 import { RowActions } from '@/components/common/RowActions'
 import { cairoToday, ErrorBanner, Field, FormDialog, intlLocale, type Row, SelectField, TextField, toErrs, useForm } from '@/components/form'
@@ -18,11 +18,14 @@ export const DOC_KINDS = ['national_id_copy', 'work_stub', 'criminal_record', 'q
 /** The only types the app accepts, uploads and renders, with their file extension (the server's EmployeeDocument::EXT; it checks the bytes against the same list). */
 const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' }
 export const ACCEPT = Object.keys(EXT)
-const MAX_BYTES = 10 * 1024 * 1024 // EmployeeDocumentController::MAX_KB
+const MB = 1024 * 1024
+const MAX_BYTES = 10 * MB // EmployeeDocumentController::MAX_KB
 const SHRINK_OVER = 1.5 * 1024 * 1024
 // ponytail: iOS Safari can kill the tab decoding a huge image instead of throwing; above this the size check refuses it unshrunk
 const SHRINK_UNDER = 40 * 1024 * 1024
 const EXPIRY_SOON_DAYS = 30
+/** The one number format for every file size the tab shows. */
+const sizeFormat = (lng: string) => new Intl.NumberFormat(intlLocale(lng), { maximumFractionDigits: 1 })
 const isHeic = (f: File) => /^image\/hei[cf](-sequence)?$/.test(f.type) || /\.hei[cf]$/i.test(f.name)
 /** The browser's type, or (when the OS gave none) the one its extension names. */
 const typeOf = (f: File) => f.type || ACCEPT.find((m) => f.name.toLowerCase().endsWith(`.${EXT[m]}`)) || ''
@@ -65,7 +68,8 @@ export function Documents({ emp }: { emp: Row }) {
   const editor = can('employee_document.edit')
   const lng = intlLocale(i18n.language)
   const date = new Intl.DateTimeFormat(lng, { dateStyle: 'medium', timeZone: 'UTC' })
-  const mb = new Intl.NumberFormat(lng, { maximumSignificantDigits: 2 })
+  const num = sizeFormat(i18n.language)
+  const size = (b = 0) => (b < MB ? t('document.sizeKb', { size: num.format(b / 1024) }) : t('document.size', { size: num.format(b / MB) }))
   const today = Date.parse(cairoToday())
   const kindName = (d: Doc) => t(`enum.document.${d.kind}`)
   // this render's dialog only: a save that answers after its dialog closed must not close one opened since
@@ -104,14 +108,14 @@ export function Documents({ emp }: { emp: Row }) {
         rowKey={(d) => d.id}
         title={{
           header: t('document.kind'),
-          cell: (d) => (hasFile(d) ? <button type="button" className="text-start font-medium hover:underline" onClick={() => setViewing(d)}>{kindName(d)}</button> : kindName(d)),
+          cell: (d) => (hasFile(d) ? <button type="button" className="inline-flex min-h-tap items-center text-start font-medium text-primary underline underline-offset-4" onClick={() => setViewing(d)}>{kindName(d)}</button> : kindName(d)),
         }}
         fields={[
           ...(docs.some(hasFile)
             ? [{ header: t('document.file'), cell: (d: Doc) => hasFile(d) && (
                 <span className="inline-flex min-w-0 items-baseline gap-2">
                   <bdi className="block max-w-56 truncate" title={d.original_name}>{d.original_name}</bdi>
-                  <span className="shrink-0 text-muted-foreground">{t('document.size', { size: mb.format((d.size_bytes ?? 0) / 1024 / 1024) })}</span>
+                  <span className="shrink-0 text-muted-foreground">{size(d.size_bytes)}</span>
                 </span>
               ) }]
             : []),
@@ -148,6 +152,7 @@ export function Documents({ emp }: { emp: Row }) {
       {dlg?.type === 'edit' && (
         <FormDialog
           title={t('document.editDetails')}
+          description={kindName(dlg.doc)}
           open
           onOpenChange={(o) => !o && closeDlg()}
           init={{ kind: dlg.doc.kind, expires_at: dlg.doc.expires_at ?? '', note: dlg.doc.note ?? '' }}
@@ -167,7 +172,7 @@ export function Documents({ emp }: { emp: Row }) {
       )}
       {dlg?.type === 'delete' && (
         <FormDialog
-          title={t('document.delete')}
+          title={t('document.deleteTitle', { name: kindName(dlg.doc) })}
           open
           onOpenChange={(o) => !o && closeDlg()}
           init={{}}
@@ -176,7 +181,12 @@ export function Documents({ emp }: { emp: Row }) {
           shown={[]}
           footer="document.delete"
           destructive
-          description={<span className="text-foreground">{t('document.deleteConfirm')}</span>}
+          description={
+            <span className="grid gap-1 text-foreground">
+              {dlg.doc.original_name && <bdi className="font-medium [overflow-wrap:anywhere]">{dlg.doc.original_name}</bdi>}
+              <span>{t('document.deleteConfirm')}</span>
+            </span>
+          }
         >
           {() => null}
         </FormDialog>
@@ -221,9 +231,9 @@ function UploadForm({ empId, preset, onClose, busy, setBusy }: { empId: string; 
     return () => URL.revokeObjectURL(url)
   }, [file])
 
-  const mb = new Intl.NumberFormat(intlLocale(i18n.language), { maximumFractionDigits: 1 })
+  const mb = sizeFormat(i18n.language)
   const tooLarge = (f: File) =>
-    [t('document.tooLarge', { size: mb.format(f.size / 1024 / 1024), max: mb.format(MAX_BYTES / 1024 / 1024) }), f.type === 'application/pdf' && t('document.tooLargePdf')].filter(Boolean).join(' ')
+    [t('document.tooLarge', { size: mb.format(f.size / MB), max: mb.format(MAX_BYTES / MB) }), f.type === 'application/pdf' && t('document.tooLargePdf')].filter(Boolean).join(' ')
 
   // check the type, then shrink a big photo, then check the size: the limit must not refuse the photos the shrink is for
   async function pick(chosen: File | undefined) {
@@ -314,8 +324,9 @@ export function Viewer({ empId, doc, onClose }: { empId: string; doc: Doc | null
       <DialogContent className="top-[env(safe-area-inset-top)] max-h-none rounded-none sm:h-[85vh] sm:max-h-none sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>{kind}</DialogTitle>
-          <DialogDescription>
-            <bdi>{doc?.original_name}</bdi> · {doc?.created_at && t('document.uploadedBy', { date: date.format(new Date(doc.created_at)), name: doc.uploader_name ?? '—' })}
+          <DialogDescription className="[overflow-wrap:anywhere]">
+            {/* the names are React children, never parsed as markup; <bdi> keeps a Latin name from reordering the Arabic */}
+            {doc && <Trans i18nKey="document.uploadedBy" values={{ date: doc.created_at ? date.format(new Date(doc.created_at)) : '—' }} components={{ file: <bdi>{doc.original_name}</bdi>, name: <bdi>{doc.uploader_name ?? '—'}</bdi> }} />}
           </DialogDescription>
         </DialogHeader>
         {doc && <ViewerFile key={doc.id} empId={empId} doc={doc} kind={kind!} />}
@@ -361,14 +372,14 @@ function ViewerFile({ empId, doc, kind }: { empId: string; doc: Doc; kind: strin
         ) : !url ? (
           <Skeleton aria-busy="true" aria-label={t('auth.loading')} className="min-h-64 flex-1" />
         ) : type.startsWith('image/') ? (
-          <img src={url} alt={`${kind}: ${doc.original_name}`} className="min-h-0 w-full flex-1 object-contain" />
+          <img src={url} alt={t('document.imageAlt', { kind, name: doc.original_name })} className="min-h-0 w-full flex-1 object-contain" />
         ) : type === 'application/pdf' && navigator.pdfViewerEnabled ? (
           // no sandbox: Chromium refuses to show a PDF inside one
           <iframe src={url} title={kind} className="min-h-0 w-full flex-1 rounded-lg border" />
-        ) : (
+        ) : type === 'application/pdf' ? (
           // a link the user taps, not window.open: iOS blocks a window opened after an await
           <a href={url} target="_blank" rel="noopener" className={cn(buttonVariants(), center)}>{t('document.open')}</a>
-        )}
+        ) : null}
       </DialogBody>
       {url && (
         <DialogFooter>
