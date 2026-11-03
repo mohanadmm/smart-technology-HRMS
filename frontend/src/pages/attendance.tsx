@@ -1,9 +1,9 @@
-import { CalendarCheck, CalendarX, ChevronLeft, ChevronRight, FileSpreadsheet, ListChecks, Lock, LockOpen, Users } from 'lucide-react'
+import { CalendarCheck, ChevronLeft, ChevronRight, FileSpreadsheet, ListChecks, Lock, LockOpen, Users } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { MiniStat } from '@/components/cards/StatCard'
+import { Alert } from '@/components/common/Alert'
 import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatusBadge } from '@/components/common/StatusBadge'
@@ -40,7 +40,7 @@ const LOOK: Record<Day['state'], string> = {
   future: 'text-muted-foreground opacity-50',
   not_employed: 'text-muted-foreground opacity-50',
 }
-const CELL = 'block min-h-11 w-full min-w-14 max-w-28 truncate rounded-md px-1.5 text-center text-xs transition-colors outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed'
+const CELL = 'block min-h-tap w-full min-w-14 max-w-28 truncate rounded-md px-1.5 text-center text-xs transition-colors outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed'
 
 /** `?date=` when it is a real date not after today in Cairo, else today. */
 function pickDate(s: string | null) {
@@ -88,22 +88,24 @@ export function AttendancePage() {
           <SelectField name="group" label={t('attendance.groupLabel')} values={{ group }} set={(_, v) => set({ group: v, period: null })} errs={{}} options={GROUPS.map((g) => [g, t(`attendance.group.${g}`)])} />
         </div>
         <div className="flex flex-wrap items-center gap-1">
-          <Button variant="outline" size="icon" className="size-11" disabled={!period} onClick={() => period && move(period.prev_start)} aria-label={t('attendance.prevPeriod')}>
+          <Button variant="outline" size="icon" disabled={!period} onClick={() => period && move(period.prev_start)} aria-label={t('attendance.prevPeriod')}>
             <ChevronLeft className="rtl:-scale-x-100" aria-hidden />
           </Button>
-          <span className="px-1 text-sm font-medium whitespace-nowrap tabular">
+          <span className="px-1 text-sm font-medium whitespace-nowrap">
             {period ? ltrDates(t('attendance.periodRange', { start: period.start, end: period.end })) : '—'}
           </span>
-          <Button variant="outline" size="icon" className="size-11" disabled={!period?.next_start} onClick={() => period?.next_start && move(period.next_start)} aria-label={t('attendance.nextPeriod')}>
+          <Button variant="outline" size="icon" disabled={!period?.next_start} onClick={() => period?.next_start && move(period.next_start)} aria-label={t('attendance.nextPeriod')}>
             <ChevronRight className="rtl:-scale-x-100" aria-hidden />
           </Button>
           {period?.is_locked && <StatusBadge variant="neutral" label={t('attendance.locked')} />}
         </div>
       </div>
       {period?.is_locked && period.lock && (
-        <p className="border-b px-4 py-2 text-[13px] text-muted-foreground">
-          {t('attendance.lockedBy', { name: period.lock.locked_by?.name ?? '—', time: at(period.lock.locked_at) })}
-        </p>
+        <div className="border-b p-4">
+          <Alert tone="neutral" icon={Lock}>
+            {t('attendance.lockedBy', { name: period.lock.locked_by?.name ?? '—', time: at(period.lock.locked_at) })}
+          </Alert>
+        </div>
       )}
       {!!err && (
         <div className="border-b p-4">
@@ -112,23 +114,21 @@ export function AttendancePage() {
       )}
     </>
   )
+  // Lock is the grid's main action; on the sheet and import tabs their own action leads, so Lock and Reopen are alternatives
+  const lockAction = period && can('attendance.lock')
+    ? period.is_locked
+      ? { label: t('attendance.reopen'), icon: LockOpen, onClick: () => setDlg('reopen') }
+      : { label: t('attendance.lock'), icon: Lock, onClick: () => setDlg('lock') }
+    : undefined
+  const main = tab === 'grid' && !period?.is_locked
 
   return (
     <div className="space-y-6">
       <PageHeader
         title={t('nav.attendance')}
-        description={t('attendance.subtitle')}
-        actions={
-          <>
-            <MiniStat label={t('attendance.missingCount')} value={period?.missing ?? '—'} icon={CalendarX} tone="amber" />
-            {period && can('attendance.lock') && (
-              <Button type="button" variant={period.is_locked ? 'outline' : 'default'} className="h-11" onClick={() => setDlg(period.is_locked ? 'reopen' : 'lock')}>
-                {period.is_locked ? <LockOpen aria-hidden /> : <Lock aria-hidden />}
-                {t(period.is_locked ? 'attendance.reopen' : 'attendance.lock')}
-              </Button>
-            )}
-          </>
-        }
+        description={period ? ltrDates(t('attendance.periodLine', { start: period.start, end: period.end, missing: period.missing })) : t('attendance.subtitle')}
+        action={main ? lockAction : undefined}
+        secondary={!main && lockAction ? [lockAction] : undefined}
       />
       <Tabs value={tab} onValueChange={(v) => set({ tab: v })}>
         <TabsList>
@@ -247,7 +247,7 @@ function Grid({ group, start, onOpenDay }: { group: string; start: string; onOpe
             <TableRow key={employee.id}>
               <TableCell className="sticky start-0 z-10 border-b bg-card">
                 <span className="flex items-center gap-2">
-                  <span className="tabular text-muted-foreground">{employee.code}</span>
+                  <span className="text-muted-foreground">{employee.code}</span>
                   <bdi>{localName(employee, i18n.language)}</bdi>
                 </span>
               </TableCell>
@@ -307,7 +307,7 @@ function LockDialog({ period, onClose }: { period: Period; onClose: () => void }
           {missing && (
             <>
               <MissingDays group={period.group} start={period.start} />
-              <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
+              <label className="flex min-h-tap items-center gap-3 text-sm font-medium">
                 <input type="checkbox" required className="size-4" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
                 {t('attendance.lockConfirmMissing')}
               </label>
@@ -315,7 +315,7 @@ function LockDialog({ period, onClose }: { period: Period; onClose: () => void }
           )}
         </DialogBody>
         <DialogFooter>
-          <Button type="button" className="h-11" disabled={busy || (missing && !confirmed)} onClick={lock}>
+          <Button type="button" disabled={busy || (missing && !confirmed)} onClick={lock}>
             {t('attendance.lock')}
           </Button>
         </DialogFooter>
@@ -340,19 +340,15 @@ function MissingDays({ group, start }: { group: string; start: string }) {
           <ul className="divide-y text-sm">
             {rows.map((d) => (
               <li key={`${d.employee_id}/${d.date}`} className="flex gap-3 px-3 py-2">
-                <span className="tabular text-muted-foreground">{d.code}</span>
+                <span className="text-muted-foreground">{d.code}</span>
                 <span className="flex-1">{localName(d, i18n.language)}</span>
-                <span className="tabular">{ltrDates(d.date)}</span>
+                <span>{ltrDates(d.date)}</span>
               </li>
             ))}
           </ul>
         </div>
       )}
-      {total > rows.length && (
-        <p role="status" className="rounded-md border p-3 text-sm">
-          {t('common.tooMany')}
-        </p>
-      )}
+      {total > rows.length && <Alert tone="warning">{t('common.tooMany')}</Alert>}
     </div>
   )
 }

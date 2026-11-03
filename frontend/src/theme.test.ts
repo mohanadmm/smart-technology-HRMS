@@ -40,7 +40,6 @@ test('cn() keeps the touch floor next to a caller size, and an explicit opt-out 
 const SKIP = [
   'pages/attendance-day.tsx',
   'pages/attendance-import.tsx',
-  'pages/attendance.tsx',
   'pages/holidays.tsx',
   'pages/settings.tsx',
   'pages/site-day.tsx',
