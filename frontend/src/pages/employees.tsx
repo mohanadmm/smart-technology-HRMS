@@ -24,6 +24,7 @@ import { ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { RESIDENCES, USERS, useApi, useList, useSave } from '@/lib/query'
 import { Documents } from './employee-documents'
+import { Leave } from './employee-leave'
 
 const TYPES = ['office', 'engineer', 'permanent_worker', 'day_laborer']
 const WORKERS = ['permanent_worker', 'day_laborer'] // a worker belongs to a home site; its manager follows the site
@@ -198,6 +199,7 @@ const TABS: [string, LucideIcon][] = [
   ['site', MapPin],
   ['history', HistoryIcon],
   ['documents', FileText],
+  ['leave', CalendarDays],
 ]
 
 /** One element for `employees/new` and `employees/:id`: keyed by the id so opening another employee starts a fresh form. */
@@ -323,7 +325,7 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
     )
 
   const worker = WORKERS.includes(emp.current_type)
-  const tabs = TABS.filter(([v]) => v !== (worker ? 'manager' : 'site'))
+  const tabs = TABS.filter(([v]) => v !== (worker ? 'manager' : 'site') && (v !== 'leave' || (can('leave.view') && emp.current_type !== 'day_laborer')))
   const tab = tabs.some(([v]) => v === params.get('tab')) ? params.get('tab')! : 'profile'
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -370,6 +372,7 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
             site: <SiteHistory emp={emp} />,
             history: <History emp={emp} />,
             documents: <Documents emp={emp} />,
+            leave: <Leave emp={emp} />,
           }[tab]}
         </TabsContent>
       </Tabs>

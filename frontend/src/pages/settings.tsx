@@ -18,13 +18,13 @@ const GROUPS: [string, string[]][] = [
   ['time', ['month_days', 'day_hours', 'overtime_multiplier']],
   ['lateness', ['lateness_multiplier_office', 'lateness_multiplier_engineer', 'lateness_multiplier_permanent_worker', 'lateness_multiplier_day_laborer', 'office_grace_minutes']],
   ['schedule', ['office_shift_start', 'office_shift_end', 'worker_shift_start', 'worker_shift_end', 'weekly_off_office', 'weekly_off_field']],
-  ['leave', ['leave_days_under_one_year', 'leave_days_one_year_plus', 'leave_casual_days']],
+  ['leave', ['leave_days_under_one_year', 'leave_days_one_year_plus', 'leave_casual_days', 'sick_leave_pay_percent']],
 ]
 const KEYS = GROUPS.flatMap(([, keys]) => keys)
-const INTEGER = ['month_days', 'office_grace_minutes', 'leave_days_under_one_year', 'leave_days_one_year_plus', 'leave_casual_days']
+const INTEGER = ['month_days', 'office_grace_minutes', 'leave_days_under_one_year', 'leave_days_one_year_plus', 'leave_casual_days', 'sick_leave_pay_percent']
 const DAYS = ['saturday', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday']
 
-/** The 15 business-rule settings: loads them fresh (never from the cache), then shows the form, which stays open if a later refetch fails. */
+/** The business-rule settings: loads them fresh (never from the cache), then shows the form, which stays open if a later refetch fails. */
 function RulesTab() {
   const { t } = useTranslation()
   const { data, err, ready } = useApi<Row>('/settings', { fresh: true })

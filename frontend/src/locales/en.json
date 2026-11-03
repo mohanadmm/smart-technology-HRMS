@@ -93,7 +93,8 @@
       "manager": "Manager",
       "history": "History",
       "documents": "Documents",
-      "site": "Site"
+      "site": "Site",
+      "leave": "Leave"
     },
     "subtitle": "Every employee and worker, of every type.",
     "stat": {
@@ -210,7 +211,10 @@
       "rest": "Rest day",
       "absent": "Absent",
       "other": "Other",
-      "saturday": "Saturday"
+      "saturday": "Saturday",
+      "annual": "Annual leave",
+      "casual": "Casual leave",
+      "unpaid": "Unpaid leave"
     },
     "allowance_mode": {
       "none": "No allowance",
@@ -334,7 +338,8 @@
       "setting": "Business rules",
       "attendance": "Attendance",
       "holiday": "Official holidays",
-      "employee_document": "Employee documents"
+      "employee_document": "Employee documents",
+      "leave": "Leave"
     },
     "action": {
       "view": "View",
@@ -346,7 +351,11 @@
       "manage": "Manage",
       "lock": "Lock",
       "assign_site": "Assign home site",
-      "record": "Record"
+      "record": "Record",
+      "request": "Request",
+      "decide": "Decide",
+      "decide_escalated": "Decide escalated",
+      "adjust": "Adjust balance"
     },
     "attendance": {
       "view": "Attendance: view",
@@ -360,6 +369,13 @@
     },
     "holiday": {
       "manage": "Official holidays: manage"
+    },
+    "leave": {
+      "view": "Leave: view",
+      "request": "Leave: request",
+      "decide": "Leave: decide requests",
+      "decide_escalated": "Leave: decide requests escalated to the CEO",
+      "adjust": "Leave: adjust balance"
     }
   },
   "audit": {
@@ -451,7 +467,7 @@
       "time": "Pay and working hours",
       "lateness": "Lateness",
       "schedule": "Shift and weekly rest",
-      "leave": "Annual leave entitlement"
+      "leave": "Leave"
     },
     "month_days": "Days per month",
     "day_hours": "Hours per day",
@@ -469,7 +485,8 @@
     "leave_days_one_year_plus": "Leave days, one year of service or more",
     "leave_casual_days": "Casual leave days",
     "worker_shift_start": "Field shift start",
-    "worker_shift_end": "Field shift end"
+    "worker_shift_end": "Field shift end",
+    "sick_leave_pay_percent": "Sick leave pay (%)"
   },
   "weekday": {
     "saturday": "Saturday",
@@ -527,7 +544,10 @@
       "sick": "Sick",
       "rest": "Rest",
       "absent": "Abs",
-      "other": "Other"
+      "other": "Other",
+      "annual": "Ann",
+      "casual": "Cas",
+      "unpaid": "Unpd"
     },
     "leaveName": {
       "friday": "Friday",
@@ -536,7 +556,10 @@
       "sick": "Sick leave",
       "rest": "Rest",
       "absent": "Absent",
-      "other": "Other"
+      "other": "Other",
+      "annual": "Annual leave",
+      "casual": "Casual leave",
+      "unpaid": "Unpaid leave"
     },
     "legend": "Legend",
     "empty": "No employees in this group during this period.",
@@ -581,7 +604,8 @@
     "source": {
       "entered": "Entered",
       "imported": "Imported",
-      "derived": "Automatic"
+      "derived": "Automatic",
+      "leave": "Leave request"
     },
     "sheet": {
       "kpi": {
@@ -753,5 +777,17 @@
     "otherSite": "At another site",
     "empty": "No one is assigned to this site on this day.",
     "noSites": "No sites are assigned to you. Contact HR."
+  },
+  "leave": {
+    "balance": "Leave balance",
+    "year": "Year",
+    "remaining": "Remaining",
+    "entitlement": "Annual entitlement",
+    "used": "Used",
+    "casualUsed": "Casual used",
+    "ofCap": "{{used}} of {{cap}}",
+    "sickDays": "Sick leave days",
+    "unpaidDays": "Unpaid leave days",
+    "noHireDate": "Record the hire date in the employee's profile to compute the leave balance."
   }
 }

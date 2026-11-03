@@ -70,6 +70,10 @@ final class SiteService
     {
         $site = Site::findOrFail($id);
         $site->fill($data);
+        // The leave balance counts stored days by their site's current code, so a used type's meaning is fixed; cleared days count as used too.
+        if ($site->isDirty(['kind', 'leave_code']) && DB::table('attendance_days')->where('site_id', $id)->exists()) {
+            throw ValidationException::withMessages(['leave_code' => __('errors.leave_type_in_use')]);
+        }
         $this->assertLeaveCode($site);
         $site->save();
 

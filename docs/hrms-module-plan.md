@@ -18,7 +18,7 @@ Smart Technology runs HR and payroll today on 6 hand-built Excel workbooks (anal
 | Fingerprint | Office staff only; HR uploads the device's Excel export; 15-min grace; shift 09:00–17:00 (per-employee override); import flags missing punches / early leave / OT, HR confirms. Office attendance is HR's, not the managers' |
 | Payroll types | Office staff (monthly), engineers/permanent workers (26→25), day laborers (half-month). Lateness/OT multipliers are settings per type (1× / 1.5× / 2×, OT 1.5×) |
 | Rates | Day laborer's daily wage on the worker (effective-dated, `docs/adr/0002-daily-wage-on-worker.md`); site allowance rule per site; residence × site fare + per-worker override. Permanent workers' transport is paid (full/half per day) |
-| Leave | <1 year on Jan 1 → 10 days, ≥1 year → 21, of which 6 casual (both). Year from Jan 1, no carry-over; crossing 1 year mid-year alerts HR. Day laborers: none. Leave pay rules decided when building leave. All values are settings |
+| Leave | <1 year on Jan 1 → 10 days, ≥1 year → 21, of which 6 casual (both). Year from Jan 1, no carry-over; crossing 1 year mid-year alerts HR. Day laborers: none. Leave pay and request rules: `docs/superpowers/specs/2026-11-03-leave-design.md` (owner, 2026-11-03; L1–L3 are defaults until the client answers questions 8–10). All values are settings |
 | Insurance / tax | Manual: HR types employee share, company share and income tax per employee per period; blank = 0. Insured basic only splits the payslip |
 | End-of-service | System suggests ½ month × years × last total wage; HR edits (rule pending client) |
 | HR override | System computes everything; HR can override any computed value (reason, highlighted, survives recompute, revertible) |

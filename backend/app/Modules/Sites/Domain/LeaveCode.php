@@ -13,4 +13,7 @@ enum LeaveCode: string
     case Rest = 'rest';
     case Absent = 'absent';
     case Other = 'other';
+    case Annual = 'annual';
+    case Casual = 'casual';
+    case Unpaid = 'unpaid';
 }

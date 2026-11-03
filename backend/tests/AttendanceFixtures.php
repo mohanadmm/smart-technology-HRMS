@@ -19,15 +19,14 @@ trait AttendanceFixtures
     /** @var array<string, int> */
     private array $employeesMade = [];
 
-    /** @return array<string, string> leave_code => site id, for all seven codes */
+    /** @return array<string, string> leave_code => site id, for every code */
     protected function leaveTypes(): array
     {
-        // The Saturday migration already created the active «اجازة السبت»; a second one would break the one-per-code index.
-        $ids = ['saturday' => (string) Site::where(['kind' => 'leave', 'leave_code' => 'saturday', 'active' => true])->value('id')];
+        // Migrations already created some active leave types (Saturday, annual, casual, unpaid); a second one would break the one-per-code index.
+        $ids = [];
         foreach (LeaveCode::cases() as $code) {
-            if ($code !== LeaveCode::Saturday) {
-                $ids[$code->value] = (string) Site::create(['name_ar' => 'Leave-'.$code->value, 'kind' => 'leave', 'leave_code' => $code->value])->getKey();
-            }
+            $ids[$code->value] = (string) (Site::where(['kind' => 'leave', 'leave_code' => $code->value, 'active' => true])->value('id')
+                ?? Site::create(['name_ar' => 'Leave-'.$code->value, 'kind' => 'leave', 'leave_code' => $code->value])->getKey());
         }
 
         return $ids;

@@ -16,7 +16,7 @@ class SettingsApiTest extends TestCase
     {
         $this->signIn('hr');
         $this->getJson('/api/v1/settings')->assertOk()
-            ->assertJsonCount(17, 'data')
+            ->assertJsonCount(18, 'data')
             ->assertJsonPath('data.month_days', '30')
             ->assertJsonPath('data.day_hours', '8')
             ->assertJsonPath('data.overtime_multiplier', '1.5')
@@ -33,7 +33,8 @@ class SettingsApiTest extends TestCase
             ->assertJsonPath('data.weekly_off_field', 'friday')
             ->assertJsonPath('data.leave_days_under_one_year', '10')
             ->assertJsonPath('data.leave_days_one_year_plus', '21')
-            ->assertJsonPath('data.leave_casual_days', '6');
+            ->assertJsonPath('data.leave_casual_days', '6')
+            ->assertJsonPath('data.sick_leave_pay_percent', '100');
     }
 
     public function test_put_saves_changed_rules_exactly_and_audits_each(): void
@@ -89,6 +90,18 @@ class SettingsApiTest extends TestCase
         }
         $this->assertSame('1.5', DB::table('settings')->where('key', 'overtime_multiplier')->value('value'));
         $this->assertSame('1', DB::table('settings')->where('key', 'lateness_multiplier_office')->value('value'));
+    }
+
+    public function test_sick_leave_pay_percent_is_a_whole_percent(): void
+    {
+        $this->signIn('hr');
+        foreach (['0', '100', '75'] as $good) {
+            $this->putJson('/api/v1/settings', ['sick_leave_pay_percent' => $good])->assertOk()->assertJsonPath('data.sick_leave_pay_percent', $good);
+        }
+        foreach (['101', '-1', '7.5', '07', '00'] as $bad) {
+            $this->putJson('/api/v1/settings', ['sick_leave_pay_percent' => $bad])->assertStatus(422)->assertJsonPath('error.details.0.field', 'sick_leave_pay_percent');
+        }
+        $this->assertSame('75', DB::table('settings')->where('key', 'sick_leave_pay_percent')->value('value'));
     }
 
     public function test_view_and_manage_are_separate_permissions(): void

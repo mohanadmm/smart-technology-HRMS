@@ -38,6 +38,9 @@ return [
         'rest' => 'Rest',
         'absent' => 'Absent',
         'other' => 'Other',
+        'annual' => 'Annual leave',
+        'casual' => 'Casual leave',
+        'unpaid' => 'Unpaid leave',
     ],
     'import' => [
         'unknown_employee' => 'Unknown employee ID.',

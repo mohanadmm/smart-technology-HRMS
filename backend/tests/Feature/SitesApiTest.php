@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Modules\Sites\Infrastructure\Eloquent\Fare;
 use Database\Seeders\SitesSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class SitesApiTest extends TestCase
@@ -66,14 +67,34 @@ class SitesApiTest extends TestCase
         $this->patchJson("/api/v1/sites/$id", ['kind' => 'work', 'leave_code' => null])->assertOk();
     }
 
+    public function test_a_used_leave_type_keeps_its_meaning(): void
+    {
+        $used = $this->postJson('/api/v1/sites', ['name_ar' => 'غ', 'kind' => 'leave', 'leave_code' => 'absent'])->assertCreated()->json('data.id');
+        $cleared = $this->postJson('/api/v1/sites', ['name_ar' => 'أخرى', 'kind' => 'leave', 'leave_code' => 'other'])->assertCreated()->json('data.id');
+        $employee = $this->employee();
+        foreach ([[$used, '2026-03-01', null], [$cleared, '2026-03-02', now()]] as [$site, $date, $deletedAt]) {
+            \DB::table('attendance_days')->insert(['id' => (string) Str::uuid7(), 'employee_id' => $employee, 'date' => $date, 'site_id' => $site, 'source' => 'entered', 'deleted_at' => $deletedAt, 'created_at' => now(), 'updated_at' => now()]);
+        }
+
+        foreach ([$used, $cleared] as $site) {
+            $this->patchJson("/api/v1/sites/$site", ['leave_code' => 'rest'])->assertStatus(422)
+                ->assertJsonPath('error.details.0.field', 'leave_code')->assertJsonPath('error.details.0.message', __('errors.leave_type_in_use'));
+            $this->patchJson("/api/v1/sites/$site", ['kind' => 'work', 'leave_code' => null])->assertStatus(422)
+                ->assertJsonPath('error.details.0.message', __('errors.leave_type_in_use'));
+        }
+        $this->patchJson("/api/v1/sites/$used", ['name_ar' => 'غياب', 'leave_code' => 'absent', 'active' => false])->assertOk()
+            ->assertJsonPath('data.name_ar', 'غياب')->assertJsonPath('data.active', false);
+        $this->assertSame('absent', \DB::table('sites')->where('id', $used)->value('leave_code'));
+    }
+
     public function test_list_filters_and_show(): void
     {
         $this->site();
         $this->postJson('/api/v1/sites', ['name_ar' => 'غ', 'kind' => 'leave', 'leave_code' => 'absent', 'active' => false])->assertCreated();
-        // plus the Saturday migration's active «اجازة السبت»
-        $this->getJson('/api/v1/sites')->assertJsonCount(3, 'data')->assertJsonPath('meta.pagination.total', 3);
-        $this->assertContains('absent', $this->getJson('/api/v1/sites?kind=leave')->assertJsonCount(2, 'data')->json('data.*.leave_code'));
-        $this->assertEqualsCanonicalizing(['leave', 'work'], $this->getJson('/api/v1/sites?active=true')->assertJsonCount(2, 'data')->json('data.*.kind'));
+        // plus the migrations' 4 active leave types (Saturday, annual, casual, unpaid)
+        $this->getJson('/api/v1/sites')->assertJsonCount(6, 'data')->assertJsonPath('meta.pagination.total', 6);
+        $this->assertContains('absent', $this->getJson('/api/v1/sites?kind=leave')->assertJsonCount(5, 'data')->json('data.*.leave_code'));
+        $this->assertEqualsCanonicalizing(['leave', 'leave', 'leave', 'leave', 'work'], $this->getJson('/api/v1/sites?active=true')->assertJsonCount(5, 'data')->json('data.*.kind'));
         $this->getJson('/api/v1/sites?active=false')->assertJsonCount(1, 'data');
         $this->getJson('/api/v1/sites?kind=bogus')->assertStatus(422);
         $this->getJson('/api/v1/sites/not-a-uuid')->assertNotFound();
@@ -191,7 +212,7 @@ class SitesApiTest extends TestCase
     {
         $this->seed(SitesSeeder::class);
         $this->seed(SitesSeeder::class);
-        $this->assertSame(6, \DB::table('sites')->count());   // 5 seeded + the Saturday migration's row
+        $this->assertSame(9, \DB::table('sites')->count());   // 5 seeded + the migrations' 4 leave types
         $this->assertSame(4, \DB::table('residences')->count());
         $this->assertSame('absent', \DB::table('sites')->where('name_ar', 'غ')->value('leave_code'));
         $this->assertSame(0, Fare::count());

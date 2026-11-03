@@ -129,13 +129,30 @@ Example: daily wage 330 at a site with no allowance, fare 35, 60 OT minutes → 
 - Balance = Σ advances − Σ repayments
 
 ## 7. Leave balance (الإجازات)
-- Annual entitlement = **10** days if service < 1 year on Jan 1, otherwise (1 year or more) **21**. Of those, up to **6** may be casual (عارضة).
-- Balance = entitlement − leave days used this year
-- Casual balance = 6 − casual days used
+Spec: `docs/superpowers/specs/2026-11-03-leave-design.md`. Attendance is the ledger: a day counts as leave when its stored attendance day carries the leave day-type, whether HR typed it or an approved leave request wrote it.
+
+- Annual entitlement for year Y, for monthly staff (day laborers have none):
+  - service on Jan 1 of Y ≥ 1 year → **21**
+  - hired before Jan 1 of Y with less than 1 year → **10**
+  - hired during Y → floor(**10** × M ÷ 12), M = full calendar months from hire to Dec 31 (the hire month counts when the hire day is the 1st). Hired July 1 → 5; hired in December after the 1st → 0. ⚠️ (L3, client question 10)
+  - no hire date → no entitlement; the screen asks HR to record the hire date
+  - HR may override the year's entitlement (with a reason)
+- Casual cap = min(**6**, entitlement)
+- Used = annual days + casual days stored in Y + opening used (typed by HR for days taken before the system; blank = 0)
+- Casual used = casual days stored in Y + opening casual used
+- Balance = entitlement − used (may go negative); casual balance = casual cap − casual used
+- Sick days are counted apart and do not reduce the balance (L4). Unpaid days are counted apart too.
 - The year starts Jan 1. Nothing carries over.
-- Someone who passes 1 year of service mid-year: HR gets an alert and decides whether to change the entitlement.
-- ⚠️ Is a first-year hire's 10 days pro-rated?
-- ⚠️ Leave pay: are annual, casual and sick leave fully paid (sick 75%?), and does leave beyond the balance become absence? Decide when building leave.
+- Someone who passes 1 year of service mid-year: HR gets an alert on the anniversary and decides whether to change the year's entitlement.
+
+**Leave request days**
+- A request's days = its dates, minus days not employed as a monthly type, the type's weekly off and official holidays (§2a). Those are not counted and not written.
+- On approval, annual or casual days beyond the balance (for casual, beyond the smaller of the two balances) are written as unpaid leave (بدون أجر). ⚠️ (L2, client question 9)
+
+**Leave pay (Release 2 payroll)**
+- Annual and casual leave are paid in full for monthly staff, like the weekly off.
+- Sick leave is paid at **100%** of the day rate (`sick_leave_pay_percent`); below 100, each sick day deducts (100 − %) × day rate. ⚠️ (L1, client question 8; the Excel pays it in full)
+- Unpaid leave deducts one day rate per day, like absence (غ), but is reported as unpaid leave.
 
 ## 8. Site labor cost (ملخص المواقع)
 For each site and period:
