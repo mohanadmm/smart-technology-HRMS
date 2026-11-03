@@ -187,4 +187,45 @@ class EmployeeDocumentsTest extends TestCase
         $this->assertSame([], Storage::disk('local')->allFiles());
         $this->assertSame(0, EmployeeDocument::withTrashed()->count());
     }
+
+    public function test_details_are_edited_and_audited(): void
+    {
+        $emp = $this->employee();
+        $id = $this->upload($emp)->assertCreated()->json('data.id');
+        $this->patchJson("/api/v1/employees/$emp/documents/$id", ['kind' => 'other', 'expires_at' => '2027-01-31', 'note' => 'نسخة'])->assertOk()
+            ->assertJsonPath('data.id', $id)
+            ->assertJsonPath('data.kind', 'other')
+            ->assertJsonPath('data.expires_at', '2027-01-31')
+            ->assertJsonPath('data.note', 'نسخة');
+        $audit = DB::table('audit_log')->where(['entity_id' => $id, 'event' => 'UPDATED'])->sole();
+        foreach (['old_values', 'new_values'] as $col) {
+            $keys = array_keys(json_decode($audit->$col, true));
+            sort($keys);
+            $this->assertSame(['expires_at', 'kind', 'note'], $keys);
+        }
+        $this->patchJson("/api/v1/employees/$emp/documents/$id", ['kind' => 'bogus'])->assertStatus(422);
+    }
+
+    public function test_delete_hides_the_row_keeps_the_file_and_is_audited(): void
+    {
+        $emp = $this->employee();
+        $id = $this->upload($emp)->assertCreated()->json('data.id');
+        $this->deleteJson("/api/v1/employees/$emp/documents/$id")->assertNoContent();
+        $doc = EmployeeDocument::withTrashed()->findOrFail($id);
+        $this->assertNotNull($doc->deleted_at);
+        Storage::disk('local')->assertExists($doc->path());
+        $this->assertTrue(DB::table('audit_log')->where(['entity_id' => $id, 'event' => 'DELETED'])->exists());
+        $this->getJson("/api/v1/employees/$emp")->assertOk()->assertJsonPath('data.documents', []);
+    }
+
+    public function test_another_employees_document_is_404(): void
+    {
+        $a = $this->employee();
+        $b = $this->employee();
+        $id = $this->upload($b)->assertCreated()->json('data.id');
+        $before = EmployeeDocument::findOrFail($id)->getAttributes();
+        $this->patchJson("/api/v1/employees/$a/documents/$id", ['note' => 'x'])->assertNotFound();
+        $this->deleteJson("/api/v1/employees/$a/documents/$id")->assertNotFound();
+        $this->assertSame($before, EmployeeDocument::findOrFail($id)->getAttributes());
+    }
 }

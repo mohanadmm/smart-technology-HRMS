@@ -11,6 +11,7 @@ use App\Support\Http\ApiEnvelope;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Arr;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\File;
@@ -38,6 +39,24 @@ final class EmployeeDocumentController
         ]);
 
         return ApiEnvelope::single($request, $this->documents->upload($employee, $request->file('file'), Arr::except($data, 'file'), $this->seesFiles($request)), 201);
+    }
+
+    public function update(Request $request, string $employee, string $document): JsonResponse
+    {
+        $data = $request->validate([
+            'kind' => ['sometimes', Rule::enum(DocumentKind::class)],
+            'expires_at' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+            'note' => ['sometimes', 'nullable', 'string'],
+        ]);
+
+        return ApiEnvelope::single($request, $this->documents->update($employee, $document, $data, $this->seesFiles($request)));
+    }
+
+    public function destroy(string $employee, string $document): Response
+    {
+        $this->documents->delete($employee, $document);
+
+        return response()->noContent();
     }
 
     private function seesFiles(Request $request): bool

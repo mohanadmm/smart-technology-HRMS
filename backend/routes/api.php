@@ -53,6 +53,8 @@ Route::middleware('auth')->group(function (): void {
         Route::post('{employee}/fare-overrides', [FareController::class, 'override'])->middleware(['permission:employee.edit', 'employee.scope']);
         Route::get('{employee}/fare', [FareController::class, 'show'])->middleware(['permission:employee.view', 'employee.scope']);
         Route::post('{employee}/documents', [EmployeeDocumentController::class, 'store'])->middleware(['permission:employee_document.edit', 'employee.scope']);
+        Route::patch('{employee}/documents/{document}', [EmployeeDocumentController::class, 'update'])->middleware(['permission:employee_document.edit', 'employee.scope'])->whereUuid('document');
+        Route::delete('{employee}/documents/{document}', [EmployeeDocumentController::class, 'destroy'])->middleware(['permission:employee_document.edit', 'employee.scope'])->whereUuid('document');
     });
 
     Route::prefix('sites')->controller(SiteController::class)->group(function (): void {

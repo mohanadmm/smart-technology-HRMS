@@ -61,6 +61,29 @@ final class EmployeeDocuments
         return self::row($doc->load('uploader'), $files);
     }
 
+    /**
+     * @param  array<string, mixed>  $data  a subset of kind, expires_at, note
+     * @return array<string, mixed>
+     */
+    public function update(string $employeeId, string $documentId, array $data, bool $files): array
+    {
+        $doc = $this->find($employeeId, $documentId);
+        $doc->update($data);
+
+        return self::row($doc->load('uploader'), $files);
+    }
+
+    /** Model delete: soft and audited; the file stays. */
+    public function delete(string $employeeId, string $documentId): void
+    {
+        $this->find($employeeId, $documentId)->delete();
+    }
+
+    private function find(string $employeeId, string $documentId): EmployeeDocument
+    {
+        return Employee::findOrFail($employeeId)->documents()->findOrFail($documentId);
+    }
+
     /** @return array<string, mixed> without the view grant only id, kind and expiry; never the path */
     public static function row(EmployeeDocument $d, bool $files): array
     {
