@@ -6,6 +6,7 @@ namespace App\Modules\Employees\Application;
 
 use App\Modules\Employees\Domain\DocumentKind;
 use App\Modules\Employees\Domain\EffectiveDated;
+use App\Modules\Employees\Domain\EmployeeCodeTaken;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Employees\Domain\PayMethod;
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
@@ -15,6 +16,8 @@ use App\Modules\Employees\Infrastructure\Eloquent\EmployeePayChange;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeTypeChange;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -34,12 +37,12 @@ final class EmployeeService
     private const SENSITIVE = ['national_id', 'insurance_no', 'bank_account', 'hr_notes'];
 
     /**
-     * @param  array{type?: string, site_id?: string, search?: string, per_page?: int}  $filters
+     * @param  array{type?: string, site_id?: string, search?: string, per_page?: int, archived?: bool}  $filters
      * @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}}
      */
     public function list(array $filters, ?string $ownerId = null): array
     {
-        $query = $this->visibleTo($ownerId)->select('employees.*')->selectRaw(self::CURRENT_TYPE.' as current_type', [self::today()])->orderBy('code');
+        $query = $this->visibleTo($ownerId, $filters['archived'] ?? false)->select('employees.*')->selectRaw(self::CURRENT_TYPE.' as current_type', [self::today()])->orderBy('code');
 
         if (isset($filters['type'])) {
             $query->whereRaw(self::CURRENT_TYPE.' = ?', [self::today(), $filters['type']]);
@@ -57,7 +60,7 @@ final class EmployeeService
                 ->where('name_ar', 'ilike', $like)
                 ->orWhere('name_en', 'ilike', $like)
                 ->when($ownerId === null, fn (Builder $q) => $q->orWhere('national_id', 'like', $like))
-                ->when(preg_match('/^[1-9]\d{0,8}$/D', $search) === 1, fn (Builder $q) => $q->orWhere('code', (int) $search)));
+                ->when(preg_match('/^(0|[1-9]\d{0,8})$/D', $search) === 1, fn (Builder $q) => $q->orWhere('code', (int) $search)));
         }
 
         $page = $query->paginate(min(max($filters['per_page'] ?? 20, 1), 100));
@@ -75,7 +78,7 @@ final class EmployeeService
         ];
     }
 
-    /** @return array<string, int> `total` plus one count per employee type, by the type in force today, over the list's scope; `total` also counts employees with no type in force yet, so it can exceed the sum of the types */
+    /** @return array<string, int> `total` plus one count per employee type, by the type in force today, over the list's scope of active employees; `total` also counts employees with no type in force yet, so it can exceed the sum of the types */
     public function countsByType(?string $ownerId = null): array
     {
         $counts = $this->visibleTo($ownerId)->toBase()
@@ -86,12 +89,19 @@ final class EmployeeService
         return ['total' => (int) $counts->sum(), ...$byType];
     }
 
-    /** @return Builder<Employee> live employees, or only those a manager reaches today */
-    private function visibleTo(?string $ownerId): Builder
+    /**
+     * The archive is the employees whose termination date has passed; the termination day itself is still worked (Attendance\Domain\Employment).
+     *
+     * @return Builder<Employee> live employees, active or archived, or only those a manager reaches today
+     */
+    private function visibleTo(?string $ownerId, bool $archived = false): Builder
     {
-        $query = Employee::query();
+        $today = self::today();
+        $query = Employee::query()->where(fn (Builder $q) => $archived
+            ? $q->where('termination_date', '<', $today)
+            : $q->whereNull('termination_date')->orWhere('termination_date', '>=', $today));
 
-        return $ownerId === null ? $query : EmployeeReach::apply($query, $ownerId, self::today());
+        return $ownerId === null ? $query : EmployeeReach::apply($query, $ownerId, $today);
     }
 
     /**
@@ -106,9 +116,10 @@ final class EmployeeService
         $this->assertPay($type, $pay);
 
         $id = DB::transaction(function () use ($data, $type, $pay): string {
-            // ponytail: table-wide lock serialises employee creation; fine at HR-entry rates, use a sequence if bulk import needs speed.
+            // ponytail: table-wide lock serialises employee creation; fine at HR-entry rates and the one-off master-data import.
             DB::statement('LOCK TABLE employees IN SHARE ROW EXCLUSIVE MODE');
-            $code = (int) Employee::withTrashed()->max('code') + 1;
+            $code = self::highestCodeIssued() + 1;
+            DB::table('employee_code_counter')->update(['last_issued' => $code]);
 
             $employee = Employee::create([...Arr::except($data, ['type', ...self::PAY_FIELDS]), 'code' => $code]);
             $employee->typeChanges()->create(['type' => $type->value, 'effective_from' => $data['effective_from']]);
@@ -172,6 +183,66 @@ final class EmployeeService
         $employee->save();
 
         return $this->show($id);
+    }
+
+    /**
+     * HR renumbers an employee. A deleted employee's code is never reused; a live holder's (active or archived) is refused unless
+     * $swap, which exchanges the two codes in one transaction, each save audited.
+     *
+     * @return array<string, mixed>
+     */
+    public function changeCode(string $id, int $code, bool $swap): array
+    {
+        $employee = Employee::findOrFail($id);
+        if ($employee->code === $code) {
+            return $this->show($id);
+        }
+        // Numbers are never reissued and a typo cannot jump the numbering (owner, 2026-11-03).
+        if ($code > ($highest = self::highestCodeIssued())) {
+            throw ValidationException::withMessages(['code' => __('errors.code_above_highest', ['max' => $highest])]);
+        }
+        try {
+            DB::transaction(function () use ($id, $code, $swap): void {
+                $holderId = Employee::withTrashed()->where('code', $code)->value('id');
+                // One query in id order: two opposite swaps lock their two rows in the same order, so they cannot deadlock.
+                $locked = Employee::withTrashed()->whereIn('id', array_filter([$id, $holderId]))->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+                $employee = $locked->get($id);
+                if ($employee === null || $employee->trashed()) {
+                    throw (new ModelNotFoundException)->setModel(Employee::class, [$id]);
+                }
+                if ($employee->code === $code) {
+                    return;
+                }
+                // Re-checked under the lock: the holder looked up above may have moved off the code or been deleted meanwhile.
+                $holder = $locked->first(fn (Employee $e) => $e->code === $code);
+                if ($holder === null && Employee::withTrashed()->where('code', $code)->exists()) {
+                    throw ValidationException::withMessages(['code' => __('errors.code_changed_meanwhile')]);   // held by a row not locked here
+                }
+                if ($holder?->trashed()) {
+                    throw ValidationException::withMessages(['code' => __('errors.code_deleted_holder')]);
+                }
+                if ($holder !== null && ! $swap) {
+                    throw new EmployeeCodeTaken($code, (string) $holder->name_ar, $holder->name_en);
+                }
+                // The unique is checked once both rows hold their new codes (migration 2026_11_03_000002).
+                DB::statement('SET CONSTRAINTS employees_code_unique DEFERRED');
+                $old = $employee->code;
+                $employee->update(['code' => $code]);
+                $holder?->update(['code' => $old]);
+                DB::statement('SET CONSTRAINTS employees_code_unique IMMEDIATE');
+            });
+        } catch (UniqueConstraintViolationException) {
+            // Another write took the code between the check and the save.
+            throw ValidationException::withMessages(['code' => __('errors.code_changed_meanwhile')]);
+        }
+
+        return $this->show($id);
+    }
+
+    /** The counter (migration 2026_11_03_000003), or a higher code written around create() (a seeder, a raw insert). */
+    private static function highestCodeIssued(): int
+    {
+        return (int) DB::scalar('SELECT greatest(last_issued, (SELECT coalesce(max(code), 0) FROM employees)) FROM employee_code_counter');
     }
 
     public function delete(string $id): void

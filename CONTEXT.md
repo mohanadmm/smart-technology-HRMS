@@ -26,9 +26,13 @@ The English name an office employee has on the fingerprint device, used to match
 _Avoid_: English name, device ID
 
 **Employee ID** (الرقم الوظيفي):
-The number the company gives each employee; stored as the employee's `code`.
+The number the company gives each employee; stored as the employee's `code`, a whole number from 0. It stays visible. A number is never reissued: a new employee gets the highest ID ever issued + 1, even after renumbering, and a deleted employee's ID stays theirs. HR (permission `employee.edit_code`) may change an ID to any free number from 0 up to the highest issued, or swap it with another employee's. Changing an employee's ID or Arabic name after an attendance template download refuses that employee's rows in the old template; download a fresh one.
 _Avoid_: الكود; code (in the UI)
-_Under revision_: the client asked to hide this number or renumber it 1…N with the CEO as 0 (R5 in `docs/client-questions.md`). The hidden key is already the UUID `id`.
+_Under revision_: renumbering every employee at once (1…N, CEO = 0) is not built; it waits for the owner (R5 in `docs/client-questions.md`). The hidden key is the UUID `id`.
+
+**Archive** (الأرشيف):
+The employees whose termination date has passed. The termination day itself is still worked, so an employee leaves the active list the day after. Reactivating an archived employee clears the termination date and reason, which counts the days since as employed again.
+_Avoid_: inactive list, deleted (a deleted employee is gone from both lists)
 
 ## Work and attendance
 

@@ -104,7 +104,24 @@
       "day_laborer": "Day laborers"
     },
     "status": "Status",
-    "employee": "Employee"
+    "employee": "Employee",
+    "leavesOn": "Leaves on {{date}}",
+    "archive": {
+      "view": "Show employees",
+      "active": "Active",
+      "archived": "Archive"
+    },
+    "reactivate": {
+      "button": "Reactivate",
+      "title": "Reactivate employee",
+      "confirm": "The termination date and reason will be cleared, and the days since {{date}} will count as employed again."
+    },
+    "changeCode": {
+      "button": "Change ID",
+      "new": "New employee ID",
+      "warning": "After the change, Excel attendance templates downloaded earlier and IDs typed or pasted in the day sheet's quick entry will no longer match this employee.",
+      "swap": "Swap the two IDs"
+    }
   },
   "pay": {
     "salary": "Salary",
@@ -250,7 +267,8 @@
       "edit": "Employees: edit",
       "delete": "Employees: delete",
       "assign_manager": "Employees: assign manager",
-      "assign_site": "Employees: assign home site"
+      "assign_site": "Employees: assign home site",
+      "edit_code": "Employees: edit ID"
     },
     "site": {
       "view": "Sites: view",
@@ -291,6 +309,7 @@
       "view": "View",
       "create": "Create",
       "edit": "Edit",
+      "edit_code": "Edit ID",
       "delete": "Delete",
       "assign_manager": "Assign manager",
       "manage": "Manage",
@@ -649,7 +668,8 @@
         "times_need_both": "Enter both the in and out times.",
         "template_mismatch": "The file does not match this period's attendance template.",
         "unreadable_file": "The file could not be read.",
-        "too_many_rows": "The file has more than {{max}} rows."
+        "too_many_rows": "The file has more than {{max}} rows.",
+        "code_name_mismatch": "The ID or name changed since this file was downloaded. Download a fresh template."
       }
     }
   },

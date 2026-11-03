@@ -5,6 +5,7 @@ use App\Http\Middleware\ForgetResolvedGuards;
 use App\Http\Middleware\SetLocaleFromRequest;
 use App\Modules\Attendance\Domain\AttendanceRefused;
 use App\Modules\Attendance\Presentation\AlertMissingDaysCommand;
+use App\Modules\Employees\Domain\EmployeeCodeTaken;
 use App\Modules\Employees\Presentation\EnsureEmployeeInScope;
 use App\Modules\Employees\Presentation\ImportMasterDataCommand;
 use App\Modules\Identity\Domain\Authentication\AuthenticationRefused;
@@ -80,6 +81,12 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(fn (AttendanceRefused $e, Request $request) => ApiEnvelope::error(
             $request, $e->reason->status(), $e->reason->value, __('attendance.refusal.'.$e->reason->value, $e->params), $e->details,
+        ));
+
+        $exceptions->dontReport(EmployeeCodeTaken::class);
+
+        $exceptions->render(fn (EmployeeCodeTaken $e, Request $request) => ApiEnvelope::error(
+            $request, 409, 'code_taken', __('errors.code_taken', ['code' => $e->taken, 'name' => app()->getLocale() === 'en' && filled($e->nameEn) ? $e->nameEn : $e->nameAr]),
         ));
 
         $exceptions->render(fn (ThrottleRequestsException $e, Request $request) => ApiEnvelope::error(

@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeTypeChange;
+use App\Modules\Identity\Infrastructure\Eloquent\Permission;
 use App\Modules\Identity\Infrastructure\Eloquent\Role;
 use Illuminate\Foundation\Http\Middleware\TrimStrings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -192,5 +194,237 @@ class EmployeesApiTest extends TestCase
         Role::create(['slug' => 'empty', 'name' => 'Empty', 'name_ar' => 'فارغ']);
         $this->signIn('empty');
         $this->getJson('/api/v1/employees/summary')->assertStatus(403)->assertJsonPath('error.code', 'permission_denied');
+    }
+
+    /** @return list<string> the ids the list returns for this query string */
+    private function listed(string $query = ''): array
+    {
+        return array_column($this->getJson('/api/v1/employees'.$query)->assertOk()->json('data'), 'id');
+    }
+
+    public function test_the_list_shows_active_employees_and_the_archive_those_whose_termination_date_has_passed(): void
+    {
+        $this->travelTo('2026-10-20 22:30:00');                                     // 2026-10-21 01:30 in Cairo (summer time, UTC+3)
+        $left = $this->make(['termination_date' => '2026-10-20']);
+        $lastDay = $this->make(['termination_date' => '2026-10-21']);               // the termination day is still worked
+        $staying = $this->make();
+
+        $this->assertSame([$lastDay, $staying], $this->listed());
+        $this->assertSame([$lastDay, $staying], $this->listed('?archived=false'));
+        $this->assertSame([$lastDay, $staying], $this->listed('?archived=0'));
+        $this->assertSame([$left], $this->listed('?archived=true'));
+        $this->assertSame([$left], $this->listed('?archived=1'));
+        $this->getJson('/api/v1/employees?archived=yes')->assertStatus(422)->assertJsonPath('error.details.0.field', 'archived');
+        $this->getJson('/api/v1/employees/summary')->assertJsonPath('data.total', 2)->assertJsonPath('data.office', 2);
+    }
+
+    public function test_a_manager_sees_the_archive_of_their_own_employees_only(): void
+    {
+        $this->travelTo('2026-10-20 10:00:00');
+        $manager = $this->makeUser('manager');
+        $mine = $this->make(['type' => 'engineer', 'termination_date' => '2026-10-01']);
+        $this->make(['type' => 'engineer', 'termination_date' => '2026-10-01']);
+        $this->postJson("/api/v1/employees/$mine/manager-assignments", ['manager_id' => $manager->id, 'effective_from' => '2026-01-01'])->assertCreated();
+
+        $this->actingAs($manager, 'api');
+        $this->assertSame([$mine], $this->listed('?archived=true'));
+        $this->assertSame([], $this->listed());
+        $this->getJson('/api/v1/employees/summary')->assertJsonPath('data.total', 0);
+    }
+
+    public function test_reactivating_clears_the_termination_and_brings_the_employee_back_to_the_list(): void
+    {
+        $this->travelTo('2026-10-20 10:00:00');
+        $id = $this->make(['termination_date' => '2026-10-01', 'termination_reason' => 'استقالة']);
+        $this->assertSame([$id], $this->listed('?archived=true'));
+
+        $this->patchJson("/api/v1/employees/$id", ['termination_date' => null, 'termination_reason' => null])->assertOk()
+            ->assertJsonPath('data.termination_date', null)->assertJsonPath('data.termination_reason', null);
+        $this->assertSame([$id], $this->listed());
+        $this->assertSame([], $this->listed('?archived=true'));
+        $audit = DB::table('audit_log')->where(['entity_id' => $id, 'event' => 'UPDATED'])->sole();
+        $this->assertSame(['termination_date' => '2026-10-01', 'termination_reason' => 'استقالة'], json_decode($audit->old_values, true));
+        $this->assertSame(['termination_date' => null, 'termination_reason' => null], json_decode($audit->new_values, true));
+    }
+
+    public function test_changing_the_code_needs_employee_edit_code(): void
+    {
+        $id = $this->make();
+        $this->signIn('manager');
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 5])->assertStatus(403)->assertJsonPath('error.code', 'permission_denied');
+        $this->signIn('ceo');
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 5])->assertStatus(403);
+        $this->signIn('developer');
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 0])->assertOk()->assertJsonPath('data.code', 0);
+        $this->signIn('hr');
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 1])->assertOk()->assertJsonPath('data.code', 1);
+    }
+
+    public function test_an_own_scope_edit_code_grant_is_refused_even_for_the_callers_own_employee(): void
+    {
+        $role = Role::create(['slug' => 'lead', 'name' => 'Lead', 'name_ar' => 'مشرف']);
+        $role->permissions()->attach(Permission::create(['resource' => 'employee', 'action' => 'edit_code', 'scope' => 'own'])->getKey());
+        $lead = $this->makeUser('lead');
+        $mine = $this->make(['type' => 'engineer']);
+        $this->make(['type' => 'engineer']);
+        $this->postJson("/api/v1/employees/$mine/manager-assignments", ['manager_id' => $lead->id, 'effective_from' => '2026-01-01'])->assertCreated();
+
+        $this->actingAs($lead, 'api');
+        foreach ([['code' => 0], ['code' => 2], ['code' => 2, 'swap' => true]] as $body) {
+            $this->patchJson("/api/v1/employees/$mine/code", $body)->assertStatus(403)->assertJsonPath('error.code', 'permission_denied');
+        }
+        $this->assertSame(1, DB::table('employees')->where('id', $mine)->value('code'));
+    }
+
+    public function test_a_free_code_is_saved_and_audited(): void
+    {
+        $id = $this->make();
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 0])->assertOk()->assertJsonPath('data.code', 0)->assertJsonPath('data.id', $id)
+            ->assertJsonPath('data.current_type', 'office');
+        $audit = DB::table('audit_log')->where(['entity_id' => $id, 'event' => 'UPDATED'])->sole();
+        $this->assertSame([['code' => 1], ['code' => 0]], [json_decode($audit->old_values, true), json_decode($audit->new_values, true)]);
+
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 0])->assertOk();               // the same code changes nothing
+        $this->assertSame(1, DB::table('audit_log')->where(['entity_id' => $id, 'event' => 'UPDATED'])->count());
+    }
+
+    public function test_a_number_is_never_reissued_after_renumbering_the_top_employee_down(): void
+    {
+        $this->make();
+        $top = $this->make();
+        $this->patchJson("/api/v1/employees/$top/code", ['code' => 0])->assertOk();
+
+        $this->postJson('/api/v1/employees', $this->payload())->assertCreated()->assertJsonPath('data.code', 3);
+    }
+
+    public function test_a_code_above_the_highest_issued_is_422_naming_the_highest(): void
+    {
+        $id = $this->make();
+        $this->make();
+        foreach (['ar', 'en'] as $locale) {
+            $this->patchJson("/api/v1/employees/$id/code", ['code' => 3], ['Accept-Language' => $locale])->assertStatus(422)
+                ->assertJsonPath('error.details.0.field', 'code')
+                ->assertJsonPath('error.details.0.message', __('errors.code_above_highest', ['max' => 2], $locale));
+        }
+        $this->assertSame(1, DB::table('employees')->where('id', $id)->value('code'));
+    }
+
+    public function test_create_after_an_out_of_band_higher_code_continues_above_it(): void
+    {
+        $id = $this->make();
+        DB::table('employees')->where('id', $id)->update(['code' => 50]);   // a row written outside EmployeeService::create
+
+        $this->postJson('/api/v1/employees', $this->payload())->assertCreated()->assertJsonPath('data.code', 51);
+        $this->postJson('/api/v1/employees', $this->payload())->assertCreated()->assertJsonPath('data.code', 52);
+    }
+
+    public function test_the_code_must_be_a_whole_number_from_0(): void
+    {
+        $id = $this->make();
+        foreach ([[], ['code' => -1], ['code' => 'abc'], ['code' => 1.5], ['code' => 0, 'swap' => 'maybe']] as $body) {
+            $this->patchJson("/api/v1/employees/$id/code", $body)->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
+        }
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 0])->assertOk()->assertJsonPath('data.code', 0);
+        $this->getJson('/api/v1/employees?search=0')->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $id);
+        $this->getJson('/api/v1/employees?search=00')->assertJsonCount(0, 'data');
+    }
+
+    public function test_a_deleted_employees_code_is_not_reused(): void
+    {
+        $id = $this->make();
+        $gone = $this->make();
+        $this->deleteJson("/api/v1/employees/$gone")->assertNoContent();
+
+        foreach ([['code' => 2], ['code' => 2, 'swap' => true]] as $body) {
+            $this->patchJson("/api/v1/employees/$id/code", $body, ['Accept-Language' => 'ar'])->assertStatus(422)
+                ->assertJsonPath('error.details.0.field', 'code')
+                ->assertJsonPath('error.details.0.message', __('errors.code_deleted_holder', [], 'ar'));
+        }
+        $this->assertSame(1, DB::table('employees')->where('id', $id)->value('code'));
+    }
+
+    public function test_a_code_held_by_a_live_employee_is_409_naming_them(): void
+    {
+        $this->travelTo('2026-10-20 10:00:00');
+        $id = $this->make();
+        $this->make(['name_ar' => 'منى', 'name_en' => 'Mona', 'termination_date' => '2026-10-01']); // archived still holds the code
+        $this->make(['name_ar' => 'سعيد']);                                                           // no English name
+
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 2], ['Accept-Language' => 'ar'])->assertStatus(409)
+            ->assertJsonPath('error', ['code' => 'code_taken', 'message' => 'الرقم الوظيفي 2 مستخدم للموظف منى.']);
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 2], ['Accept-Language' => 'en'])->assertStatus(409)
+            ->assertJsonPath('error.message', 'ID 2 belongs to Mona.');
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 3], ['Accept-Language' => 'en'])->assertStatus(409)
+            ->assertJsonPath('error.message', 'ID 3 belongs to سعيد.');
+        $this->assertSame(0, DB::table('audit_log')->where(['entity_type' => 'employees', 'event' => 'UPDATED'])->count());
+    }
+
+    public function test_swap_exchanges_the_two_codes_with_an_audit_entry_each(): void
+    {
+        $a = $this->make();
+        $b = $this->make(['name_ar' => 'منى']);
+
+        $this->patchJson("/api/v1/employees/$a/code", ['code' => 2, 'swap' => true])->assertOk()->assertJsonPath('data.code', 2);
+        $this->assertSame(1, DB::table('employees')->where('id', $b)->value('code'));
+        $audit = fn (string $id) => DB::table('audit_log')->where(['entity_id' => $id, 'event' => 'UPDATED'])->get()
+            ->map(fn ($r) => [json_decode($r->old_values, true), json_decode($r->new_values, true)])->all();
+        $this->assertSame([[['code' => 1], ['code' => 2]]], $audit($a));
+        $this->assertSame([[['code' => 2], ['code' => 1]]], $audit($b));
+
+        $this->patchJson("/api/v1/employees/$a/code", ['code' => 0, 'swap' => 1])->assertOk()->assertJsonPath('data.code', 0);   // nobody holds 0: a plain change
+    }
+
+    public function test_swap_with_an_archived_holder(): void
+    {
+        $this->travelTo('2026-10-20 10:00:00');
+        $a = $this->make();
+        $archived = $this->make(['termination_date' => '2026-10-01']);
+
+        $this->patchJson("/api/v1/employees/$a/code", ['code' => 2, 'swap' => true])->assertOk()->assertJsonPath('data.code', 2);
+        $this->assertSame(1, DB::table('employees')->where('id', $archived)->value('code'));
+    }
+
+    /** Runs $write once, straight after the first query that looks an employee up by code: another request acting between the lookup and the lock. */
+    private function afterTheHolderLookup(callable $write): void
+    {
+        $done = false;
+        DB::listen(function ($query) use (&$done, $write): void {
+            if (! $done && str_contains($query->sql, '"code" = ?')) {
+                $done = true;
+                $write();
+            }
+        });
+    }
+
+    public function test_a_holder_that_moves_off_the_code_meanwhile_is_not_swapped(): void
+    {
+        $a = $this->make();
+        $b = $this->make();
+        $this->afterTheHolderLookup(fn () => DB::table('employees')->where('id', $b)->update(['code' => 0]));
+
+        $this->patchJson("/api/v1/employees/$a/code", ['code' => 2, 'swap' => true])->assertOk()->assertJsonPath('data.code', 2);
+        $this->assertSame(0, DB::table('employees')->where('id', $b)->value('code'));
+    }
+
+    public function test_a_holder_deleted_meanwhile_is_not_swapped(): void
+    {
+        $a = $this->make();
+        $b = $this->make();
+        $this->afterTheHolderLookup(fn () => DB::table('employees')->where('id', $b)->update(['deleted_at' => now()]));
+
+        $this->patchJson("/api/v1/employees/$a/code", ['code' => 2, 'swap' => true])->assertStatus(422)->assertJsonPath('error.details.0.field', 'code');
+        $this->assertSame([1, 2], [DB::table('employees')->where('id', $a)->value('code'), DB::table('employees')->where('id', $b)->value('code')]);
+    }
+
+    public function test_a_code_taken_between_the_check_and_the_save_is_422(): void
+    {
+        $id = $this->make();
+        $other = $this->make();
+        // Stands in for another write taking the code meanwhile: a raw write, after the check, inside the save's transaction.
+        Employee::updating(fn () => DB::table('employees')->where('id', $other)->update(['code' => 0]));
+
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 0], ['Accept-Language' => 'ar'])->assertStatus(422)
+            ->assertJsonPath('error.details.0.message', __('errors.code_changed_meanwhile', [], 'ar'));
+        $this->assertSame(1, DB::table('employees')->where('id', $id)->value('code'));
     }
 }

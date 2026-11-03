@@ -24,7 +24,7 @@ final class AttendanceImport
     public const MAX_ROWS = 2000;
 
     /** The codes the import itself gives; the others are AttendanceDays' refusals and DayRules' codes. */
-    private const OWN_CODES = ['unknown_employee', 'unknown_site', 'duplicate_row'];
+    private const OWN_CODES = ['unknown_employee', 'unknown_site', 'duplicate_row', 'code_name_mismatch'];
 
     public function __construct(
         private readonly AttendanceGrid $periods,
@@ -120,6 +120,14 @@ final class AttendanceImport
             $employee = $code === null ? null : ($employees[$code] ?? null);
             if ($employee === null || $duplicate) {
                 $plan['errors'][] = self::error($row, 0, $code, null, $employee === null ? 'unknown_employee' : 'duplicate_row');
+
+                continue;
+            }
+            // HR may have changed or swapped IDs since the download: the hidden sheet's name (as downloaded) must still be the code's
+            // employee. A row typed in for someone not in the download has no line there and is not checked.
+            // ponytail: two people with the identical full name swapping IDs still pass.
+            if (isset($versions[$code]) && self::key($versions[$code][1] ?? '') !== self::key((string) $employee['name_ar'])) {
+                $plan['errors'][] = self::error($row, 0, $code, null, 'code_name_mismatch');
 
                 continue;
             }

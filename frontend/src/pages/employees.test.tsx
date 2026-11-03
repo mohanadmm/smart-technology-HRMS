@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { cairoToday } from '@/components/form'
 import { queryClient } from '@/lib/query'
 import { json, mockFetch, pagination, renderWithAuth } from '@/test-utils'
 import { EmployeeFormPage, EmployeeRoute, EmployeesPage } from './employees'
@@ -438,4 +439,144 @@ test('saving a record that came without the sensitive fields does not send them'
   const body = JSON.parse((patch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)
   for (const k of ['national_id', 'insurance_no', 'bank_account', 'hr_notes']) expect(body).not.toHaveProperty(k)
   expect(body).toMatchObject({ name_ar: 'أحمد', phone: '0100' })
+})
+
+test('the archive switch asks for archived employees from page 1 and shows the termination date instead of the status', async () => {
+  const list = vi.fn((url: string) => json(200, { data: [url.includes('archived=true') ? { ...row1, termination_date: '2026-01-31' } : row1], meta: { pagination: { ...pagination, total: 30 } } }))
+  mockFetch({ 'GET /api/v1/employees': list })
+  renderWithAuth(<EmployeesPage />, ['employee.view.all'])
+  const main = () => list.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('per_page=12')).at(-1)!
+  await screen.findByRole('row', { name: /أحمد علي/ })
+  expect(main()).not.toContain('archived')
+  await user.click(screen.getByRole('button', { name: 'التالي' })) // page 2, so the switch must send the list back to page 1
+  await waitFor(() => expect(main()).toContain('page=2'))
+  await user.click(within(screen.getByRole('group', { name: 'عرض الموظفين' })).getByRole('button', { name: 'الأرشيف' }))
+  await waitFor(() => expect(main()).toContain('archived=true'))
+  expect(main()).toContain('page=1')
+  expect(await screen.findByRole('columnheader', { name: 'تاريخ إنهاء الخدمة' })).toBeInTheDocument()
+  expect(screen.queryByRole('columnheader', { name: 'الحالة' })).toBeNull()
+  expect(await within(screen.getByRole('row', { name: /أحمد علي/ })).findByText('2026-01-31')).toBeInTheDocument()
+})
+
+test('an active employee with a future termination date shows when they leave; the others show Active', async () => {
+  const today = cairoToday()
+  const later = new Date(Date.parse(`${today}T00:00:00Z`) + 864e5).toISOString().slice(0, 10)
+  mockFetch({ 'GET /api/v1/employees': () => json(200, { data: [{ ...row1, termination_date: today }, { ...row1, id: 'e2', name_ar: 'سعيد', termination_date: later }], meta: { pagination } }) })
+  renderWithAuth(<EmployeesPage />, ['employee.view.all'])
+  expect(within(await screen.findByRole('row', { name: /أحمد علي/ })).getByText('نشط')).toBeInTheDocument() // the termination day is still worked
+  expect(within(screen.getByRole('row', { name: /سعيد/ })).getByText(later)).toHaveAttribute('dir', 'ltr')
+  expect(within(screen.getByRole('row', { name: /سعيد/ })).getByText(/ينتهي في/)).toBeInTheDocument()
+})
+
+const archived = { ...emp, code: 7, termination_date: '2026-01-31', termination_reason: 'استقالة' }
+
+test('an archived employee is reactivated after confirming, and the cleared dates show', async () => {
+  let current: Record<string, unknown> = archived
+  const patch = vi.fn(() => { current = { ...archived, termination_date: null, termination_reason: null }; return json(200, { data: current }) })
+  mockFetch({ 'GET /api/v1/residences': residences, 'GET /api/v1/employees/e1': () => json(200, { data: current }), 'PATCH /api/v1/employees/e1': patch })
+  renderWithAuth(<EmployeeDetailRoute id="e1" />, ALL, { router: false })
+  expect(await screen.findByLabelText('تاريخ إنهاء الخدمة')).toHaveValue('2026-01-31')
+  await user.click(screen.getByRole('button', { name: 'إعادة التفعيل' }))
+  expect(within(screen.getByRole('dialog')).getByText(/2026-01-31/)).toBeInTheDocument()
+  expect(patch).not.toHaveBeenCalled()
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'إعادة التفعيل' }))
+  await waitFor(() => expect(patch).toHaveBeenCalled())
+  expect(JSON.parse((patch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual({ termination_date: null, termination_reason: null })
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'إعادة التفعيل' })).toBeNull())
+  expect(screen.getByLabelText('تاريخ إنهاء الخدمة')).toHaveValue('') // the open form drops the cleared values, so Save cannot send them back
+  expect(screen.getByLabelText('سبب إنهاء الخدمة')).toHaveValue('')
+})
+
+test('Reactivate shows only for an archived employee and with employee.edit', async () => {
+  const today = cairoToday()
+  mockFetch({ 'GET /api/v1/residences': residences, 'GET /api/v1/employees/e1': () => json(200, { data: { ...archived, termination_date: today } }) })
+  const first = renderWithAuth(<EmployeeDetailRoute id="e1" />, ALL, { router: false })
+  await screen.findByLabelText('تاريخ إنهاء الخدمة')
+  expect(screen.queryByRole('button', { name: 'إعادة التفعيل' })).toBeNull() // terminated today: still active
+  first.unmount()
+  mockFetch({ 'GET /api/v1/residences': residences, 'GET /api/v1/employees/e1': () => json(200, { data: archived }) })
+  renderWithAuth(<EmployeeDetailRoute id="e1" />, ['employee.view.all'], { router: false })
+  await screen.findByLabelText('تاريخ إنهاء الخدمة')
+  expect(screen.queryByRole('button', { name: 'إعادة التفعيل' })).toBeNull()
+})
+
+const codeRoutes = (patch: (url: string, init?: RequestInit) => Response) =>
+  mockFetch({ 'GET /api/v1/residences': residences, 'GET /api/v1/employees/e1': () => json(200, { data: { ...emp, code: 7 } }), 'PATCH /api/v1/employees/e1/code': patch })
+const codeBody = (patch: ReturnType<typeof vi.fn>, i: number) => JSON.parse((patch.mock.calls[i] as unknown as [string, RequestInit])[1].body as string)
+
+test('Change ID shows only with employee.edit_code', async () => {
+  codeRoutes(() => json(200, { data: emp }))
+  const first = renderWithAuth(<EmployeeDetailRoute id="e1" />, ALL, { router: false })
+  await screen.findByLabelText('الاسم بالعربية')
+  expect(screen.queryByRole('button', { name: 'تغيير الرقم الوظيفي' })).toBeNull()
+  first.unmount()
+  renderWithAuth(<EmployeeDetailRoute id="e1" />, [...ALL, 'employee.edit_code.all'], { router: false })
+  expect(await screen.findByRole('button', { name: 'تغيير الرقم الوظيفي' })).toBeInTheDocument()
+})
+
+test('a taken ID shows the holder and offers to swap, which resends with swap', async () => {
+  const patch = vi.fn((_url: string, init?: RequestInit) =>
+    JSON.parse(init!.body as string).swap ? json(200, { data: { ...emp, code: 12 } }) : json(409, { error: { code: 'code_taken', message: 'الرقم الوظيفي 12 مستخدم للموظف سعيد' } }))
+  codeRoutes(patch)
+  renderWithAuth(<EmployeeDetailRoute id="e1" />, [...ALL, 'employee.edit_code.all'], { router: false })
+  await user.click(await screen.findByRole('button', { name: 'تغيير الرقم الوظيفي' }))
+  const dialog = screen.getByRole('dialog')
+  expect(within(dialog).getByText(/قوالب الحضور/)).toBeInTheDocument()
+  const box = within(dialog).getByLabelText('الرقم الوظيفي الجديد')
+  expect(box).toHaveValue('7')
+  await user.clear(box)
+  await user.type(box, '12')
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('الرقم الوظيفي 12 مستخدم للموظف سعيد')
+  expect(codeBody(patch, 0)).toEqual({ code: '12' })
+  await user.click(within(dialog).getByRole('button', { name: 'تبديل الرقمين' }))
+  await waitFor(() => expect(patch).toHaveBeenCalledTimes(2))
+  expect(codeBody(patch, 1)).toEqual({ code: '12', swap: true })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+test('an ID out of range shows the field error under the box', async () => {
+  codeRoutes(() => json(422, { error: { code: 'validation_failed', message: 'Invalid', details: [{ field: 'code', code: 'max', message: 'الرقم الوظيفي من 0 إلى 250' }] } }))
+  renderWithAuth(<EmployeeDetailRoute id="e1" />, [...ALL, 'employee.edit_code.all'], { router: false })
+  await user.click(await screen.findByRole('button', { name: 'تغيير الرقم الوظيفي' }))
+  const box = screen.getByLabelText('الرقم الوظيفي الجديد')
+  await user.clear(box)
+  await user.type(box, '100000')
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'حفظ' }))
+  await waitFor(() => expect(box).toHaveAccessibleDescription('الرقم الوظيفي من 0 إلى 250'))
+  expect(screen.queryByRole('button', { name: 'تبديل الرقمين' })).toBeNull()
+})
+
+test('the ID is sent as typed, trimmed, so the server rejects what is not a whole number; a blank box sends null', async () => {
+  const patch = vi.fn(() => json(422, { error: { code: 'validation_failed', message: 'Invalid', details: [{ field: 'code', code: 'integer', message: 'الرقم الوظيفي يجب أن يكون عددًا صحيحًا' }] } }))
+  codeRoutes(patch)
+  renderWithAuth(<EmployeeDetailRoute id="e1" />, [...ALL, 'employee.edit_code.all'], { router: false })
+  await user.click(await screen.findByRole('button', { name: 'تغيير الرقم الوظيفي' }))
+  const box = screen.getByLabelText('الرقم الوظيفي الجديد')
+  const save = within(screen.getByRole('dialog')).getByRole('button', { name: 'حفظ' })
+  await user.clear(box)
+  await user.type(box, ' 1e3 ')
+  await user.click(save)
+  await waitFor(() => expect(patch).toHaveBeenCalledTimes(1))
+  expect(codeBody(patch, 0)).toEqual({ code: '1e3' })
+  await user.clear(box)
+  await user.type(box, '  ')
+  await user.click(save)
+  await waitFor(() => expect(patch).toHaveBeenCalledTimes(2))
+  expect(codeBody(patch, 1)).toEqual({ code: null })
+})
+
+test('editing the ID after a taken-ID answer clears the holder banner and the swap offer', async () => {
+  codeRoutes(() => json(409, { error: { code: 'code_taken', message: 'الرقم الوظيفي 12 مستخدم للموظف سعيد' } }))
+  renderWithAuth(<EmployeeDetailRoute id="e1" />, [...ALL, 'employee.edit_code.all'], { router: false })
+  await user.click(await screen.findByRole('button', { name: 'تغيير الرقم الوظيفي' }))
+  const dialog = screen.getByRole('dialog')
+  const box = within(dialog).getByLabelText('الرقم الوظيفي الجديد')
+  await user.clear(box)
+  await user.type(box, '12')
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('سعيد')
+  await user.type(box, '3')
+  expect(within(dialog).queryByRole('alert')).toBeNull()
+  expect(within(dialog).getByRole('button', { name: 'حفظ' })).toBeInTheDocument()
 })

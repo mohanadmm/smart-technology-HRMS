@@ -8,6 +8,7 @@ use App\Modules\Employees\Application\EmployeeRules;
 use App\Modules\Employees\Application\EmployeeService;
 use App\Modules\Employees\Domain\DocumentKind;
 use App\Modules\Employees\Domain\EmployeeType;
+use App\Modules\Identity\Domain\Rbac\AuthorizationRefused;
 use App\Modules\Identity\Presentation\RequestScope;
 use App\Modules\Sites\Domain\SiteKind;
 use App\Support\Http\ApiEnvelope;
@@ -27,8 +28,9 @@ final class EmployeeController
             'site_id' => ['sometimes', 'uuid'],
             'search' => ['sometimes', 'nullable', 'string'],
             'per_page' => ['sometimes', 'integer', 'min:1'],
+            'archived' => ['sometimes', 'in:true,false,1,0'],
         ]);
-        $r = $this->employees->list($f, RequestScope::ownerId($request));
+        $r = $this->employees->list([...$f, 'archived' => $request->boolean('archived')], RequestScope::ownerId($request));
 
         return ApiEnvelope::collection($request, $r['data'], $r['pagination']);
     }
@@ -55,6 +57,20 @@ final class EmployeeController
         $data = $request->validate(EmployeeRules::identity(true, $employee));
 
         return ApiEnvelope::single($request, $this->employees->update($employee, $data));
+    }
+
+    public function changeCode(Request $request, string $employee): JsonResponse
+    {
+        // A swap touches the holder, who may be outside an own-scope caller's reach, and the 409 names them: only `.all` renumbers.
+        if (RequestScope::ownerId($request) !== null) {
+            throw AuthorizationRefused::of('employee.edit_code');
+        }
+        $data = $request->validate([
+            'code' => ['required', 'integer', 'min:0'],
+            'swap' => ['sometimes', 'boolean'],
+        ]);
+
+        return ApiEnvelope::single($request, $this->employees->changeCode($employee, (int) $data['code'], $request->boolean('swap')));
     }
 
     public function destroy(string $employee): Response
