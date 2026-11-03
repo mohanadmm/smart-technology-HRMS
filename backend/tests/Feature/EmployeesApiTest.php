@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
-use App\Modules\Employees\Infrastructure\Eloquent\EmployeeDocument;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeTypeChange;
 use App\Modules\Identity\Infrastructure\Eloquent\Permission;
 use App\Modules\Identity\Infrastructure\Eloquent\Role;
@@ -125,16 +124,6 @@ class EmployeesApiTest extends TestCase
         $this->getJson("/api/v1/employees/$id")->assertNotFound();
         $this->getJson('/api/v1/employees')->assertJsonCount(0, 'data');
         $this->getJson('/api/v1/employees/not-a-uuid')->assertNotFound();
-    }
-
-    public function test_the_old_document_route_only_edits_an_uploaded_document(): void
-    {
-        $id = $this->make();
-        EmployeeDocument::create(['employee_id' => $id, 'kind' => 'work_stub', 'original_name' => 'a.pdf', 'mime' => 'application/pdf', 'size_bytes' => 1]);
-        $this->putJson("/api/v1/employees/$id/documents/work_stub", ['note' => 'x'])->assertOk();
-        $this->assertDatabaseHas('employee_documents', ['employee_id' => $id, 'kind' => 'work_stub', 'note' => 'x']);
-        $this->putJson("/api/v1/employees/$id/documents/criminal_record", [])->assertNotFound();
-        $this->putJson("/api/v1/employees/$id/documents/bogus", [])->assertNotFound();
     }
 
     public function test_null_or_empty_raise_defaults_to_zero(): void

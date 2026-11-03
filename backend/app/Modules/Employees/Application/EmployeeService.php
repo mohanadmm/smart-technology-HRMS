@@ -362,19 +362,6 @@ final class EmployeeService
         return $this->show($id);
     }
 
-    /**
-     * @param  array<string, mixed>  $data
-     * @return array<string, mixed>
-     */
-    public function upsertDocument(string $id, DocumentKind $kind, array $data): array
-    {
-        $employee = Employee::findOrFail($id);
-        // Edit-only until step 2 removes this route: a row needs an uploaded file now.
-        $employee->documents()->where('kind', $kind->value)->latest('id')->firstOrFail()->update($data);
-
-        return $this->show($id);
-    }
-
     private static function today(): string
     {
         return now('Africa/Cairo')->toDateString();

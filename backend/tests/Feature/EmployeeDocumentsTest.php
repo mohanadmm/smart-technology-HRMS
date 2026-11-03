@@ -350,13 +350,12 @@ class EmployeeDocumentsTest extends TestCase
         $this->patchJson("/api/v1/employees/$emp", ['name_ar' => 'اسم'])->assertOk()->assertJsonPath('data.documents.0.original_name', 'عقد.pdf');
     }
 
-    public function test_the_old_document_route_needs_the_document_edit_permission(): void
+    public function test_the_old_per_kind_route_is_gone(): void
     {
-        $this->grant('employee.edit.all');
-        [$manager, $emp] = $this->managed();
-        $this->upload($emp)->assertCreated();
-        $this->actingAs($manager, 'api');
-        $this->putJson("/api/v1/employees/$emp/documents/work_stub", ['note' => 'x'])->assertStatus(403)->assertJsonPath('error.code', 'permission_denied');
+        $emp = $this->employee();
+        $this->upload($emp)->assertCreated();   // kind work_stub
+        $this->putJson("/api/v1/employees/$emp/documents/work_stub", ['note' => 'x'])->assertNotFound();
+        $this->assertNull(EmployeeDocument::where('employee_id', $emp)->value('note'));
     }
 
     public function test_hr_sees_the_file_fields_sorted_by_kind_then_newest(): void

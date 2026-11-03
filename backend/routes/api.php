@@ -5,7 +5,6 @@ use App\Modules\Attendance\Presentation\AttendanceLockController;
 use App\Modules\Attendance\Presentation\HolidayController;
 use App\Modules\Attendance\Presentation\SiteDayController;
 use App\Modules\Audit\Presentation\AuditLogController;
-use App\Modules\Employees\Domain\DocumentKind;
 use App\Modules\Employees\Presentation\EmployeeController;
 use App\Modules\Employees\Presentation\EmployeeDocumentController;
 use App\Modules\Identity\Presentation\AuthController;
@@ -44,8 +43,6 @@ Route::middleware('auth')->group(function (): void {
             Route::post('{employee}/pay-changes', 'payChange')->middleware(['permission:employee.edit', 'employee.scope']);
             Route::post('{employee}/manager-assignments', 'assignManager')->middleware(['permission:employee.assign_manager', 'employee.scope']);
             Route::post('{employee}/site-assignments', 'assignSite')->middleware(['permission:employee.assign_site', 'employee.scope']);
-            Route::put('{employee}/documents/{kind}', 'document')->middleware(['permission:employee_document.edit', 'employee.scope'])
-                ->whereIn('kind', array_column(DocumentKind::cases(), 'value'));
         });
     });
 
