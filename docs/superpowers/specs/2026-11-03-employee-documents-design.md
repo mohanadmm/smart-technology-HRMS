@@ -1,6 +1,6 @@
 # Employee documents: upload, view, no received date
 
-Status: **draft for the owner**, 2026-11-03, after one review pass (Part 3). Nothing is built yet; no app code was changed.
+Status: **approved**, 2026-11-03. The owner accepted every recommendation (D1–D10); building in two steps (`docs/superpowers/plans/2026-11-03-employee-documents.md`).
 Owner's request (2026-11-03): every employee has their own documents; remove the received date; HR can upload documents and see them in the app, on the same page.
 
 ---
@@ -25,19 +25,19 @@ On the employee's page, the **Documents** tab becomes a list of the actual files
 4. **No new libraries.** Photos and PDFs are shown with what browsers already do.
 5. **Same look as the rest of the app:** Arabic first, English too, cards on phones, one main button per screen.
 
-### Decisions for you (my recommendation first)
-| # | Question | Options | My recommendation |
+### Decisions (owner, 2026-11-03: all recommendations accepted)
+| # | Question | Options | Decided |
 |---|---|---|---|
-| D1 | How many files per document type? | **(a)** several, one line per file · (b) exactly one per type | **(a)**: ID cards have two sides; "other" is often several files. |
-| D2 | What do managers see of their own employees' documents? | **(a)** the list only (type and expiry), no files and no notes · (b) nothing · (c) everything, files included | **(a)**: managers can see "ID expired" but not open ID copies or criminal records. The Developer can give a manager file access later from the console, without new code. |
-| D3 | What does Delete do? | **(a)** hides the file; it stays on the server and in the audit; bringing it back is a manual Developer fix · (b) erases it for good · (c) hide, plus a "Restore" button | **(a)** now. (c) can come later if HR deletes by mistake often. |
-| D4 | Size limit per file | **(a)** 10 MB (one-line server change), photos shrunk automatically · (b) 5 MB, as the server allows today | **(a)**: shrunk photos are under 1 MB anyway, but a scanned multi-page PDF can't be shrunk and often passes 5 MB. |
-| D5 | File types | **(a)** PDF, JPG, PNG, WEBP · (b) also Word / Excel | **(a)**: that is what a scan or a photo produces, and all of them can be shown in the app. |
-| D6 | Backups | Files are saved in the app's own folder on the server (`backend/storage/app/private`). **A database backup alone does not include them.** | Add one line to the manual backup notes: copy that folder together with the database dump. No backup automation (your rule). |
-| D7 | Existing received dates and document rows | The local database has **0** documents. The test-server copy was not checked. | Let me count them there (read only, no change) before step 1. If there are none, it's simple. If there are some, the received dates are dropped (your request) and those rows stay as "no file yet — upload one". |
-| D8 | Should the app record who **opened** a file? | (a) no, as today for every screen · (b) yes, for documents only | **(a)** for now. Egypt's data law treats criminal records as sensitive, so tell me if the client wants a view log; it is a small addition. |
-| D9 | Show who uploaded and when? | **(a)** inside the viewer only · (b) on every line · (c) nowhere | **(a)**: keeps the list short now that the received date is gone. |
-| D10 | Are the 9 document types right? | keep them · add some (e.g. "employment contract") | Keep them now; adding a type later is one line. Tell me if HR needs another. |
+| D1 | How many files per document type? | **(a)** several, one line per file · (b) exactly one per type | Decided: **(a)** several files per type, one line per file. |
+| D2 | What do managers see of their own employees' documents? | **(a)** the list only (type and expiry), no files and no notes · (b) nothing · (c) everything, files included | Decided: **(a)** managers see the list only (type and expiry); file access can be granted later from the console. |
+| D3 | What does Delete do? | **(a)** hides the file; it stays on the server and in the audit; bringing it back is a manual Developer fix · (b) erases it for good · (c) hide, plus a "Restore" button | Decided: **(a)** Delete hides; the file stays on the server and in the audit; restoring is a manual Developer fix. |
+| D4 | Size limit per file | **(a)** 10 MB (one-line server change), photos shrunk automatically · (b) 5 MB, as the server allows today | Decided: **(a)** 10 MB per file, photos shrunk automatically. |
+| D5 | File types | **(a)** PDF, JPG, PNG, WEBP · (b) also Word / Excel | Decided: **(a)** PDF, JPG, PNG, WEBP. |
+| D6 | Backups | Files are saved in the app's own folder on the server (`backend/storage/app/private`). **A database backup alone does not include them.** | Decided: one line in the manual backup notes: copy `backend/storage/app/private` with the DB dump. No automation. |
+| D7 | Existing received dates and document rows | The local database has **0** documents. The test-server copy was not checked. | Decided: counted on the test server on 2026-11-03 (read only): **0** rows. The file columns are NOT NULL. |
+| D8 | Should the app record who **opened** a file? | (a) no, as today for every screen · (b) yes, for documents only | Decided: **(a)** no view log for now. |
+| D9 | Show who uploaded and when? | **(a)** inside the viewer only · (b) on every line · (c) nowhere | Decided: **(a)** uploader and date inside the viewer only. |
+| D10 | Are the 9 document types right? | keep them · add some (e.g. "employment contract") | Decided: keep the 9 types. |
 
 ### Build plan (each step ends with screenshots for your approval: phone 375 px and desktop, Arabic and English)
 1. **Server side + received date gone:** files are stored, checked and served; who can see what is tested; the received date leaves the screen and the database. The current Documents tab keeps working until step 2 replaces it.
@@ -72,7 +72,7 @@ Sources: three research notes (code map; CRM + Laravel; HR systems + viewers) in
 ### Data
 One new migration on `employee_documents`:
 - drop `received_at`; drop `unique(employee_id, kind)`;
-- add `original_name` string(255), `mime` string(50), `size_bytes` integer (check > 0). Not null if D7's count is 0; nullable otherwise (then a row with no file shows "no file — upload one").
+- add `original_name` string(255), `mime` string(50), `size_bytes` integer (check > 0), all NOT NULL (D7: 0 rows on the test server).
 - **No `path` column:** the path is derived, `employee-documents/{employee_id}/{id}.{ext}` with `ext` from `mime` (`pdf`/`jpg`/`png`/`webp`). One less column to drift; the client name never touches the path.
 - No `files` table, pivots or versions. Replace = new row + soft-delete of the old one. (ponytail: one owner of files today; move to a shared files table when a second module needs files — the Release 3 attendance sign-off upload may be that moment.)
 
