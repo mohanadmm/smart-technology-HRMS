@@ -395,8 +395,9 @@ function ReactivateDialog({ emp, onDone }: { emp: Row; onDone: () => void }) {
       onDone={onDone}
       shown={[]}
       footer="employee.reactivate.button"
+      description={<span className="text-foreground">{ltrDates(t('employee.reactivate.confirm', { date: emp.termination_date }))}</span>}
     >
-      {() => <p className="text-sm">{ltrDates(t('employee.reactivate.confirm', { date: emp.termination_date }))}</p>}
+      {() => null}
     </FormDialog>
   )
 }
@@ -419,6 +420,7 @@ function ChangeCodeDialog({ emp }: { emp: Row }) {
   return (
     <FormDialog
       title={t('employee.changeCode.button')}
+      description={t('employee.changeCode.warning')}
       trigger={
         <Button type="button" variant="link" size="xs">
           {t('employee.changeCode.button')}
@@ -433,12 +435,7 @@ function ChangeCodeDialog({ emp }: { emp: Row }) {
       footer={taken ? 'employee.changeCode.swap' : 'common.save'}
       clearErrOnEdit // the holder banner names the ID that was tried, not the one now typed
     >
-      {(f) => (
-        <>
-          <p className="text-sm text-muted-foreground">{t('employee.changeCode.warning')}</p>
-          <TextField name="code" label={t('employee.changeCode.new')} inputMode="numeric" dir="ltr" {...f} set={(k, v) => { setTaken(false); f.set(k, v) }} />
-        </>
-      )}
+      {(f) => <TextField name="code" label={t('employee.changeCode.new')} inputMode="numeric" dir="ltr" {...f} set={(k, v) => { setTaken(false); f.set(k, v) }} />}
     </FormDialog>
   )
 }

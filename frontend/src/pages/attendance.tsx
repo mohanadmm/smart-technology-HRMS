@@ -12,7 +12,7 @@ import { TableSkeleton } from '@/components/layout/PageSkeleton'
 import { Pagination } from '@/components/tables/Pagination'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -297,13 +297,13 @@ function LockDialog({ period, onClose }: { period: Period; onClose: () => void }
   }
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent aria-describedby={undefined}>
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('attendance.lockTitle')}</DialogTitle>
         </DialogHeader>
         <DialogBody className="grid gap-4">
           <ErrorBanner err={err} shown={[]} />
-          <p className="text-sm">{t('attendance.lockBody')}</p>
+          <DialogDescription className="text-sm text-foreground">{t('attendance.lockBody')}</DialogDescription>
           {missing && (
             <>
               <MissingDays group={period.group} start={period.start} />

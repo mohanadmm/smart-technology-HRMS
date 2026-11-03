@@ -238,7 +238,8 @@ function Matrix({ role, perms, editable }: { role: Row; perms: Row[]; editable: 
   const [err, setErr] = useState<unknown>()
   const [busy, setBusy] = useState(false)
   const resources = [...new Set(perms.map((p) => p.resource as string))]
-  const actions = ACTIONS.filter((a) => perms.some((p) => p.action === a))
+  // known actions in their usual order, then any other action the server seeds
+  const actions = [...new Set([...ACTIONS, ...perms.map((p) => p.action as string)])].filter((a) => perms.some((p) => p.action === a))
   const initial = granted()
   const dirty = checked.size !== initial.size || [...checked].some((id) => !initial.has(id))
   /** Grants `id` (or nothing) in place of every id in `ids`. */

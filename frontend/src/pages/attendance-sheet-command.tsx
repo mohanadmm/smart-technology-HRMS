@@ -1,7 +1,7 @@
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { intlLocale, isHhmm, TimeInput } from '@/components/form'
+import { intlLocale, isHhmm, localName, TimeInput } from '@/components/form'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -63,6 +63,14 @@ export function PasteDialog({ open, onOpenChange, rows, leaveSite, onApply }: {
             {batch?.byName && <span className="text-xs text-warning">{t('attendance.sheet.paste.idsOnly')}</span>}
             {ids && <BatchPreview batch={ids} count={ids.matches.length} />}
           </div>
+          {/* who each ID names today (HR can renumber IDs); outside the live region so it is not re-read per keystroke */}
+          {!!ids?.matches.length && (
+            <ul aria-label={t('attendance.sheet.paste.matches')} className="max-h-40 overflow-y-auto rounded-md border px-2 py-1 text-start text-xs">
+              {ids.matches.map((r) => (
+                <li key={r.employee.id}><span dir="ltr" className="text-muted-foreground">{r.employee.code}</span> {localName(r.employee, i18n.language)}</li>
+              ))}
+            </ul>
+          )}
         </DialogBody>
         {/* Present is the dialog's one solid action; Absent and Sick are ghost */}
         <DialogFooter>
