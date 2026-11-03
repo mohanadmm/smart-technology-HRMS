@@ -38,7 +38,6 @@ test('cn() keeps the touch floor next to a caller size, and an explicit opt-out 
 // html), so the old spellings must not come back. Pages join as UI-3 sweeps them: each slice deletes its own SKIP entries, and
 // pages/site-day.tsx stays until its owner's hand-over.
 const SKIP = [
-  'pages/attendance-day.tsx',
   'pages/attendance-import.tsx',
   'pages/holidays.tsx',
   'pages/settings.tsx',
