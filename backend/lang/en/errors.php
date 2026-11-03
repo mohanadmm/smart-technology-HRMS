@@ -17,6 +17,9 @@ return [
     'leave_code_required' => 'Leave code is required for leave types.',
     'leave_code_not_allowed' => 'Leave code applies to leave types only.',
     'leave_code_taken' => 'Another active leave type already uses this code.',
+    'code_taken' => 'ID :code belongs to :name.',
+    'code_deleted_holder' => "This ID was used by a deleted employee; deleted employees' IDs are not reused.",
+    'code_changed_meanwhile' => 'This ID was just taken. Choose another one.',
     'allowance_value_required' => 'Value is required unless the allowance type is "None".',
     'employee_type' => [
         'office' => 'Office employee',

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeTypeChange;
 use App\Modules\Identity\Infrastructure\Eloquent\Role;
 use Illuminate\Foundation\Http\Middleware\TrimStrings;
@@ -243,5 +244,94 @@ class EmployeesApiTest extends TestCase
         $audit = DB::table('audit_log')->where(['entity_id' => $id, 'event' => 'UPDATED'])->sole();
         $this->assertSame(['termination_date' => '2026-10-01', 'termination_reason' => 'استقالة'], json_decode($audit->old_values, true));
         $this->assertSame(['termination_date' => null, 'termination_reason' => null], json_decode($audit->new_values, true));
+    }
+
+    public function test_changing_the_code_needs_employee_edit_code(): void
+    {
+        $id = $this->make();
+        $this->signIn('manager');
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 5])->assertStatus(403)->assertJsonPath('error.code', 'permission_denied');
+        $this->signIn('ceo');
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 5])->assertStatus(403);
+        $this->signIn('developer');
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 5])->assertOk()->assertJsonPath('data.code', 5);
+    }
+
+    public function test_a_free_code_is_saved_audited_and_numbering_continues_after_it(): void
+    {
+        $id = $this->make();
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 7])->assertOk()->assertJsonPath('data.code', 7)->assertJsonPath('data.id', $id)
+            ->assertJsonPath('data.current_type', 'office');
+        $audit = DB::table('audit_log')->where(['entity_id' => $id, 'event' => 'UPDATED'])->sole();
+        $this->assertSame([['code' => 1], ['code' => 7]], [json_decode($audit->old_values, true), json_decode($audit->new_values, true)]);
+        $this->postJson('/api/v1/employees', $this->payload())->assertCreated()->assertJsonPath('data.code', 8);
+
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 7])->assertOk();               // the same code changes nothing
+        $this->assertSame(1, DB::table('audit_log')->where(['entity_id' => $id, 'event' => 'UPDATED'])->count());
+    }
+
+    public function test_the_code_must_be_a_whole_number_from_0_to_99999(): void
+    {
+        $id = $this->make();
+        foreach ([[], ['code' => -1], ['code' => 100000], ['code' => 'abc'], ['code' => 1.5], ['code' => 3, 'swap' => 'maybe']] as $body) {
+            $this->patchJson("/api/v1/employees/$id/code", $body)->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
+        }
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 99999])->assertOk();
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 0])->assertOk()->assertJsonPath('data.code', 0);
+        $this->getJson('/api/v1/employees?search=0')->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $id);
+        $this->getJson('/api/v1/employees?search=00')->assertJsonCount(0, 'data');
+    }
+
+    public function test_a_deleted_employees_code_is_not_reused(): void
+    {
+        $id = $this->make();
+        $gone = $this->make();
+        $this->deleteJson("/api/v1/employees/$gone")->assertNoContent();
+
+        foreach ([['code' => 2], ['code' => 2, 'swap' => true]] as $body) {
+            $this->patchJson("/api/v1/employees/$id/code", $body, ['Accept-Language' => 'ar'])->assertStatus(422)
+                ->assertJsonPath('error.details.0.field', 'code')
+                ->assertJsonPath('error.details.0.message', __('errors.code_deleted_holder', [], 'ar'));
+        }
+        $this->assertSame(1, DB::table('employees')->where('id', $id)->value('code'));
+    }
+
+    public function test_a_code_held_by_a_live_employee_is_409_naming_them(): void
+    {
+        $this->travelTo('2026-10-20 10:00:00');
+        $id = $this->make();
+        $this->make(['name_ar' => 'منى', 'termination_date' => '2026-10-01']);                     // archived still holds the code
+
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 2], ['Accept-Language' => 'ar'])->assertStatus(409)
+            ->assertJsonPath('error', ['code' => 'code_taken', 'message' => 'الرقم الوظيفي 2 مستخدم للموظف منى.']);
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 2], ['Accept-Language' => 'en'])->assertStatus(409)
+            ->assertJsonPath('error.message', 'ID 2 belongs to منى.');
+        $this->assertSame(0, DB::table('audit_log')->where(['entity_type' => 'employees', 'event' => 'UPDATED'])->count());
+    }
+
+    public function test_swap_exchanges_the_two_codes_with_an_audit_entry_each(): void
+    {
+        $a = $this->make();
+        $b = $this->make(['name_ar' => 'منى']);
+
+        $this->patchJson("/api/v1/employees/$a/code", ['code' => 2, 'swap' => true])->assertOk()->assertJsonPath('data.code', 2);
+        $this->assertSame(1, DB::table('employees')->where('id', $b)->value('code'));
+        $audit = fn (string $id) => DB::table('audit_log')->where(['entity_id' => $id, 'event' => 'UPDATED'])->get()
+            ->map(fn ($r) => [json_decode($r->old_values, true), json_decode($r->new_values, true)])->all();
+        $this->assertSame([[['code' => 1], ['code' => 2]]], $audit($a));
+        $this->assertSame([[['code' => 2], ['code' => 1]]], $audit($b));
+
+        $this->patchJson("/api/v1/employees/$a/code", ['code' => 5, 'swap' => 1])->assertOk()->assertJsonPath('data.code', 5);   // nobody holds 5: a plain change
+    }
+
+    public function test_a_code_taken_between_the_check_and_the_save_is_422(): void
+    {
+        $id = $this->make();
+        $other = $this->make();
+        // Stands in for create() allocating the code meanwhile: a raw write, after the check, inside the save's transaction.
+        Employee::updating(fn () => DB::table('employees')->where('id', $other)->update(['code' => 7]));
+
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 7])->assertStatus(422)->assertJsonPath('error.details.0.field', 'code');
+        $this->assertSame(1, DB::table('employees')->where('id', $id)->value('code'));
     }
 }

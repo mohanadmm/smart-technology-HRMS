@@ -58,6 +58,16 @@ final class EmployeeController
         return ApiEnvelope::single($request, $this->employees->update($employee, $data));
     }
 
+    public function changeCode(Request $request, string $employee): JsonResponse
+    {
+        $data = $request->validate([
+            'code' => ['required', 'integer', 'min:0', 'max:99999'],
+            'swap' => ['sometimes', 'boolean'],
+        ]);
+
+        return ApiEnvelope::single($request, $this->employees->changeCode($employee, (int) $data['code'], $request->boolean('swap')));
+    }
+
     public function destroy(string $employee): Response
     {
         $this->employees->delete($employee);

@@ -6,6 +6,7 @@ namespace App\Modules\Employees\Application;
 
 use App\Modules\Employees\Domain\DocumentKind;
 use App\Modules\Employees\Domain\EffectiveDated;
+use App\Modules\Employees\Domain\EmployeeCodeTaken;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Employees\Domain\PayMethod;
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
@@ -15,6 +16,7 @@ use App\Modules\Employees\Infrastructure\Eloquent\EmployeePayChange;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeTypeChange;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -57,7 +59,7 @@ final class EmployeeService
                 ->where('name_ar', 'ilike', $like)
                 ->orWhere('name_en', 'ilike', $like)
                 ->when($ownerId === null, fn (Builder $q) => $q->orWhere('national_id', 'like', $like))
-                ->when(preg_match('/^[1-9]\d{0,8}$/D', $search) === 1, fn (Builder $q) => $q->orWhere('code', (int) $search)));
+                ->when(preg_match('/^(0|[1-9]\d{0,8})$/D', $search) === 1, fn (Builder $q) => $q->orWhere('code', (int) $search)));
         }
 
         $page = $query->paginate(min(max($filters['per_page'] ?? 20, 1), 100));
@@ -177,6 +179,43 @@ final class EmployeeService
         $employee->fill($data);
         $this->assertBank($employee->only(['pay_method', 'bank_account']));
         $employee->save();
+
+        return $this->show($id);
+    }
+
+    /**
+     * HR renumbers an employee. A deleted employee's code is never reused; a live holder's (active or archived) is refused unless
+     * $swap, which exchanges the two codes in one transaction, each save audited.
+     *
+     * @return array<string, mixed>
+     */
+    public function changeCode(string $id, int $code, bool $swap): array
+    {
+        $employee = Employee::findOrFail($id);
+        if ($employee->code === $code) {
+            return $this->show($id);
+        }
+        $holder = Employee::withTrashed()->where('code', $code)->first();
+        if ($holder?->trashed()) {
+            throw ValidationException::withMessages(['code' => __('errors.code_deleted_holder')]);
+        }
+        if ($holder !== null && ! $swap) {
+            throw new EmployeeCodeTaken($code, (string) $holder->name_ar);
+        }
+
+        try {
+            DB::transaction(function () use ($employee, $holder, $code): void {
+                // The unique is checked once both rows hold their new codes (migration 2026_11_03_000002).
+                DB::statement('SET CONSTRAINTS employees_code_unique DEFERRED');
+                $old = $employee->code;
+                $employee->update(['code' => $code]);
+                $holder?->update(['code' => $old]);
+                DB::statement('SET CONSTRAINTS employees_code_unique IMMEDIATE');
+            });
+        } catch (UniqueConstraintViolationException) {
+            // create() took the code between the check and the save.
+            throw ValidationException::withMessages(['code' => __('errors.code_changed_meanwhile')]);
+        }
 
         return $this->show($id);
     }
