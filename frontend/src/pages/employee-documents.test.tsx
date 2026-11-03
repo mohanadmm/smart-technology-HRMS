@@ -251,15 +251,19 @@ test('expiry badges', () => {
   }
 })
 
-test('without the view permission the kind is plain text', () => {
+test('a row the server sent without its file is plain text, whatever the permission says', () => {
   const { unmount } = showDocs([{ id: 'd1', kind: 'work_stub', expires_at: null }], [])
   expect(screen.getByText('عقد عمل')).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'عقد عمل' })).toBeNull()
   expect(screen.queryByText('scan.pdf')).toBeNull()
   unmount()
-  showDocs([doc('work_stub')], VIEW)
+  // view.own: the server sends file fields only for employees in reach today
+  showDocs([doc('work_stub'), { id: 'd2', kind: 'photos', expires_at: null }], VIEW)
   expect(screen.getByRole('button', { name: 'عقد عمل' })).toBeInTheDocument()
   expect(screen.getByText('scan.pdf')).toBeInTheDocument()
+  expect(screen.getByText('صور شخصية')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'صور شخصية' })).toBeNull()
+  expect(screen.getAllByText(/بايت/)).toHaveLength(1)
 })
 
 const DOC_PATH = '/api/v1/employees/e1/documents/d1'

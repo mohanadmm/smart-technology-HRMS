@@ -60,7 +60,8 @@ export function Documents({ emp }: { emp: Row }) {
   const [viewing, setViewing] = useState<Doc | null>(null)
   const send = useSave()
   const docs: Doc[] = emp.documents
-  const viewer = can('employee_document.view')
+  // the server decides per employee (view.all, or view.own within reach today): a row carries its file fields only if this user may open it
+  const hasFile = (d: Doc) => 'original_name' in d
   const editor = can('employee_document.edit')
   const lng = intlLocale(i18n.language)
   const date = new Intl.DateTimeFormat(lng, { dateStyle: 'medium', timeZone: 'UTC' })
@@ -103,11 +104,11 @@ export function Documents({ emp }: { emp: Row }) {
         rowKey={(d) => d.id}
         title={{
           header: t('document.kind'),
-          cell: (d) => (viewer ? <button type="button" className="text-start font-medium hover:underline" onClick={() => setViewing(d)}>{kindName(d)}</button> : kindName(d)),
+          cell: (d) => (hasFile(d) ? <button type="button" className="text-start font-medium hover:underline" onClick={() => setViewing(d)}>{kindName(d)}</button> : kindName(d)),
         }}
         fields={[
-          ...(viewer
-            ? [{ header: t('document.file'), cell: (d: Doc) => (
+          ...(docs.some(hasFile)
+            ? [{ header: t('document.file'), cell: (d: Doc) => hasFile(d) && (
                 <span className="inline-flex min-w-0 items-baseline gap-2">
                   <bdi className="block max-w-56 truncate" title={d.original_name}>{d.original_name}</bdi>
                   <span className="shrink-0 text-muted-foreground">{t('document.size', { size: mb.format((d.size_bytes ?? 0) / 1024 / 1024) })}</span>
