@@ -86,7 +86,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->dontReport(EmployeeCodeTaken::class);
 
         $exceptions->render(fn (EmployeeCodeTaken $e, Request $request) => ApiEnvelope::error(
-            $request, 409, 'code_taken', __('errors.code_taken', ['code' => $e->taken, 'name' => $e->holder]),
+            $request, 409, 'code_taken', __('errors.code_taken', ['code' => $e->taken, 'name' => app()->getLocale() === 'en' && filled($e->nameEn) ? $e->nameEn : $e->nameAr]),
         ));
 
         $exceptions->render(fn (ThrottleRequestsException $e, Request $request) => ApiEnvelope::error(

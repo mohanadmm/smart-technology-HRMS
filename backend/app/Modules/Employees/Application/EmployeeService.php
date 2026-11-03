@@ -222,7 +222,7 @@ final class EmployeeService
                     throw ValidationException::withMessages(['code' => __('errors.code_deleted_holder')]);
                 }
                 if ($holder !== null && ! $swap) {
-                    throw new EmployeeCodeTaken($code, (string) (app()->getLocale() === 'en' && filled($holder->name_en) ? $holder->name_en : $holder->name_ar));
+                    throw new EmployeeCodeTaken($code, (string) $holder->name_ar, $holder->name_en);
                 }
                 // The unique is checked once both rows hold their new codes (migration 2026_11_03_000002).
                 DB::statement('SET CONSTRAINTS employees_code_unique DEFERRED');
