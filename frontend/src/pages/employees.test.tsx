@@ -117,6 +117,48 @@ test('list rows show the employee, ID, type badge, department, hire date and sta
   expect(screen.queryByRole('link', { name: 'إضافة موظف' })).toBeNull()
 })
 
+test('the list shows HR notes only when the server sends them, and a tap shows the whole note without opening the employee', async () => {
+  const note = 'متأخر عن تسليم صورة البطاقة، يتابع مع المدير يوم الأحد'
+  mockFetch({ 'GET /api/v1/employees': () => json(200, { data: [{ ...row1, hr_notes: note }, { ...row1, id: 'e2', name_ar: 'منى', hr_notes: null }], meta: { pagination } }) })
+  renderWithAuth(
+    <Routes>
+      <Route path="/" element={<EmployeesPage />} />
+      <Route path="/employees/:id" element={<p>صفحة الموظف</p>} />
+    </Routes>,
+    ['employee.view.all'],
+  )
+  expect(await screen.findByRole('columnheader', { name: 'ملاحظات الموارد البشرية' })).toBeInTheDocument()
+  const row = screen.getByRole('row', { name: /أحمد علي/ })
+  const previews = within(row).getAllByRole('button', { name: note }) // under the name on phones, its own column from md
+  expect(previews).toHaveLength(2)
+  expect(previews[0]).toHaveAttribute('title', note)
+  expect(previews[0]).toHaveAttribute('aria-expanded', 'false')
+  await user.click(previews[0])
+  expect(previews[0]).toHaveAttribute('aria-expanded', 'true')
+  previews[1].focus()
+  await user.keyboard('{Enter}')
+  expect(previews[1]).toHaveAttribute('aria-expanded', 'true')
+  expect(screen.queryByText('صفحة الموظف')).toBeNull()
+  expect(within(screen.getByRole('row', { name: /منى/ })).queryByRole('button')).toBeNull()
+})
+
+test('without notes in the response there is no notes column', async () => {
+  mockFetch({ 'GET /api/v1/employees': () => json(200, { data: [row1], meta: { pagination } }) })
+  renderWithAuth(<EmployeesPage />, ['employee.view.own'])
+  await screen.findByRole('row', { name: /أحمد علي/ })
+  expect(screen.queryByRole('columnheader', { name: 'ملاحظات الموارد البشرية' })).toBeNull()
+})
+
+test('the phone box turns Arabic digits into ASCII and stops at 11 digits', async () => {
+  mockFetch({ 'GET /api/v1/residences': residences })
+  renderWithAuth(<MemoryRouter initialEntries={['/employees/new']}><Routes><Route path="employees/new" element={<EmployeeFormPage />} /></Routes></MemoryRouter>, ALL, { router: false })
+  const phone = screen.getByLabelText('رقم الهاتف')
+  expect(phone).toHaveAttribute('inputmode', 'numeric')
+  expect(phone).toHaveAttribute('maxlength', '11')
+  await user.type(phone, '٠١٠١٢٣٤٥٦٧٨')
+  expect(phone).toHaveValue('01012345678')
+})
+
 test('stat tiles come from one summary request', async () => {
   mockFetch({
     'GET /api/v1/employees': () => json(200, { data: [], meta: { pagination } }),

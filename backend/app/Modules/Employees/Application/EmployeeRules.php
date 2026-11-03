@@ -14,6 +14,9 @@ final class EmployeeRules
 {
     private const MONEY = ['nullable', 'regex:/^\d{1,12}(\.\d{1,6})?$/D'];
 
+    /** An Egyptian mobile number, kept as text so its leading 0 survives (owner, 2026-11-03). */
+    private const MOBILE = 'regex:/^01[0125]\d{8}$/D';
+
     /** @return array<string, array<mixed>> */
     public static function store(): array
     {
@@ -51,7 +54,7 @@ final class EmployeeRules
             'gender' => $r(['required', Rule::enum(Gender::class)]),
             'national_id' => ['nullable', 'digits:14', $unique('national_id')],
             'insurance_no' => ['nullable', 'string'],
-            'phone' => ['nullable', 'string'],
+            'phone' => ['nullable', 'string', self::MOBILE],
             'address' => ['nullable', 'string'],
             'department' => ['nullable', 'string'],
             'residence_id' => ['nullable', 'uuid', Rule::exists('residences', 'id')->whereNull('deleted_at')],

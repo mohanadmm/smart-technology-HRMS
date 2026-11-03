@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
-// Only the field labels: Laravel merges this over the framework's English messages.
+// The field labels and the custom messages: Laravel merges this over the framework's English messages.
 return [
+    'custom' => [
+        'phone' => ['regex' => 'The phone must be an Egyptian mobile number: 11 digits starting with 010, 011, 012 or 015.'],
+    ],
     'attributes' => [
         'name_ar' => 'Arabic name',
         'name_en' => 'English name',

@@ -158,6 +158,9 @@ return [
     'uppercase' => 'يجب أن يحتوي الحقل :attribute على حروف كبيرة.',
     'url' => 'صيغة رابط حقل :attribute غير صحيحة.',
     'uuid' => 'حقل :attribute يجب أن يكون بصيغة UUID سليمة.',
+    'custom' => [
+        'phone' => ['regex' => 'يجب أن يكون رقم الهاتف رقم موبايل مصري من 11 رقمًا يبدأ بـ 010 أو 011 أو 012 أو 015.'],
+    ],
     // Field labels; equal to the frontend's ar.json wording.
     'attributes' => [
         'name_ar' => 'الاسم بالعربية',

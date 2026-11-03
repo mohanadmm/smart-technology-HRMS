@@ -22,6 +22,7 @@ import { cairoToday, ErrorBanner, Field, type Errs, FormDialog, type FormApi, fo
 import { useDebounced } from '@/hooks/useDebounced'
 import { ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { cn } from '@/lib/utils'
 import { RESIDENCES, USERS, useApi, useList, useSave } from '@/lib/query'
 import { Documents } from './employee-documents'
 
@@ -89,6 +90,7 @@ export function EmployeesPage() {
   }
   const today = cairoToday()
   const open = (id: string) => navigate(`/employees/${id}`)
+  const notes = rows.some((r) => 'hr_notes' in r) // the server sends notes only to the viewers allowed to read them
 
   return (
     <div className="space-y-6">
@@ -148,6 +150,7 @@ export function EmployeesPage() {
                 <TableHead className="hidden sm:table-cell">{t('employee.type')}</TableHead>
                 <TableHead className="hidden md:table-cell">{t('employee.department')}</TableHead>
                 <TableHead className="hidden xl:table-cell">{t('employee.hire_date')}</TableHead>
+                {notes && <TableHead className="hidden md:table-cell">{t('employee.hr_notes')}</TableHead>}
                 <TableHead>{t(archive ? 'employee.termination_date' : 'employee.status')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -170,6 +173,7 @@ export function EmployeesPage() {
                           <div className="font-medium">{e.name_ar}</div>
                           {e.name_en && <div className="text-xs text-muted-foreground">{e.name_en}</div>}
                           {badge && <div className="mt-1 sm:hidden">{badge}</div>}
+                          {notes && e.hr_notes && <div className="mt-1 md:hidden"><NoteCell note={e.hr_notes} /></div>}
                         </div>
                       </div>
                     </TableCell>
@@ -177,6 +181,7 @@ export function EmployeesPage() {
                     <TableCell className="hidden sm:table-cell">{badge || '—'}</TableCell>
                     <TableCell className="hidden md:table-cell">{e.department ?? '—'}</TableCell>
                     <TableCell className="hidden text-muted-foreground xl:table-cell">{e.hire_date ?? '—'}</TableCell>
+                    {notes && <TableCell className="hidden md:table-cell">{e.hr_notes ? <NoteCell note={e.hr_notes} /> : '—'}</TableCell>}
                     <TableCell>
                       {archive ? e.termination_date : <StatusBadge variant={leaving ? 'neutral' : 'success'} label={leaving ? ltrDates(t('employee.leavesOn', { date: e.termination_date })) : t('status.active')} />}
                     </TableCell>
@@ -189,6 +194,23 @@ export function EmployeesPage() {
         {total > 0 && <Pagination page={page} pageSize={PAGE} total={total} onPageChange={setPage} />}
       </Card>
     </div>
+  )
+}
+
+/** An HR note in the list: one line, the whole note on hover (title) and on a tap or Enter, which never opens the employee. */
+function NoteCell({ note }: { note: string }) {
+  const [full, setFull] = useState(false)
+  return (
+    <button
+      type="button"
+      title={note}
+      aria-expanded={full}
+      className={cn('block max-w-56 text-start text-sm text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring', full ? 'whitespace-pre-wrap' : 'truncate')}
+      onClick={(ev) => { ev.stopPropagation(); setFull(!full) }}
+      onKeyDown={(ev) => ev.stopPropagation()}
+    >
+      {note}
+    </button>
   )
 }
 
@@ -273,7 +295,7 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
             <SelectField name="gender" label={t('employee.gender')} options={GENDERS.map((v) => [v, t(`enum.gender.${v}`)])} {...f} />
             {has('national_id') && <TextField name="national_id" label={t('employee.national_id')} inputMode="numeric" {...f} />}
             {has('insurance_no') && <TextField name="insurance_no" label={t('employee.insurance_no')} {...f} />}
-            <TextField name="phone" label={t('employee.phone')} {...f} />
+            <TextField name="phone" label={t('employee.phone')} inputMode="numeric" autoComplete="tel" maxLength={11} {...f} />
             <TextField name="address" label={t('employee.address')} {...f} />
           </>
         ))}
