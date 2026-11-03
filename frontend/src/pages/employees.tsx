@@ -720,7 +720,6 @@ function Documents({ emp }: { emp: Row }) {
         <TableHeader>
           <TableRow>
             <TableHead>{t('document.kind')}</TableHead>
-            <TableHead>{t('document.received_at')}</TableHead>
             <TableHead className="hidden md:table-cell">{t('document.expires_at')}</TableHead>
             <TableHead className="hidden lg:table-cell">{t('document.note')}</TableHead>
             <TableHead>
@@ -734,7 +733,6 @@ function Documents({ emp }: { emp: Row }) {
             return (
               <TableRow key={kind}>
                 <TableCell className="font-medium">{t(`enum.document.${kind}`)}</TableCell>
-                <TableCell>{doc?.received_at ?? '—'}</TableCell>
                 <TableCell className="hidden md:table-cell">{doc?.expires_at ?? '—'}</TableCell>
                 <TableCell className="hidden text-muted-foreground lg:table-cell">{doc?.note ?? '—'}</TableCell>
                 <TableCell className="text-end">
@@ -746,16 +744,15 @@ function Documents({ emp }: { emp: Row }) {
                           {t('common.edit')}
                         </Button>
                       }
-                      init={{ received_at: doc?.received_at ?? '', expires_at: doc?.expires_at ?? '', note: doc?.note ?? '' }}
+                      init={{ expires_at: doc?.expires_at ?? '', note: doc?.note ?? '' }}
                       submit={(form) =>
                         send(`/employees/${emp.id}/documents/${kind}`, { method: 'PUT', body: Object.fromEntries(Object.entries(form).map(([k, v]) => [k, v || null])) })
                       }
                       onDone={() => {}}
-                      shown={['received_at', 'expires_at', 'note']}
+                      shown={['expires_at', 'note']}
                     >
                       {(f) => (
                         <>
-                          <TextField name="received_at" label={t('document.received_at')} type="date" {...f} />
                           <TextField name="expires_at" label={t('document.expires_at')} type="date" {...f} />
                           <TextField name="note" label={t('document.note')} {...f} />
                         </>

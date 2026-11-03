@@ -143,7 +143,6 @@
   },
   "document": {
     "kind": "Document",
-    "received_at": "Date received",
     "expires_at": "Expiry date",
     "note": "Notes"
   },
