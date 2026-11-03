@@ -1,6 +1,6 @@
 # Leave: balances, requests, approval
 
-Status: **decisions approved**, 2026-11-03: the owner accepted every recommendation (L1–L7) and the builder's calls. L1–L3 stay ⚠️ in `docs/calculations.md` until the client answers questions 8–10. Building waits for the owner's approval of the plan.
+Status: **decisions approved**, 2026-11-03: the owner accepted every recommendation (L1–L7) and the builder's calls. L1–L3 stay ⚠️ in `docs/calculations.md` until the client answers questions 8–10. The owner approved the plan the same day (`docs/superpowers/plans/2026-11-03-leave.md`); building goes in two steps, each with a screenshot gate.
 Scope: Release 1, item 6 in `docs/hrms-module-plan.md`: "balances and rules above, recorded by the manager, HR approves or escalates."
 
 ---
