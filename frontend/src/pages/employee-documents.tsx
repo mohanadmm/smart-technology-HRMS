@@ -141,7 +141,8 @@ export function Documents({ emp }: { emp: Row }) {
           open
           onOpenChange={(o) => !o && setDlg(null)}
           init={{ kind: dlg.doc.kind, expires_at: dlg.doc.expires_at ?? '', note: dlg.doc.note ?? '' }}
-          submit={(f) => send(`/employees/${emp.id}/documents/${dlg.doc.id}`, { method: 'PATCH', body: { kind: f.kind, expires_at: f.expires_at || null, note: f.note || null } })}
+          // without employee_document.view the row has no note: leave it out rather than erase a note this user never saw
+          submit={(f) => send(`/employees/${emp.id}/documents/${dlg.doc.id}`, { method: 'PATCH', body: { kind: f.kind, expires_at: f.expires_at || null, ...('note' in dlg.doc && { note: f.note || null }) } })}
           onDone={() => setDlg(null)}
           shown={['kind', 'expires_at', 'note']}
         >
@@ -149,7 +150,7 @@ export function Documents({ emp }: { emp: Row }) {
             <>
               <SelectField name="kind" label={t('document.kind')} options={DOC_KINDS.map((k) => [k, t(`enum.document.${k}`)])} {...p} />
               <TextField name="expires_at" label={t('document.expires_at')} type="date" {...p} />
-              <TextField name="note" label={t('document.note')} enterKeyHint="done" {...p} />
+              {'note' in dlg.doc && <TextField name="note" label={t('document.note')} enterKeyHint="done" {...p} />}
             </>
           )}
         </FormDialog>
@@ -164,7 +165,8 @@ export function Documents({ emp }: { emp: Row }) {
           onDone={() => setDlg(null)}
           shown={[]}
           footer="document.delete"
-          description={t('document.deleteConfirm')}
+          destructive
+          description={<span className="text-foreground">{t('document.deleteConfirm')}</span>}
         >
           {() => null}
         </FormDialog>

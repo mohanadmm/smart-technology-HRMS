@@ -179,6 +179,7 @@ test('delete asks first and sends DELETE', async () => {
   const dialog = await screen.findByRole('dialog')
   expect(dialog).toHaveTextContent('حذف هذا المستند؟ سيختفي من القائمة ويبقى سجله في سجل التدقيق.')
   expect(del).not.toHaveBeenCalled()
+  expect(within(dialog).getByRole('button', { name: 'حذف' })).toHaveClass('bg-destructive')
   await user.click(within(dialog).getByRole('button', { name: 'حذف' }))
   await vi.waitFor(() => expect(del).toHaveBeenCalledTimes(1))
   await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
@@ -199,4 +200,18 @@ test('replace sends replaces with the prefilled kind', async () => {
 test('no row actions without employee_document.edit', () => {
   showDocs([d1], VIEW)
   expect(screen.queryByRole('button', { name: 'الإجراءات' })).toBeNull()
+})
+
+test('edit details without the view permission leaves the unseen note out', async () => {
+  const patch = vi.fn(() => json(200, { data: d1 }))
+  mockFetch({ [`PATCH ${DOC_PATH}`]: patch })
+  const user = userEvent.setup()
+  showDocs([{ id: 'd1', kind: 'work_stub', expires_at: null }], ['employee_document.edit.all'])
+  await user.click(screen.getByRole('button', { name: 'الإجراءات' }))
+  await user.click(await screen.findByRole('menuitem', { name: 'تعديل البيانات' }))
+  const dialog = await screen.findByRole('dialog', { name: 'تعديل البيانات' })
+  expect(within(dialog).queryByLabelText('ملاحظات')).toBeNull()
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  await vi.waitFor(() => expect(patch).toHaveBeenCalled())
+  expect(JSON.parse((patch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual({ kind: 'work_stub', expires_at: null })
 })

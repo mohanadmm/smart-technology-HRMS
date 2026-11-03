@@ -238,7 +238,7 @@ export type Controlled = { open?: boolean; onOpenChange?: (open: boolean) => voi
 export type FormApi = { values: Row; set: (k: string, v: string) => void; errs: Record<string, string> }
 
 /** Dialog whose form state lives in the body, so it is fresh on every open (Radix unmounts closed content). Passing `open` makes it controlled; `clearErrOnEdit` drops the last error once a value changes; `description` opens the body as small muted text and is what screen readers announce after the title. */
-export function FormDialog({ title, description, trigger, open: openProp, onOpenChange, init, submit, onDone, shown, children, footer = 'common.save', clearErrOnEdit }: {
+export function FormDialog({ title, description, trigger, open: openProp, onOpenChange, init, submit, onDone, shown, children, footer = 'common.save', clearErrOnEdit, destructive }: {
   title: string
   description?: React.ReactNode
   trigger?: React.ReactNode
@@ -251,6 +251,8 @@ export function FormDialog({ title, description, trigger, open: openProp, onOpen
   children: (f: FormApi) => React.ReactNode
   footer?: string
   clearErrOnEdit?: boolean
+  /** The footer button is red: the dialog confirms a delete. */
+  destructive?: boolean
 }) {
   const [own, setOwn] = useState(false)
   const open = openProp ?? own
@@ -262,7 +264,7 @@ export function FormDialog({ title, description, trigger, open: openProp, onOpen
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <FormBody init={init} submit={submit} shown={shown} footer={footer} clearErrOnEdit={clearErrOnEdit} description={description} onDone={() => { setOpen(false); onDone() }}>
+        <FormBody init={init} submit={submit} shown={shown} footer={footer} clearErrOnEdit={clearErrOnEdit} destructive={destructive} description={description} onDone={() => { setOpen(false); onDone() }}>
           {children}
         </FormBody>
       </DialogContent>
@@ -270,7 +272,7 @@ export function FormDialog({ title, description, trigger, open: openProp, onOpen
   )
 }
 
-function FormBody({ init, submit, onDone, shown, footer, clearErrOnEdit, description, children }: { init: Row; submit: (form: Row) => Promise<unknown>; onDone: () => void; shown: string[]; footer: string; clearErrOnEdit?: boolean; description?: React.ReactNode; children: (f: FormApi) => React.ReactNode }) {
+function FormBody({ init, submit, onDone, shown, footer, clearErrOnEdit, destructive, description, children }: { init: Row; submit: (form: Row) => Promise<unknown>; onDone: () => void; shown: string[]; footer: string; clearErrOnEdit?: boolean; destructive?: boolean; description?: React.ReactNode; children: (f: FormApi) => React.ReactNode }) {
   const { t } = useTranslation()
   const { form, set } = useForm(init)
   const [err, setErr] = useState<unknown>()
@@ -299,7 +301,7 @@ function FormBody({ init, submit, onDone, shown, footer, clearErrOnEdit, descrip
         {children({ values: form, set: clearErrOnEdit ? (k, v) => { setErr(undefined); set(k, v) } : set, errs: toErrs(err) })}
       </DialogBody>
       <DialogFooter>
-        <Button type="button" disabled={busy.current} onClick={go}>
+        <Button type="button" variant={destructive ? 'destructive' : undefined} disabled={busy.current} onClick={go}>
           {t(footer)}
         </Button>
       </DialogFooter>
