@@ -1,5 +1,6 @@
 import { FileText, Upload } from 'lucide-react'
 import { Fragment, useEffect, useState } from 'react'
+import type { TFunction } from 'i18next'
 import { Trans, useTranslation } from 'react-i18next'
 import { DataList } from '@/components/common/DataList'
 import { RowActions } from '@/components/common/RowActions'
@@ -17,13 +18,13 @@ import { cn } from '@/lib/utils'
 export const DOC_KINDS = ['national_id_copy', 'work_stub', 'criminal_record', 'qualification', 'birth_certificate', 'insurance_form_6', 'photos', 'military_status', 'other']
 /** The only types the app accepts, uploads and renders, with their file extension (the server's EmployeeDocument::EXT; it checks the bytes against the same list). */
 const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' }
-export const ACCEPT = Object.keys(EXT)
+const ACCEPT = Object.keys(EXT)
 const MB = 1024 * 1024
 const MAX_BYTES = 10 * MB // EmployeeDocumentController::MAX_KB
 const SHRINK_OVER = 1.5 * 1024 * 1024
 // ponytail: iOS Safari can kill the tab decoding a huge image instead of throwing; above this the size check refuses it unshrunk
 const SHRINK_UNDER = 40 * 1024 * 1024
-const EXPIRY_SOON_DAYS = 30
+const EXPIRY_SOON_DAYS = 30 // until Release 3 makes it a setting: the lead time for ID and document expiry (docs/hrms-module-plan.md)
 /** The one number format for every file size the tab shows. */
 const sizeFormat = (lng: string) => new Intl.NumberFormat(intlLocale(lng), { maximumFractionDigits: 1 })
 const isHeic = (f: File) => /^image\/hei[cf](-sequence)?$/.test(f.type) || /\.hei[cf]$/i.test(f.name)
@@ -50,7 +51,10 @@ async function shrinkPhoto(file: File): Promise<File> {
   }
 }
 
-type Preset = { kind?: string; replaces?: Row } | null
+const kindName = (t: TFunction, kind: string) => t(`enum.document.${kind}`)
+const kindOptions = (t: TFunction): [string, string][] => DOC_KINDS.map((k) => [k, kindName(t, k)])
+
+type Preset = { kind?: string; replaces?: Doc } | null
 /** A document row from `GET /employees/{id}`: only id, kind and expiry without `employee_document.view`. */
 type Doc = { id: string; kind: string; expires_at: string | null } & Partial<{ original_name: string; mime: string; size_bytes: number; note: string | null; created_at: string; uploader_name: string | null }>
 
@@ -71,7 +75,6 @@ export function Documents({ emp }: { emp: Row }) {
   const num = sizeFormat(i18n.language)
   const size = (b = 0) => (b < MB ? t('document.sizeKb', { size: num.format(b / 1024) }) : t('document.size', { size: num.format(b / MB) }))
   const today = Date.parse(cairoToday())
-  const kindName = (d: Doc) => t(`enum.document.${d.kind}`)
   // this render's dialog only: a save that answers after its dialog closed must not close one opened since
   const closeDlg = () => setDlg((d) => (d === dlg ? null : d))
   const missing = DOC_KINDS.filter((k) => k !== 'other' && !docs.some((d) => d.kind === k))
@@ -108,7 +111,7 @@ export function Documents({ emp }: { emp: Row }) {
         rowKey={(d) => d.id}
         title={{
           header: t('document.kind'),
-          cell: (d) => (hasFile(d) ? <button type="button" className="inline-flex min-h-tap items-center text-start font-medium text-primary underline underline-offset-4" onClick={() => setViewing(d)}>{kindName(d)}</button> : kindName(d)),
+          cell: (d) => (hasFile(d) ? <button type="button" className="inline-flex min-h-tap items-center text-start font-medium text-primary underline underline-offset-4" onClick={() => setViewing(d)}>{kindName(t, d.kind)}</button> : kindName(t, d.kind)),
         }}
         fields={[
           ...(docs.some(hasFile)
@@ -141,7 +144,7 @@ export function Documents({ emp }: { emp: Row }) {
             ) : (
               // a link inside a sentence: exempt from the 44 px target (WCAG 2.5.8)
               <button key={i} type="button" className="text-primary underline-offset-4 hover:underline" onClick={() => setPreset({ kind: part.value })}>
-                {t(`enum.document.${part.value}`)}
+                {kindName(t, part.value)}
               </button>
             ),
           )}
@@ -152,7 +155,7 @@ export function Documents({ emp }: { emp: Row }) {
       {dlg?.type === 'edit' && (
         <FormDialog
           title={t('document.editDetails')}
-          description={kindName(dlg.doc)}
+          description={kindName(t, dlg.doc.kind)}
           open
           onOpenChange={(o) => !o && closeDlg()}
           init={{ kind: dlg.doc.kind, expires_at: dlg.doc.expires_at ?? '', note: dlg.doc.note ?? '' }}
@@ -163,7 +166,7 @@ export function Documents({ emp }: { emp: Row }) {
         >
           {(p) => (
             <>
-              <SelectField name="kind" label={t('document.kind')} options={DOC_KINDS.map((k) => [k, t(`enum.document.${k}`)])} {...p} />
+              <SelectField name="kind" label={t('document.kind')} options={kindOptions(t)} {...p} />
               <TextField name="expires_at" label={t('document.expires_at')} type="date" {...p} />
               {'note' in dlg.doc && <TextField name="note" label={t('document.note')} enterKeyHint="done" {...p} />}
             </>
@@ -172,7 +175,7 @@ export function Documents({ emp }: { emp: Row }) {
       )}
       {dlg?.type === 'delete' && (
         <FormDialog
-          title={t('document.deleteTitle', { name: kindName(dlg.doc) })}
+          title={t('document.deleteTitle', { name: kindName(t, dlg.doc.kind) })}
           open
           onOpenChange={(o) => !o && closeDlg()}
           init={{}}
@@ -300,7 +303,7 @@ function UploadForm({ empId, preset, onClose, busy, setBusy }: { empId: string; 
           )}
         </Field>
         {preview && <img src={preview} alt="" className="max-h-48 w-full rounded-lg border object-contain" />}
-        <SelectField name="kind" label={t('document.kind')} options={DOC_KINDS.map((k) => [k, t(`enum.document.${k}`)])} blank values={form} set={set} errs={errs} />
+        <SelectField name="kind" label={t('document.kind')} options={kindOptions(t)} blank values={form} set={set} errs={errs} />
         <TextField name="expires_at" label={t('document.expires_at')} type="date" values={form} set={set} errs={errs} />
         <TextField name="note" label={t('document.note')} enterKeyHint="done" values={form} set={set} errs={errs} />
       </DialogBody>
@@ -314,30 +317,30 @@ function UploadForm({ empId, preset, onClose, busy, setBusy }: { empId: string; 
 }
 
 /** Shows one document's file in the app: photos as an img, PDFs in an iframe where the browser can, otherwise an Open link; always a Download link. */
-export function Viewer({ empId, doc, onClose }: { empId: string; doc: Doc | null; onClose: () => void }) {
+function Viewer({ empId, doc, onClose }: { empId: string; doc: Doc | null; onClose: () => void }) {
   const { t, i18n } = useTranslation()
-  const kind = doc && t(`enum.document.${doc.kind}`)
   const date = new Intl.DateTimeFormat(intlLocale(i18n.language), { dateStyle: 'medium', timeZone: 'Africa/Cairo' })
   return (
     <Dialog open={doc !== null} onOpenChange={(o) => !o && onClose()}>
       {/* full screen under sm, below the notch (the close button sits at the top) */}
       <DialogContent className="top-[env(safe-area-inset-top)] max-h-none rounded-none sm:h-[85vh] sm:max-h-none sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>{kind}</DialogTitle>
+          <DialogTitle>{doc && kindName(t, doc.kind)}</DialogTitle>
           <DialogDescription className="[overflow-wrap:anywhere]">
             {/* the names are React children, never parsed as markup; <bdi> keeps a Latin name from reordering the Arabic */}
             {doc && <Trans i18nKey="document.uploadedBy" values={{ date: doc.created_at ? date.format(new Date(doc.created_at)) : '—' }} components={{ file: <bdi>{doc.original_name}</bdi>, name: <bdi>{doc.uploader_name ?? '—'}</bdi> }} />}
           </DialogDescription>
         </DialogHeader>
-        {doc && <ViewerFile key={doc.id} empId={empId} doc={doc} kind={kind!} />}
+        {doc && <ViewerFile key={doc.id} empId={empId} doc={doc} />}
       </DialogContent>
     </Dialog>
   )
 }
 
 /** The dialog's body: mounted only while open, so the object URL lives exactly as long as the dialog. */
-function ViewerFile({ empId, doc, kind }: { empId: string; doc: Doc; kind: string }) {
+function ViewerFile({ empId, doc }: { empId: string; doc: Doc }) {
   const { t } = useTranslation()
+  const kind = kindName(t, doc.kind)
   const [url, setUrl] = useState<string>()
   const [failed, setFailed] = useState(false)
   const [tries, setTries] = useState(0)
