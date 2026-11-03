@@ -162,7 +162,10 @@
     "expiresToday": "Expires today",
     "expiresIn_one": "Expires in {{count}} day",
     "expiresIn_other": "Expires in {{count}} days",
-    "size": "{{size}} MB"
+    "size": "{{size}} MB",
+    "editDetails": "Edit details",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this document? It leaves the list; the audit log keeps the record."
   },
   "enum": {
     "type": {

@@ -166,7 +166,10 @@
     "expiresIn_few": "ينتهي خلال {{count}} أيام",
     "expiresIn_many": "ينتهي خلال {{count}} يومًا",
     "expiresIn_other": "ينتهي خلال {{count}} يوم",
-    "size": "{{size}} ميجابايت"
+    "size": "{{size}} ميجابايت",
+    "editDetails": "تعديل البيانات",
+    "delete": "حذف",
+    "deleteConfirm": "حذف هذا المستند؟ سيختفي من القائمة ويبقى سجله في سجل التدقيق."
   },
   "enum": {
     "type": {

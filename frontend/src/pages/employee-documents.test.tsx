@@ -147,3 +147,56 @@ test('without the view permission the kind is plain text', () => {
   expect(screen.getByRole('button', { name: 'عقد عمل' })).toBeInTheDocument()
   expect(screen.getByText('scan.pdf')).toBeInTheDocument()
 })
+
+const DOC_PATH = '/api/v1/employees/e1/documents/d1'
+const d1 = { ...doc('criminal_record', '2027-01-31'), id: 'd1', note: 'قديم' }
+async function rowAction(item: string, user = userEvent.setup()) {
+  showDocs([d1])
+  await user.click(screen.getByRole('button', { name: 'الإجراءات' }))
+  await user.click(await screen.findByRole('menuitem', { name: item }))
+  return user
+}
+
+test('edit details patches kind, expiry and note', async () => {
+  const patch = vi.fn(() => json(200, { data: d1 }))
+  mockFetch({ [`PATCH ${DOC_PATH}`]: patch })
+  const user = await rowAction('تعديل البيانات')
+  const dialog = await screen.findByRole('dialog', { name: 'تعديل البيانات' })
+  expect(within(dialog).getByLabelText('المستند')).toHaveValue('criminal_record')
+  await user.clear(within(dialog).getByLabelText('تاريخ الانتهاء'))
+  await user.clear(within(dialog).getByLabelText('ملاحظات'))
+  await user.type(within(dialog).getByLabelText('ملاحظات'), 'نسخة جديدة')
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  await vi.waitFor(() => expect(patch).toHaveBeenCalled())
+  expect(JSON.parse((patch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual({ kind: 'criminal_record', expires_at: null, note: 'نسخة جديدة' })
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+test('delete asks first and sends DELETE', async () => {
+  const del = vi.fn(() => new Response(null, { status: 204 }))
+  mockFetch({ [`DELETE ${DOC_PATH}`]: del })
+  const user = await rowAction('حذف')
+  const dialog = await screen.findByRole('dialog')
+  expect(dialog).toHaveTextContent('حذف هذا المستند؟ سيختفي من القائمة ويبقى سجله في سجل التدقيق.')
+  expect(del).not.toHaveBeenCalled()
+  await user.click(within(dialog).getByRole('button', { name: 'حذف' }))
+  await vi.waitFor(() => expect(del).toHaveBeenCalledTimes(1))
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+test('replace sends replaces with the prefilled kind', async () => {
+  const post = vi.fn(created)
+  mockFetch({ [POST]: post })
+  const user = await rowAction('استبدال الملف')
+  const dialog = await screen.findByRole('dialog', { name: 'استبدال الملف' })
+  expect(within(dialog).getByLabelText('المستند')).toHaveValue('criminal_record')
+  await user.upload(within(dialog).getByLabelText('الملف'), pdf())
+  await user.click(within(dialog).getByRole('button', { name: 'رفع مستند' }))
+  await vi.waitFor(() => expect(post).toHaveBeenCalled())
+  expect([body(post).get('replaces'), body(post).get('kind')]).toEqual(['d1', 'criminal_record'])
+})
+
+test('no row actions without employee_document.edit', () => {
+  showDocs([d1], VIEW)
+  expect(screen.queryByRole('button', { name: 'الإجراءات' })).toBeNull()
+})

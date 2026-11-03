@@ -2,7 +2,8 @@ import { FileText, Upload } from 'lucide-react'
 import { Fragment, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DataList } from '@/components/common/DataList'
-import { cairoToday, ErrorBanner, Field, intlLocale, type Row, SelectField, TextField, toErrs, useForm } from '@/components/form'
+import { RowActions } from '@/components/common/RowActions'
+import { cairoToday, ErrorBanner, Field, FormDialog, intlLocale, type Row, SelectField, TextField, toErrs, useForm } from '@/components/form'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
@@ -49,6 +50,8 @@ export function Documents({ emp }: { emp: Row }) {
   const { t, i18n } = useTranslation()
   const { can } = useAuth()
   const [preset, setPreset] = useState<Preset>(null)
+  const [dlg, setDlg] = useState<{ type: 'edit' | 'delete'; doc: Doc } | null>(null)
+  const send = useSave()
   const docs: Doc[] = emp.documents
   const viewer = can('employee_document.view')
   const editor = can('employee_document.edit')
@@ -105,6 +108,15 @@ export function Documents({ emp }: { emp: Row }) {
             : []),
           { header: t('document.expires_at'), cell: expiry },
         ]}
+        actions={editor ? (d) => (
+          <RowActions
+            items={[
+              { label: t('document.replace'), onSelect: () => setPreset({ replaces: d }) },
+              { label: t('document.editDetails'), onSelect: () => setDlg({ type: 'edit', doc: d }) },
+              { label: t('document.delete'), onSelect: () => setDlg({ type: 'delete', doc: d }), destructive: true },
+            ]}
+          />
+        ) : undefined}
         empty={{ icon: FileText, title: t('document.empty'), action: editor ? upload : undefined }}
       />
       {docs.length > 0 && editor && missing.length > 0 && (
@@ -123,6 +135,40 @@ export function Documents({ emp }: { emp: Row }) {
         </p>
       )}
       <UploadDialog empId={emp.id} preset={preset} onClose={() => setPreset(null)} />
+      {dlg?.type === 'edit' && (
+        <FormDialog
+          title={t('document.editDetails')}
+          open
+          onOpenChange={(o) => !o && setDlg(null)}
+          init={{ kind: dlg.doc.kind, expires_at: dlg.doc.expires_at ?? '', note: dlg.doc.note ?? '' }}
+          submit={(f) => send(`/employees/${emp.id}/documents/${dlg.doc.id}`, { method: 'PATCH', body: { kind: f.kind, expires_at: f.expires_at || null, note: f.note || null } })}
+          onDone={() => setDlg(null)}
+          shown={['kind', 'expires_at', 'note']}
+        >
+          {(p) => (
+            <>
+              <SelectField name="kind" label={t('document.kind')} options={DOC_KINDS.map((k) => [k, t(`enum.document.${k}`)])} {...p} />
+              <TextField name="expires_at" label={t('document.expires_at')} type="date" {...p} />
+              <TextField name="note" label={t('document.note')} enterKeyHint="done" {...p} />
+            </>
+          )}
+        </FormDialog>
+      )}
+      {dlg?.type === 'delete' && (
+        <FormDialog
+          title={t('document.delete')}
+          open
+          onOpenChange={(o) => !o && setDlg(null)}
+          init={{}}
+          submit={() => send(`/employees/${emp.id}/documents/${dlg.doc.id}`, { method: 'DELETE' })}
+          onDone={() => setDlg(null)}
+          shown={[]}
+          footer="document.delete"
+          description={t('document.deleteConfirm')}
+        >
+          {() => null}
+        </FormDialog>
+      )}
     </Card>
   )
 }
