@@ -145,6 +145,7 @@
     "expires_at": "Expiry date",
     "note": "Notes",
     "upload": "Upload document",
+    "uploading": "Uploading…",
     "replace": "Replace file",
     "file": "File",
     "choose": "Choose file",

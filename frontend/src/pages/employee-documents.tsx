@@ -63,6 +63,8 @@ export function Documents({ emp }: { emp: Row }) {
   const mb = new Intl.NumberFormat(lng, { maximumSignificantDigits: 2 })
   const today = Date.parse(cairoToday())
   const kindName = (d: Doc) => t(`enum.document.${d.kind}`)
+  // this render's dialog only: a save that answers after its dialog closed must not close one opened since
+  const closeDlg = () => setDlg((d) => (d === dlg ? null : d))
   const missing = DOC_KINDS.filter((k) => k !== 'other' && !docs.some((d) => d.kind === k))
   const upload = (
     <Button type="button" onClick={() => setPreset({})}>
@@ -142,11 +144,11 @@ export function Documents({ emp }: { emp: Row }) {
         <FormDialog
           title={t('document.editDetails')}
           open
-          onOpenChange={(o) => !o && setDlg(null)}
+          onOpenChange={(o) => !o && closeDlg()}
           init={{ kind: dlg.doc.kind, expires_at: dlg.doc.expires_at ?? '', note: dlg.doc.note ?? '' }}
           // without employee_document.view the row has no note: leave it out rather than erase a note this user never saw
           submit={(f) => send(`/employees/${emp.id}/documents/${dlg.doc.id}`, { method: 'PATCH', body: { kind: f.kind, expires_at: f.expires_at || null, ...('note' in dlg.doc && { note: f.note || null }) } })}
-          onDone={() => setDlg(null)}
+          onDone={closeDlg}
           shown={['kind', 'expires_at', 'note']}
         >
           {(p) => (
@@ -162,10 +164,10 @@ export function Documents({ emp }: { emp: Row }) {
         <FormDialog
           title={t('document.delete')}
           open
-          onOpenChange={(o) => !o && setDlg(null)}
+          onOpenChange={(o) => !o && closeDlg()}
           init={{}}
           submit={() => send(`/employees/${emp.id}/documents/${dlg.doc.id}`, { method: 'DELETE' })}
-          onDone={() => setDlg(null)}
+          onDone={closeDlg}
           shown={[]}
           footer="document.delete"
           destructive
@@ -181,20 +183,22 @@ export function Documents({ emp }: { emp: Row }) {
 /** Uploads one file for an employee; open while `preset` is not null. `replaces` prefills kind, expiry and note and sends the old document's id. */
 export function UploadDialog({ empId, preset, onClose }: { empId: string; preset: Preset; onClose: () => void }) {
   const { t } = useTranslation()
+  // here, not in the form: Escape, ✕ and the scrim are ignored while a photo shrinks or the file uploads
+  const [busy, setBusy] = useState(false)
   return (
-    <Dialog open={preset !== null} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={preset !== null} onOpenChange={(o) => !o && !busy && onClose()}>
       <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{t(preset?.replaces ? 'document.replace' : 'document.upload')}</DialogTitle>
         </DialogHeader>
-        {preset && <UploadForm empId={empId} preset={preset} onClose={onClose} />}
+        {preset && <UploadForm empId={empId} preset={preset} onClose={onClose} busy={busy} setBusy={setBusy} />}
       </DialogContent>
     </Dialog>
   )
 }
 
 /** The dialog's body: mounted only while open, so every open starts empty (or from the preset). */
-function UploadForm({ empId, preset, onClose }: { empId: string; preset: NonNullable<Preset>; onClose: () => void }) {
+function UploadForm({ empId, preset, onClose, busy, setBusy }: { empId: string; preset: NonNullable<Preset>; onClose: () => void; busy: boolean; setBusy: (b: boolean) => void }) {
   const { t, i18n } = useTranslation()
   const send = useSave()
   const old = preset.replaces
@@ -203,7 +207,6 @@ function UploadForm({ empId, preset, onClose }: { empId: string; preset: NonNull
   const [fileErr, setFileErr] = useState<string>()
   const [err, setErr] = useState<unknown>()
   const [network, setNetwork] = useState(false)
-  const [busy, setBusy] = useState(false)
   const [preview, setPreview] = useState<string>()
 
   useEffect(() => {
@@ -281,7 +284,7 @@ function UploadForm({ empId, preset, onClose }: { empId: string; preset: NonNull
       </DialogBody>
       <DialogFooter>
         <Button type="submit" disabled={busy || !file}>
-          {t(network ? 'document.retry' : 'document.upload')}
+          {t(busy ? 'document.uploading' : network ? 'document.retry' : 'document.upload')}
         </Button>
       </DialogFooter>
     </form>

@@ -91,6 +91,25 @@ test('a network failure offers Retry', async () => {
   expect(post).toHaveBeenCalledTimes(2)
 })
 
+const pending = () => {
+  const call: { answer: (r: Response) => void } = { answer: () => {} }
+  vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((done) => (call.answer = done))))
+  return call
+}
+
+test('the upload dialog cannot be closed while it uploads', async () => {
+  const call = pending()
+  const { user, onClose } = open({ kind: 'other' })
+  await user.upload(screen.getByLabelText('الملف'), pdf())
+  await user.click(screen.getByRole('button', { name: 'رفع مستند' }))
+  expect(await screen.findByRole('button', { name: 'جارٍ الرفع…' })).toBeDisabled()
+  await user.keyboard('{Escape}')
+  await user.click(screen.getByRole('button', { name: 'إغلاق' }))
+  expect(onClose).not.toHaveBeenCalled()
+  call.answer(created())
+  await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+})
+
 const VIEW = ['employee_document.view.all']
 const doc = (kind: string, expires_at: string | null = null) => ({ id: `d-${kind}-${expires_at}`, kind, expires_at, original_name: 'scan.pdf', mime: 'application/pdf', size_bytes: 250_000, note: null, created_at: '2026-11-01T08:00:00Z', uploader_name: 'HR' })
 const missingLine = (_: string, el: Element | null) => el?.tagName === 'P' && !!el.textContent?.startsWith('لم يُرفع بعد:')
@@ -186,6 +205,22 @@ test('delete asks first and sends DELETE', async () => {
   await user.click(within(dialog).getByRole('button', { name: 'حذف' }))
   await vi.waitFor(() => expect(del).toHaveBeenCalledTimes(1))
   await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+test('a save that finishes after its dialog closed leaves the next dialog open', async () => {
+  const call = pending()
+  const user = await rowAction('تعديل البيانات')
+  const edit = await screen.findByRole('dialog', { name: 'تعديل البيانات' })
+  await user.click(within(edit).getByRole('button', { name: 'حفظ' }))
+  await user.keyboard('{Escape}')
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  await user.click(screen.getByRole('button', { name: 'الإجراءات' }))
+  await user.click(await screen.findByRole('menuitem', { name: 'حذف' }))
+  const del = await screen.findByRole('dialog')
+  call.answer(json(200, { data: d1 }))
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+  await new Promise((r) => setTimeout(r, 50))
+  expect(del).toBeInTheDocument()
 })
 
 test('replace sends replaces with the prefilled kind', async () => {
