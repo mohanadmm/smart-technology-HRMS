@@ -733,6 +733,42 @@ test('the paste dialog applies Absent to the pasted list and reports unknown IDs
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 })
 
+/** Opens the paste dialog on a sheet of `rows`, types `ids` and returns the dialog. */
+const pasteIds = async (rows: object[], ids: string, [button, title, box] = ['لصق أرقام', 'لصق الأرقام الوظيفية', 'الأرقام الوظيفية']) => {
+  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => sheet(rows) })
+  edit()
+  await table()
+  await user.click(screen.getByRole('button', { name: button }))
+  const dialog = screen.getByRole('dialog', { name: title })
+  await user.type(within(dialog).getByRole('textbox', { name: box }), ids)
+  return dialog
+}
+const names = (dialog: HTMLElement, label = 'الموظفون الذين سيتم تسجيلهم') =>
+  within(within(dialog).getByRole('list', { name: label })).getAllByRole('listitem').map((li) => li.textContent)
+
+test('the paste preview names every match (ID and name) before applying, outside the live region', async () => {
+  const dialog = await pasteIds(engineers, '1 2 99')
+  expect(names(dialog)).toEqual(['1 Engineer-1', '2 Engineer-2'])
+  expect(within(dialog).getByRole('status')).not.toContainElement(within(dialog).getByRole('list')) // 500 names are not re-announced per keystroke
+  expect(within(dialog).getByRole('list')).toHaveClass('max-h-40', 'overflow-y-auto') // a long batch scrolls, the dialog stays on screen
+})
+
+test('a stale ID in the paste preview shows the employee who holds it now', async () => {
+  // HR moved Previous-Holder from 7 to 8 and gave 7 to Current-Holder: the sheet carries today's codes
+  const dialog = await pasteIds([row(7, 'Current-Holder', {}), row(8, 'Previous-Holder', {})], '7')
+  expect(names(dialog)).toEqual(['7 Current-Holder'])
+})
+
+test('in English the paste preview shows the English name, else the Arabic one', async () => {
+  await i18n.changeLanguage('en')
+  const rows = [
+    { ...row(1, 'x', {}), employee: { id: 'e1', code: 1, name_ar: 'مهندس واحد', name_en: 'Engineer One', department: null } },
+    { ...row(2, 'x', {}), employee: { id: 'e2', code: 2, name_ar: 'مهندس اثنان', name_en: null, department: null } },
+  ]
+  const dialog = await pasteIds(rows, '1 2', ['Paste IDs', 'Paste employee IDs', 'Employee IDs'])
+  expect(names(dialog, 'Employees to be marked')).toEqual(['1 Engineer One', '2 مهندس اثنان'])
+})
+
 test('the paste dialog never writes a name search', async () => {
   mockFetch(routes)
   edit()

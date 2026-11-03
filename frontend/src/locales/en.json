@@ -602,7 +602,8 @@
         "title": "Paste employee IDs",
         "hint": "Paste IDs from Excel or WhatsApp: one per line, comma-separated, or ranges.",
         "label": "Employee IDs",
-        "idsOnly": "Paste employee IDs only; names are not recorded from here."
+        "idsOnly": "Paste employee IDs only; names are not recorded from here.",
+        "matches": "Employees to be marked"
       },
       "toast": {
         "applied": "{{count}} recorded",
