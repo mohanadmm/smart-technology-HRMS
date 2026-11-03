@@ -187,6 +187,55 @@ Status is verified against `main` at `7be93b9` (PR #3 merged) by reading the cod
 - **Employee ID**: settled 2026-11-03 (R5): `code` stays visible and HR may edit or swap it one employee at a time, to any free number from 0 up to the highest issued. Numbers are never reissued: a new hire gets the highest ever issued + 1. An attendance template downloaded before a change of ID or Arabic name is refused row by row for that employee (`code_name_mismatch`; download a fresh one); paper references and old Excel files keep the old number. Not renumbering everyone is a default until the owner says otherwise.
 - **Managers are accounts, not employees**: item 12 needs a link between an account and an employee record.
 
+## Owner decisions of 2026-11-03
+**Status: decided** by the owner, answering eight questions. They settle the rows above that they name; the follow-up questions are R18–R29 in `docs/client-questions.md`. The table above was checked at `7be93b9`. Only the rows this section names were re-checked at `5604078` (PR #10 merged). The others may be out of date after PRs #6–#10, and no gate was run.
+
+### Decisions and what they change
+| # | Decision | Code at `5604078` | Change needed | Module |
+|---|---|---|---|---|
+| Q1 (items 17) | **Team lead / مسؤول التيم** is the domain and UI term. Keep the `manager` slug, assignments and permissions. | UI and locales say مدير / Manager. | Labels and locale keys only; `CONTEXT.md` done in this PR. | Foundation (locales), Team-lead workspace |
+| Q2 (item 19) | Employee ID stays visible; **0 is the CEO's**; never reused; UUID stays the key; name search is the normal way to select. | Allocator in `EmployeeService::create` locks `employees` (`SHARE ROW EXCLUSIVE`) and takes `greatest(employee_code_counter.last_issued, max(code)) + 1`, so a deleted or renumbered-down code is never reissued; `employees_code_unique` (deferrable) backs it. **0 is not reserved**: `changeCode` accepts any free number from 0. | Refuse 0 for anyone but the CEO (needs a way to mark the CEO; R23). Make sure the counter table always has exactly its one row. If it were empty, numbering would restart at 1: the unique index refuses any code a live or soft-deleted employee holds, but a code whose row was hard-deleted could be issued again. | Employees |
+| Q3 (item 21) | Workday **08:00–16:00**; ADR 0002 daily wage stands; no hourly pay; HR owns wages; team leads never set or see wages. Partial-day pay is open (R25). | The shared field shift `worker_shift_end` became **17:00** in `2026_11_02_000001_set_field_shift_end.php`, for engineers, permanent workers and day laborers alike. Team leads (`.own` scope) get no pay fields from `EmployeeService::show` (`$full` false). | Resolve R19, then a **new** migration or HR setting change to 16:00 (never edit the 2026-11-02 one). No wage access for team leads is already true; keep a test for it. | Settings, Attendance |
+| Q4 (item 12) | A team lead can be an employee and an account holder; optional account-to-employee link; HR records and reviews their attendance; permissions and pay stay separate. | No link between `users` and `employees`. | A nullable, unique link (owned by Employees, read by Identity), set by HR. Attendance needs no change: the team lead is an ordinary employee row. | Employees, Identity |
+| Q5 (item 22) | Pay cycles **by type**, no per-person setting: day laborers 1–15 / 16–end; others keep their monthly cycles. | `Attendance/Domain/Period` has these periods per type. | None now. Verify each monthly cutoff before payroll (R26). | Payroll |
+| Q6 (item 4) | HR notes in the employee list, **HR and CEO only**, preview with full text on hover or tap; enforced on the server. | `hr_notes` is in `EmployeeService::SENSITIVE`, stripped for own-scope callers, and not a list column. | Add it to the list response for `.all` viewers only, plus a test that a team lead's list and detail responses contain no notes. | Employees |
+| Q7 (item 14) | Search by name → explicit pick → add to batch → apply to save. Show ID and site for duplicates. No auto-save, even for one match. | `parseBatch` (`frontend/src/lib/day-sheet.ts`) writes ID batches only; names only select. | A name picker that adds to the batch. The "a name never writes on its own" rule stays. | Attendance |
+| Q8 (item 11) | Egyptian mobile only, `^01[0125]\d{8}$`, stored as text. | `phone` accepts any string (`'nullable', 'string'`, `EmployeeRules.php:54`); the master import keeps it as text (`MasterDataImport::TEXT`). | **First** list the stored phones that fail the pattern, on a copy of the production database. Then enforce the rule in `EmployeeRules` and the form. WhatsApp normalising (`+20…`) is separate, in Release 3. | Employees |
+
+### Lateness deduction (`docs/calculations.md` §0a)
+- **Rule:** a 15-minute grace a day, then chargeable minutes × wage ÷ divisor × the **employee's** multiplier. Divisors: 14,400 for monthly staff, 480 for day laborers. The wage is the one in force in the system. No EGP-per-minute amount is imported.
+- **Evidence (`معاملات_خصم_التأخير_لكلود.xlsx`, given 2026-11-03; reference only, not committed, because it names employees):**
+  - 306 rows: 274 extracted, 32 need review.
+  - Office: 27 rows, all ×1.
+  - Monthly site staff: 27 rows, 25 extracted (6 at ×1.5, 19 at ×2), 2 to match.
+  - Day laborers: 252 rows, 222 at ×2 (divisor 480), 30 to match.
+  - 4 names appear twice. Rows are source records, not unique employees. Each is matched to an Employee ID by HR before use; a blank multiplier means unresolved, not 0.
+- **Conflicts with the earlier spec:**
+  - Multipliers were per type (engineers 1.5, workers 2; `CLAUDE.md` and `excel-system-analysis.md` item 13); now they are per employee.
+  - The field types had no grace; now every type has one.
+  - Both can move the October fixtures (engineers 315,451; day laborers 391,948). Explain every difference in the Excel-difference report, and do not edit a fixture to make a test pass.
+- **Where the multiplier lives:** on the employee, owned by Employees and set by HR only. Whether it is effective-dated waits for R27. Payroll reads it and refuses to compute an employee whose multiplier is blank.
+- Absence, early leave and overtime keep their own rules. The absence formula is verified for office staff only (R21).
+
+### Other decisions recorded
+- **Roles:** HR administers the system, manages employee records, rates and site assignments, and reviews and corrects attendance. Team leads record attendance and absences for their site teams and never see wages. HR and the General Manager review and approve Releases 1–2.
+  - ⚠️ "HR handles accounts" conflicts with "only the Developer creates accounts and sets passwords" (`CLAUDE.md`): R22.
+  - ⚠️ "General Manager" may or may not be the CEO, and the CEO's account already sees every employee's current pay: R28.
+- **Advances:** the approval is on paper; the system records the request and prints it. Approval, disbursement (the advance amount on a day, or a ledger entry) and repayment (installments) stay separate records. ⚠️ This changes Release 3 item 1, which listed "advance" as an in-app request type.
+- **Forms:** the existing Word and PDF forms print as PDFs in their planned release. Releases 1–2 come first: employees and sites, attendance and leave, then payroll, fingerprint import, advances and payslips.
+- **Migration:** a full historical migration is no longer assumed. Release 2 item 8 (the historical payroll archive) and the parity re-run from migrated data wait on R29 (go-live date, opening balances, archive or not).
+- **Transport:** separate from the wage. Fares and site allowances are never part of the lateness wage basis (§0a). The fare's dependence on residence, actual site and override stays as in `calculations.md` §4.
+
+### Changes to the work plan
+- **Youssef:**
+  - Add R19 (workday) to the attendance contracts. The shift default changes in one new migration, after R19 is answered.
+  - The name picker (Q7) replaces order 4's "quick entry by name".
+- **Second developer:**
+  - WP-B1 gains the phone check on a database copy (Q8), the server-side notes rule (Q6) and the CEO-only 0 (Q2, after R23).
+  - The account-to-employee link (Q4) is a new small PR in Employees, before the team-lead workspace.
+  - The per-employee lateness multiplier field moves into Employees, before payroll, after R27.
+- **Third developer (Payroll):** builds §0a against the matched multipliers. It needs R21, R25, R26 and R27 answered first.
+
 ## Modules, ownership and parallel work
 **Status: proposal.** Owner approval needed. Developer names are the current team: **Youssef**, who built Releases 1a–1c, and **the second developer**, who joins now. A third developer may join later.
 
