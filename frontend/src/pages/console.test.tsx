@@ -353,4 +353,6 @@ test('a scope control hugs its words and keeps them apart on one line', async ()
   expect(group).toHaveClass('inline-flex')
   expect(group).not.toHaveClass('flex')
   expect(within(group).getByText('الخاص به', { ignore: '.sr-only' })).toHaveClass('px-1.5', 'whitespace-nowrap')
+  // min-w-tap replaces a flex item's min-width:auto, so without shrink-0 the table squeezes the pills below their words
+  for (const b of within(group).getAllByRole('button')) expect(b).toHaveClass('shrink-0')
 })
