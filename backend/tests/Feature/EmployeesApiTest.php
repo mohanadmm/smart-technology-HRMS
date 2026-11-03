@@ -357,6 +357,48 @@ class EmployeesApiTest extends TestCase
         $this->patchJson("/api/v1/employees/$a/code", ['code' => 0, 'swap' => 1])->assertOk()->assertJsonPath('data.code', 0);   // nobody holds 0: a plain change
     }
 
+    public function test_swap_with_an_archived_holder(): void
+    {
+        $this->travelTo('2026-10-20 10:00:00');
+        $a = $this->make();
+        $archived = $this->make(['termination_date' => '2026-10-01']);
+
+        $this->patchJson("/api/v1/employees/$a/code", ['code' => 2, 'swap' => true])->assertOk()->assertJsonPath('data.code', 2);
+        $this->assertSame(1, DB::table('employees')->where('id', $archived)->value('code'));
+    }
+
+    /** Runs $write once, straight after the first query that looks an employee up by code: another request acting between the lookup and the lock. */
+    private function afterTheHolderLookup(callable $write): void
+    {
+        $done = false;
+        DB::listen(function ($query) use (&$done, $write): void {
+            if (! $done && str_contains($query->sql, '"code" = ?')) {
+                $done = true;
+                $write();
+            }
+        });
+    }
+
+    public function test_a_holder_that_moves_off_the_code_meanwhile_is_not_swapped(): void
+    {
+        $a = $this->make();
+        $b = $this->make();
+        $this->afterTheHolderLookup(fn () => DB::table('employees')->where('id', $b)->update(['code' => 0]));
+
+        $this->patchJson("/api/v1/employees/$a/code", ['code' => 2, 'swap' => true])->assertOk()->assertJsonPath('data.code', 2);
+        $this->assertSame(0, DB::table('employees')->where('id', $b)->value('code'));
+    }
+
+    public function test_a_holder_deleted_meanwhile_is_not_swapped(): void
+    {
+        $a = $this->make();
+        $b = $this->make();
+        $this->afterTheHolderLookup(fn () => DB::table('employees')->where('id', $b)->update(['deleted_at' => now()]));
+
+        $this->patchJson("/api/v1/employees/$a/code", ['code' => 2, 'swap' => true])->assertStatus(422)->assertJsonPath('error.details.0.field', 'code');
+        $this->assertSame([1, 2], [DB::table('employees')->where('id', $a)->value('code'), DB::table('employees')->where('id', $b)->value('code')]);
+    }
+
     public function test_a_code_taken_between_the_check_and_the_save_is_422(): void
     {
         $id = $this->make();

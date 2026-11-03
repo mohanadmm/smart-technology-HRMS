@@ -16,6 +16,7 @@ use App\Modules\Employees\Infrastructure\Eloquent\EmployeePayChange;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeTypeChange;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -200,16 +201,29 @@ final class EmployeeService
         if ($code > ($highest = self::highestCodeIssued())) {
             throw ValidationException::withMessages(['code' => __('errors.code_above_highest', ['max' => $highest])]);
         }
-        $holder = Employee::withTrashed()->where('code', $code)->first();
-        if ($holder?->trashed()) {
-            throw ValidationException::withMessages(['code' => __('errors.code_deleted_holder')]);
-        }
-        if ($holder !== null && ! $swap) {
-            throw new EmployeeCodeTaken($code, (string) (app()->getLocale() === 'en' && filled($holder->name_en) ? $holder->name_en : $holder->name_ar));
-        }
-
         try {
-            DB::transaction(function () use ($employee, $holder, $code): void {
+            DB::transaction(function () use ($id, $code, $swap): void {
+                $holderId = Employee::withTrashed()->where('code', $code)->value('id');
+                // One query in id order: two opposite swaps lock their two rows in the same order, so they cannot deadlock.
+                $locked = Employee::withTrashed()->whereIn('id', array_filter([$id, $holderId]))->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+                $employee = $locked->get($id);
+                if ($employee === null || $employee->trashed()) {
+                    throw (new ModelNotFoundException)->setModel(Employee::class, [$id]);
+                }
+                if ($employee->code === $code) {
+                    return;
+                }
+                // Re-checked under the lock: the holder looked up above may have moved off the code or been deleted meanwhile.
+                $holder = $locked->first(fn (Employee $e) => $e->code === $code);
+                if ($holder === null && Employee::withTrashed()->where('code', $code)->exists()) {
+                    throw ValidationException::withMessages(['code' => __('errors.code_changed_meanwhile')]);   // held by a row not locked here
+                }
+                if ($holder?->trashed()) {
+                    throw ValidationException::withMessages(['code' => __('errors.code_deleted_holder')]);
+                }
+                if ($holder !== null && ! $swap) {
+                    throw new EmployeeCodeTaken($code, (string) (app()->getLocale() === 'en' && filled($holder->name_en) ? $holder->name_en : $holder->name_ar));
+                }
                 // The unique is checked once both rows hold their new codes (migration 2026_11_03_000002).
                 DB::statement('SET CONSTRAINTS employees_code_unique DEFERRED');
                 $old = $employee->code;
@@ -218,7 +232,7 @@ final class EmployeeService
                 DB::statement('SET CONSTRAINTS employees_code_unique IMMEDIATE');
             });
         } catch (UniqueConstraintViolationException) {
-            // create() took the code between the check and the save.
+            // Another write took the code between the check and the save.
             throw ValidationException::withMessages(['code' => __('errors.code_changed_meanwhile')]);
         }
 
