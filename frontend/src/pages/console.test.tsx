@@ -32,6 +32,13 @@ const pickRole = async () => user.click(await screen.findByRole('button', { name
 const scope = (group: string, option: string) => within(screen.getByRole('group', { name: group })).getByRole('button', { name: option })
 const pressed = (b: HTMLElement) => expect(b).toHaveAttribute('aria-pressed', 'true')
 const sentIds = (patch: { mock: { calls: unknown[][] } }) => JSON.parse((patch.mock.calls[0] as [string, RequestInit])[1].body as string).permission_ids.sort()
+const wideScreen = (wide: boolean) => vi.stubGlobal('matchMedia', (media: string) => ({ media, matches: wide && media === '(min-width: 80rem)' }))
+/** A response held back until `open()`. */
+const held = (res: () => Response) => {
+  let open!: () => void
+  const gate = new Promise<void>((r) => { open = r })
+  return { open, route: () => gate.then(res) as unknown as Response }
+}
 const rolesApi = (patch?: () => Response) => mockFetch({
   'GET /api/v1/roles': () => json(200, { data: [role] }),
   'GET /api/v1/permissions': () => json(200, { data: perms }),
@@ -293,10 +300,47 @@ test.each([
   [true, 'true'],
   [false, 'false'],
 ])('the first role opens by default only when the list and matrix sit side by side (wide %s)', async (wide, state) => {
-  vi.stubGlobal('matchMedia', (media: string) => ({ media, matches: wide && media === '(min-width: 80rem)' }))
+  wideScreen(wide)
   rolesApi()
   renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
   expect(await screen.findByRole('button', { name: /مدير/ })).toHaveAttribute('aria-pressed', state)
   if (wide) expect(await screen.findByRole('group', { name: 'الموظفون: عرض' })).toBeInTheDocument()
   else expect(screen.getByText('اختر دورًا لعرض صلاحياته.')).toBeInTheDocument()
+})
+
+test('on a wide screen the first role waits for the permissions, so its matrix never opens empty and dirty', async () => {
+  wideScreen(true)
+  const permissions = held(() => json(200, { data: perms }))
+  mockFetch({ 'GET /api/v1/roles': () => json(200, { data: [role] }), 'GET /api/v1/permissions': permissions.route })
+  renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
+  expect(await screen.findByRole('button', { name: /مدير/ })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.queryByRole('button', { name: 'حفظ التغييرات' })).toBeNull()
+  permissions.open()
+  pressed(within(await screen.findByRole('group', { name: 'الموظفون: عرض' })).getByRole('button', { name: 'الخاص به' }))
+  expect(screen.getByRole('button', { name: 'حفظ التغييرات' })).toBeDisabled()
+})
+
+test('on a wide screen Add role stays the ghost alternative while the roles load, with no pick-a-role note', async () => {
+  wideScreen(true)
+  const roles = held(() => json(200, { data: [role] }))
+  mockFetch({ 'GET /api/v1/roles': roles.route, 'GET /api/v1/permissions': () => json(200, { data: perms }) })
+  renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
+  expect(await screen.findByRole('button', { name: 'إضافة دور' })).not.toHaveClass('bg-primary')
+  expect(screen.queryByText('اختر دورًا لعرض صلاحياته.')).toBeNull()
+  roles.open()
+  expect(await screen.findByRole('button', { name: 'حفظ التغييرات' })).toHaveClass('bg-primary')
+  expect(screen.getByRole('button', { name: 'إضافة دور' })).not.toHaveClass('bg-primary')
+})
+
+test('on a wide screen a click on another role wins over the default', async () => {
+  wideScreen(true)
+  const hr = { id: 'r2', slug: 'hr', name: 'HR', name_ar: 'الموارد البشرية', permissions: ['audit_log.view.all'], users_count: 1 }
+  mockFetch({ 'GET /api/v1/roles': () => json(200, { data: [role, hr] }), 'GET /api/v1/permissions': () => json(200, { data: perms }) })
+  renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
+  expect(await screen.findByRole('button', { name: /مدير/ })).toHaveAttribute('aria-pressed', 'true')
+  await user.click(screen.getByRole('button', { name: /الموارد البشرية/ }))
+  expect(screen.getByRole('button', { name: /الموارد البشرية/ })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: /مدير/ })).toHaveAttribute('aria-pressed', 'false')
+  expect(await screen.findByRole('checkbox', { name: 'سجل التدقيق: عرض' })).toBeChecked()
+  pressed(within(screen.getByRole('group', { name: 'الموظفون: عرض' })).getByRole('button', { name: 'لا' }))
 })

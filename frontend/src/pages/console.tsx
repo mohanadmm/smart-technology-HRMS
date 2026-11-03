@@ -103,7 +103,7 @@ function SessionList({ account }: { account: Row }) {
           title={{ header: t('console.ip'), cell: (s) => <bdi dir="ltr">{s.ip_address ?? '—'}</bdi> }}
           fields={[
             // the table's cells are nowrap: a capped width keeps a long agent from widening the dialog; the title holds the full text
-            { header: t('console.userAgent'), cell: (s) => <div dir="ltr" className="truncate sm:max-w-40" title={s.user_agent ?? ''}>{s.user_agent ?? '—'}</div> },
+            { header: t('console.userAgent'), cell: (s) => <div dir="ltr" className="truncate sm:max-w-60" title={s.user_agent ?? ''}>{s.user_agent ?? '—'}</div> },
             { header: t('console.lastActivity'), cell: (s) => time(s.last_activity_at) },
           ]}
           actions={(s) => <Button type="button" variant="outline" size="sm" disabled={busy === s.id} onClick={() => revoke(s.id)}>{t('console.revoke')}</Button>}
@@ -330,15 +330,18 @@ export function RolesPage() {
   const [wide] = useState(() => window.matchMedia?.('(min-width: 80rem)').matches ?? false)
   const [adding, setAdding] = useState(false)
   const { data: roles = [], err: rolesErr, loading } = useApi<Row[]>(view ? '/roles' : null)
-  const { data: perms = [], err: permsErr } = useApi<Row[]>(view ? '/permissions' : null)
+  const { data: perms, err: permsErr, loading: permsLoading } = useApi<Row[]>(view ? '/permissions' : null)
   const err = rolesErr ?? permsErr
   const selected = picked ?? (wide ? roles[0]?.id : undefined)
   const role = roles.find((r) => r.id === selected)
+  // a wide screen counts as having a role open while it loads, so the header and the body never flip once the default arrives
+  const pending = loading || permsLoading
+  const open = !!role || (wide && pending)
   // while a role is open the matrix's Save changes is the screen's one solid button
   const add = manage ? { label: t('console.addRole'), onClick: () => setAdding(true) } : undefined
   return (
     <div className="space-y-6">
-      <PageHeader title={t('page.roles')} description={t('console.rolesSubtitle')} action={role ? undefined : add} secondary={role && add ? [add] : undefined} />
+      <PageHeader title={t('page.roles')} description={t('console.rolesSubtitle')} action={open ? undefined : add} secondary={open && add ? [add] : undefined} />
       {adding && <RoleDialog open onOpenChange={setAdding} />}
       <ErrorBanner err={err} shown={[]} />
       <div className="grid gap-6 xl:grid-cols-[18rem_1fr]">
@@ -352,8 +355,13 @@ export function RolesPage() {
             </button>
           ))}
         </Card>
-        {role ? (
+        {/* Matrix seeds its checks once from perms, so it mounts only after they load: empty perms would save as "grant nothing" */}
+        {role && perms ? (
           <Matrix key={`${role.id}:${role.permissions.join()}`} role={role} perms={perms} editable={manage} />
+        ) : open && pending ? (
+          <Card className="min-w-0 overflow-hidden">
+            <TableSkeleton />
+          </Card>
         ) : (
           <Card className="p-5 text-sm text-muted-foreground">{t('console.pickRole')}</Card>
         )}
