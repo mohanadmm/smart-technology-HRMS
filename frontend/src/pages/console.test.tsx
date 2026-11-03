@@ -344,3 +344,13 @@ test('on a wide screen a click on another role wins over the default', async () 
   expect(await screen.findByRole('checkbox', { name: 'سجل التدقيق: عرض' })).toBeChecked()
   pressed(within(screen.getByRole('group', { name: 'الموظفون: عرض' })).getByRole('button', { name: 'لا' }))
 })
+
+test('a scope control hugs its words and keeps them apart on one line', async () => {
+  rolesApi()
+  renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
+  await pickRole()
+  const group = screen.getByRole('group', { name: 'الموظفون: عرض' })
+  expect(group).toHaveClass('inline-flex')
+  expect(group).not.toHaveClass('flex')
+  expect(within(group).getByText('الخاص به', { ignore: '.sr-only' })).toHaveClass('px-1.5', 'whitespace-nowrap')
+})
