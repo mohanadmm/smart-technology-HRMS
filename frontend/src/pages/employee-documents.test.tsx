@@ -398,6 +398,11 @@ test('a PDF opens in an iframe when the browser shows PDFs', async () => {
   expect(frame).toHaveAttribute('src', 'blob:doc-1')
   expect(blobType()).toBe('application/pdf')
   expect(within(dialog).queryByRole('img')).toBeNull()
+  // iOS may draw only page 1 inside the iframe: the footer also opens the whole file
+  const open = within(dialog).getByRole('link', { name: 'فتح' })
+  expect(open).toHaveAttribute('href', 'blob:doc-1')
+  expect(open).toHaveAttribute('target', '_blank')
+  expect(open).toHaveAttribute('rel', 'noopener')
 })
 
 test('a PDF without an in-page viewer gets an Open link', async () => {

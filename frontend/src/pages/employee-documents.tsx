@@ -15,7 +15,7 @@ import { useAuth } from '@/lib/auth'
 import { useSave } from '@/lib/query'
 import { cn } from '@/lib/utils'
 
-export const DOC_KINDS = ['national_id_copy', 'work_stub', 'criminal_record', 'qualification', 'birth_certificate', 'insurance_form_6', 'photos', 'military_status', 'other']
+const DOC_KINDS = ['national_id_copy', 'work_stub', 'criminal_record', 'qualification', 'birth_certificate', 'insurance_form_6', 'photos', 'military_status', 'other']
 /** The only types the app accepts, uploads and renders, with their file extension (the server's EmployeeDocument::EXT; it checks the bytes against the same list). */
 const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' }
 const ACCEPT = Object.keys(EXT)
@@ -392,6 +392,8 @@ function ViewerFile({ empId, doc }: { empId: string; doc: Doc }) {
       </DialogBody>
       {url && (
         <DialogFooter>
+          {/* iOS Safari may draw only page 1 of a PDF inside the iframe; Open shows the whole file */}
+          {type === 'application/pdf' && navigator.pdfViewerEnabled && <a href={url} target="_blank" rel="noopener" className={buttonVariants({ variant: 'secondary' })}>{t('document.open')}</a>}
           <a href={url} download={`${name}.${Object.hasOwn(EXT, type) ? EXT[type] : 'bin'}`} className={buttonVariants({ variant: 'secondary' })}>{t('document.download')}</a>
         </DialogFooter>
       )}
