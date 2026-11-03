@@ -9,12 +9,14 @@ export function SegmentedControl<T extends string>({
   options,
   onChange,
   label,
+  disabled,
   className,
 }: {
   value: T
   options: SegmentedOption<T>[]
   onChange: (value: T) => void
   label: string
+  disabled?: boolean
   className?: string
 }) {
   return (
@@ -26,10 +28,11 @@ export function SegmentedControl<T extends string>({
             key={option.value}
             type="button"
             aria-pressed={on}
+            disabled={disabled}
             title={option.label}
             onClick={() => onChange(option.value)}
             className={cn(
-              'grid h-8 min-h-tap min-w-tap place-items-center rounded-lg px-1.5 text-table font-medium text-muted-foreground transition-colors hover:text-foreground',
+              'grid h-8 min-h-tap min-w-tap shrink-0 place-items-center rounded-lg px-1.5 text-table font-medium text-muted-foreground transition-colors enabled:hover:text-foreground',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
               on && 'bg-card text-foreground ring-1 ring-border',
             )}

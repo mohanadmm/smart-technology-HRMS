@@ -448,7 +448,7 @@
     "nextPeriod": "الفترة التالية",
     "periodRange": "من {{start}} إلى {{end}}",
     "employee": "الموظف",
-    "missingCount": "أيام غير مسجلة",
+    "periodLine": "الفترة من {{start}} إلى {{end}} · أيام غير مسجلة: {{missing}}",
     "locked": "مقفلة",
     "lock": "قفل الفترة",
     "reopen": "إعادة فتح الفترة",

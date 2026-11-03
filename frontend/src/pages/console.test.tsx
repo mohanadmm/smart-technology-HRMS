@@ -29,8 +29,16 @@ afterEach(() => {
 })
 
 const pickRole = async () => user.click(await screen.findByRole('button', { name: /مدير/ }))
-const scope = (group: string, option: string) => within(screen.getByRole('radiogroup', { name: group })).getByRole('radio', { name: option })
+const scope = (group: string, option: string) => within(screen.getByRole('group', { name: group })).getByRole('button', { name: option })
+const pressed = (b: HTMLElement) => expect(b).toHaveAttribute('aria-pressed', 'true')
 const sentIds = (patch: { mock: { calls: unknown[][] } }) => JSON.parse((patch.mock.calls[0] as [string, RequestInit])[1].body as string).permission_ids.sort()
+const wideScreen = (wide: boolean) => vi.stubGlobal('matchMedia', (media: string) => ({ media, matches: wide && media === '(min-width: 80rem)' }))
+/** A response held back until `open()`. */
+const held = (res: () => Response) => {
+  let open!: () => void
+  const gate = new Promise<void>((r) => { open = r })
+  return { open, route: () => gate.then(res) as unknown as Response }
+}
 const rolesApi = (patch?: () => Response) => mockFetch({
   'GET /api/v1/roles': () => json(200, { data: [role] }),
   'GET /api/v1/permissions': () => json(200, { data: perms }),
@@ -42,7 +50,7 @@ test('role matrix saves the checked permission ids', async () => {
   rolesApi(patch)
   renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
   await pickRole()
-  expect(scope('الموظفون: عرض', 'الخاص به')).toBeChecked()
+  pressed(scope('الموظفون: عرض', 'الخاص به'))
   expect(screen.getByRole('button', { name: 'حفظ التغييرات' })).toBeDisabled()
   await user.click(screen.getByRole('checkbox', { name: 'سجل التدقيق: عرض' }))
   await user.click(screen.getByRole('button', { name: 'حفظ التغييرات' }))
@@ -79,7 +87,7 @@ test('a refused save shows the error and puts the controls back to the role perm
   await user.click(screen.getByRole('button', { name: 'حفظ التغييرات' }))
   expect(await screen.findByText('آخر مدير للأدوار')).toBeInTheDocument()
   expect(screen.getByRole('checkbox', { name: 'سجل التدقيق: عرض' })).not.toBeChecked()
-  expect(scope('الموظفون: عرض', 'الخاص به')).toBeChecked()
+  pressed(scope('الموظفون: عرض', 'الخاص به'))
 })
 
 test('the controls are locked while a save is in flight', async () => {
@@ -97,8 +105,10 @@ test('without role.manage the matrix is read-only', async () => {
   renderWithAuth(<RolesPage />, ['role.view.all'])
   await pickRole()
   expect(screen.getAllByRole('checkbox')).toHaveLength(11)
-  expect(screen.getAllByRole('radiogroup')).toHaveLength(2)
-  for (const c of [...screen.getAllByRole('checkbox'), ...screen.getAllByRole('radio')]) expect(c).toBeDisabled()
+  expect(screen.getAllByRole('group')).toHaveLength(2)
+  const scopes = screen.getAllByRole('group').flatMap((g) => within(g).getAllByRole('button'))
+  expect(scopes).toHaveLength(6)
+  for (const c of [...screen.getAllByRole('checkbox'), ...scopes]) expect(c).toBeDisabled()
   expect(screen.queryByRole('button', { name: 'حفظ التغييرات' })).toBeNull()
 })
 
@@ -130,7 +140,7 @@ test('the accounts table shows role, status and locked badges', async () => {
   mockFetch({ 'GET /api/v1/users': () => json(200, { data: [{ ...account, locked_until: '2999-01-01T00:00:00Z' }], meta: { pagination } }), 'GET /api/v1/roles': () => json(200, { data: [role] }) })
   renderWithAuth(<AccountsPage />, ['user.view.all'])
   const row = await screen.findByRole('row', { name: /سارة/ })
-  expect(within(row).getAllByText('مدير')).toHaveLength(2) // under the name on phones, its own column from sm
+  expect(within(row).getByText('مدير')).toBeInTheDocument()
   expect(within(row).getByText('نشط')).toBeInTheDocument()
   expect(within(row).getByText('مقفل')).toBeInTheDocument()
 })
@@ -235,4 +245,114 @@ test('saving an account refreshes the account lookup the audit filter shares', a
   cleanup()
   renderWithAuth(<AuditPage />, ['audit_log.view.all', 'user.view.all'])
   expect(await screen.findByRole('option', { name: 'نور' })).toBeInTheDocument()
+})
+
+test('Add account is the solid header action and opens the create dialog', async () => {
+  mockFetch({ 'GET /api/v1/users': () => json(200, { data: [account], meta: { pagination } }), 'GET /api/v1/roles': () => json(200, { data: [role] }) })
+  renderWithAuth(<AccountsPage />, ['user.view.all', 'user.manage.all', 'role.view.all'])
+  const add = await screen.findByRole('button', { name: 'إضافة حساب' })
+  expect(add).toHaveClass('bg-primary')
+  await user.click(add)
+  expect(await screen.findByRole('dialog', { name: 'إضافة حساب' })).toBeInTheDocument()
+})
+
+test('the accounts list is a DataList: email keeps ltr and the active pill is the status cell', async () => {
+  mockFetch({ 'GET /api/v1/users': () => json(200, { data: [account], meta: { pagination } }) })
+  renderWithAuth(<AccountsPage />, ['user.view.all'])
+  const row = await screen.findByRole('row', { name: /سارة/ })
+  expect(screen.getByRole('table', { name: 'حسابات المستخدمين' })).toBeInTheDocument()
+  expect(within(row).getByText(account.email).closest('[dir="ltr"]')).not.toBeNull()
+  expect(within(row).getAllByRole('cell').at(-1)).toHaveTextContent('نشط')
+})
+
+test('the sessions list keeps ltr ip and user agent, the agent truncated with its full text as a title', async () => {
+  const ua = 'Mozilla/5.0 (Macintosh) Safari/605.1.15'
+  const del = vi.fn(() => json(200, { data: {} }))
+  mockFetch({ 'GET /api/v1/users': () => json(200, { data: [account], meta: { pagination } }),
+    'GET /api/v1/users/u2/sessions': () => json(200, { data: [{ id: 's1', ip_address: '10.0.0.7', user_agent: ua, last_activity_at: '2026-11-01T08:00:00Z' }] }),
+    'DELETE /api/v1/users/u2/sessions/s1': del })
+  renderWithAuth(<AccountsPage />, ['user.view.all', 'user.manage.all'])
+  const row = await screen.findByRole('row', { name: /سارة/ })
+  await user.click(within(row).getByRole('button', { name: 'الإجراءات' }))
+  await user.click(await screen.findByRole('menuitem', { name: 'الجلسات النشطة' }))
+  const dialog = await screen.findByRole('dialog')
+  const session = await within(dialog).findByRole('row', { name: /10\.0\.0\.7/ })
+  expect(within(session).getByText('10.0.0.7').closest('[dir="ltr"]')).not.toBeNull()
+  const agent = within(session).getByTitle(ua)
+  expect(agent).toHaveAttribute('dir', 'ltr')
+  expect(agent).toHaveClass('truncate')
+  await user.click(within(session).getByRole('button', { name: 'إنهاء الجلسة' }))
+  await waitFor(() => expect(del).toHaveBeenCalledOnce())
+})
+
+test('Add role is the solid header action until a role is open, then a ghost beside the solid Save', async () => {
+  rolesApi()
+  renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
+  expect(await screen.findByRole('button', { name: 'إضافة دور' })).toHaveClass('bg-primary')
+  await pickRole()
+  expect(screen.getByRole('button', { name: 'إضافة دور' })).not.toHaveClass('bg-primary')
+  expect(screen.getByRole('button', { name: 'حفظ التغييرات' })).toHaveClass('bg-primary')
+  await user.click(screen.getByRole('button', { name: 'إضافة دور' }))
+  expect(await screen.findByRole('dialog', { name: 'إضافة دور' })).toBeInTheDocument()
+})
+
+test.each([
+  [true, 'true'],
+  [false, 'false'],
+])('the first role opens by default only when the list and matrix sit side by side (wide %s)', async (wide, state) => {
+  wideScreen(wide)
+  rolesApi()
+  renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
+  expect(await screen.findByRole('button', { name: /مدير/ })).toHaveAttribute('aria-pressed', state)
+  if (wide) expect(await screen.findByRole('group', { name: 'الموظفون: عرض' })).toBeInTheDocument()
+  else expect(screen.getByText('اختر دورًا لعرض صلاحياته.')).toBeInTheDocument()
+})
+
+test('on a wide screen the first role waits for the permissions, so its matrix never opens empty and dirty', async () => {
+  wideScreen(true)
+  const permissions = held(() => json(200, { data: perms }))
+  mockFetch({ 'GET /api/v1/roles': () => json(200, { data: [role] }), 'GET /api/v1/permissions': permissions.route })
+  renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
+  expect(await screen.findByRole('button', { name: /مدير/ })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.queryByRole('button', { name: 'حفظ التغييرات' })).toBeNull()
+  permissions.open()
+  pressed(within(await screen.findByRole('group', { name: 'الموظفون: عرض' })).getByRole('button', { name: 'الخاص به' }))
+  expect(screen.getByRole('button', { name: 'حفظ التغييرات' })).toBeDisabled()
+})
+
+test('on a wide screen Add role stays the ghost alternative while the roles load, with no pick-a-role note', async () => {
+  wideScreen(true)
+  const roles = held(() => json(200, { data: [role] }))
+  mockFetch({ 'GET /api/v1/roles': roles.route, 'GET /api/v1/permissions': () => json(200, { data: perms }) })
+  renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
+  expect(await screen.findByRole('button', { name: 'إضافة دور' })).not.toHaveClass('bg-primary')
+  expect(screen.queryByText('اختر دورًا لعرض صلاحياته.')).toBeNull()
+  roles.open()
+  expect(await screen.findByRole('button', { name: 'حفظ التغييرات' })).toHaveClass('bg-primary')
+  expect(screen.getByRole('button', { name: 'إضافة دور' })).not.toHaveClass('bg-primary')
+})
+
+test('on a wide screen a click on another role wins over the default', async () => {
+  wideScreen(true)
+  const hr = { id: 'r2', slug: 'hr', name: 'HR', name_ar: 'الموارد البشرية', permissions: ['audit_log.view.all'], users_count: 1 }
+  mockFetch({ 'GET /api/v1/roles': () => json(200, { data: [role, hr] }), 'GET /api/v1/permissions': () => json(200, { data: perms }) })
+  renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
+  expect(await screen.findByRole('button', { name: /مدير/ })).toHaveAttribute('aria-pressed', 'true')
+  await user.click(screen.getByRole('button', { name: /الموارد البشرية/ }))
+  expect(screen.getByRole('button', { name: /الموارد البشرية/ })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: /مدير/ })).toHaveAttribute('aria-pressed', 'false')
+  expect(await screen.findByRole('checkbox', { name: 'سجل التدقيق: عرض' })).toBeChecked()
+  pressed(within(screen.getByRole('group', { name: 'الموظفون: عرض' })).getByRole('button', { name: 'لا' }))
+})
+
+test('a scope control hugs its words and keeps them apart on one line', async () => {
+  rolesApi()
+  renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
+  await pickRole()
+  const group = screen.getByRole('group', { name: 'الموظفون: عرض' })
+  expect(group).toHaveClass('inline-flex', 'w-max') // w-max: the auto-layout table sizes the cell from the group's min-content
+  expect(group).not.toHaveClass('flex')
+  expect(within(group).getByText('الخاص به', { ignore: '.sr-only' })).toHaveClass('px-1.5', 'whitespace-nowrap')
+  // min-w-tap replaces a flex item's min-width:auto, so without shrink-0 the table squeezes the pills below their words
+  for (const b of within(group).getAllByRole('button')) expect(b).toHaveClass('shrink-0')
 })

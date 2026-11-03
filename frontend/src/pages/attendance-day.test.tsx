@@ -128,7 +128,9 @@ test('a 409 keeps the typed values and offers the latest version', async () => {
   await user.selectOptions(await siteSelect(), 's1')
   await user.type(screen.getByLabelText('السلفة'), '500')
   await user.click(screen.getByRole('button', { name: 'حفظ' }))
-  expect(await screen.findByText('عدّل مستخدم آخر هذا اليوم. حمّل آخر نسخة ثم أعد إدخال تغييراتك.')).toBeInTheDocument()
+  const conflict = await screen.findByText('عدّل مستخدم آخر هذا اليوم. حمّل آخر نسخة ثم أعد إدخال تغييراتك.')
+  expect(conflict.closest('.rounded-lg')).toHaveClass('border-warning-border', 'bg-warning-bg') // the warning Alert
+  expect(conflict.closest('[role="alert"]')).toHaveTextContent('تحميل آخر نسخة') // it follows Save, so it is still announced
   expect(screen.getByLabelText('السلفة')).toHaveValue('500')
   await user.click(screen.getByRole('button', { name: 'تحميل آخر نسخة' }))
   await waitFor(() => expect(get).toHaveBeenCalledTimes(3)) // open, the refusal's own refetch (form kept), then the reload
@@ -181,7 +183,9 @@ test('read-only when the period is locked or without attendance.edit', async () 
   expect(screen.getByLabelText('ملاحظات')).toBeDisabled()
   expect(screen.getByLabelText('السلفة')).toBeDisabled()
   const note = screen.getByText('للعرض فقط: لا تملك صلاحية تعديل الحضور.')
-  expect(note.parentElement).toHaveClass('[&_:disabled]:opacity-100') // full-strength values on the muted fill
+  expect(note.closest('.overflow-y-auto')).toHaveClass('[&_:disabled]:opacity-100') // full-strength values on the muted fill
+  expect(note.closest('.rounded-lg')).toHaveClass('border', 'bg-muted') // a neutral Alert, styled like content
+  expect(note.closest('[role]')).toBe(screen.getByRole('dialog')) // a static note, not a live region
   expect(screen.queryByRole('button', { name: 'حفظ' })).toBeNull()
 })
 

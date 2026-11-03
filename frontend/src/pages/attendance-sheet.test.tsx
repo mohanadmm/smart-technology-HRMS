@@ -564,7 +564,7 @@ test('the header keeps its period while a day inside it loads', async () => {
   await table()
   await user.click(within(screen.getByRole('group', { name: 'أيام الفترة' })).getByRole('button', { name: /^2026-10-17/ }))
   await waitFor(() => expect(calls).toBe(2))
-  expect(screen.getByText('2026-09-26').parentElement).toHaveTextContent('من 2026-09-26 إلى 2026-10-25')
+  expect(screen.getByRole('button', { name: 'الفترة السابقة' }).nextElementSibling).toHaveTextContent('من 2026-09-26 إلى 2026-10-25')
   expect(within(await table()).getByRole('button', { name: 'حاضر Engineer-1' })).toBeInTheDocument() // still writable
 })
 
@@ -614,7 +614,7 @@ test('while another period or group loads, the header shows no stale range, miss
   expect(screen.queryByText('2026-09-26')).not.toBeInTheDocument() // the range's start date
   expect(screen.queryByRole('button', { name: 'قفل الفترة' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'الفترة السابقة' })).toBeDisabled()
-  expect(screen.getByRole('group', { name: 'أيام غير مسجلة' })).toHaveTextContent('—')
+  expect(screen.queryByText(/أيام غير مسجلة:/)).not.toBeInTheDocument() // the header line waits for the real period
 })
 
 test('a group change does not show the old group\'s period', async () => {

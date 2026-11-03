@@ -1,10 +1,11 @@
-import { ArrowRight, Download, FileSearch, Save, Upload } from 'lucide-react'
+import { Download, FileSearch, Save, Upload } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Alert } from '@/components/common/Alert'
+import { DataList } from '@/components/common/DataList'
 import { ErrorBanner, Field, localName, ltrDates } from '@/components/form'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api, apiBlob, ApiError } from '@/lib/api'
 import { useSave } from '@/lib/query'
 import { cn } from '@/lib/utils'
@@ -19,7 +20,9 @@ type Preview = { summary: { cells: number; changes: number; unchanged: number; e
 type Result = { applied: number; unchanged: number; errors: CellError[] }
 
 /** The Excel cell HR looks for, e.g. G3, drawn left to right; a row error has no column, so it is just the row number. */
-const cellLabel = (c: Cell) => <bdi dir="ltr" className="font-medium tabular">{`${c.column ?? ''}${c.row}`}</bdi>
+const cellLabel = (c: Cell) => <bdi dir="ltr" className="font-medium">{`${c.column ?? ''}${c.row}`}</bdi>
+/** A step's number beside it; the list itself carries the order for a screen reader. */
+const STEP = 'grid size-6 shrink-0 place-items-center rounded-full border text-xs font-semibold text-muted-foreground'
 const dash = (v: string | number | null) => v ?? '—'
 /** The server's error codes in the UI language (the server's message is in the request's); its own words only for a code this UI does not know. */
 const errorKey = (code: string) => `attendance.import.error.${code}`
@@ -79,42 +82,54 @@ export function ImportTab({ group, periodStart }: { group: string; periodStart: 
     <div className="space-y-4">
       <Card className="grid gap-4 p-5">
         <p className="text-sm text-muted-foreground">{t('attendance.import.desc')}</p>
-        <div className="grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-end">
-          <Button type="button" variant="outline" className="h-11" disabled={busy} onClick={download}>
-            <Download aria-hidden /> {t('attendance.import.download')}
-          </Button>
-          <Field name="file" label={t('attendance.import.file')} errs={bad ? { file: t('attendance.import.badFile') } : {}}>
-            {(p) => (
-              // the real input stays (named by the field label) but hidden: its own "Choose File" text is in the browser's language, not the app's
-              <div className="flex min-w-0 items-center gap-3">
-                <input {...p} type="file" accept=".xlsx" className="peer sr-only" disabled={busy} onChange={(e) => pick(e.target.files?.[0])} />
-                <label htmlFor={p.id} aria-hidden className={cn(buttonVariants({ variant: 'outline' }), 'h-11 cursor-pointer peer-focus-visible:outline-2 peer-focus-visible:outline-solid peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring peer-disabled:pointer-events-none peer-disabled:opacity-50 peer-aria-invalid:border-destructive')}>
-                  <Upload aria-hidden /> {t('attendance.import.choose')}
-                </label>
-                <span className="min-w-0 text-sm break-all text-muted-foreground">{file?.name ?? t('attendance.import.noFile')}</span>
-              </div>
-            )}
-          </Field>
-          <Button type="button" variant={preview ? 'outline' : 'default'} className="h-11" disabled={busy || !file} onClick={check}>
-            <FileSearch aria-hidden /> {t('attendance.import.preview')}
-          </Button>
-        </div>
+        {/* rule 3: the flow's three steps, numbered in one list; role="list" because Safari drops it with list-style none */}
+        <ol role="list" className="grid gap-4">
+          <li className="flex items-center gap-3">
+            <span aria-hidden className={STEP}>1</span>
+            <Button type="button" variant="outline" disabled={busy} onClick={download}>
+              <Download aria-hidden /> {t('attendance.import.download')}
+            </Button>
+          </li>
+          <li className="flex items-start gap-3">
+            <span aria-hidden className={STEP}>2</span>
+            <div className="min-w-0 flex-1">
+              <Field name="file" label={t('attendance.import.file')} errs={bad ? { file: t('attendance.import.badFile') } : {}}>
+                {(p) => (
+                  // the real input stays (named by the field label) but hidden: its own "Choose File" text is in the browser's language, not the app's
+                  <div className="flex min-w-0 items-center gap-3">
+                    <input {...p} type="file" accept=".xlsx" className="peer sr-only" disabled={busy} onChange={(e) => pick(e.target.files?.[0])} />
+                    <label htmlFor={p.id} aria-hidden className={cn(buttonVariants({ variant: 'outline' }), 'cursor-pointer peer-focus-visible:outline-2 peer-focus-visible:outline-solid peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring peer-disabled:pointer-events-none peer-disabled:opacity-50 peer-aria-invalid:border-destructive')}>
+                      <Upload aria-hidden /> {t('attendance.import.choose')}
+                    </label>
+                    <span className="min-w-0 text-sm break-all text-muted-foreground">{file?.name ?? t('attendance.import.noFile')}</span>
+                  </div>
+                )}
+              </Field>
+            </div>
+          </li>
+          <li className="flex items-center gap-3">
+            <span aria-hidden className={STEP}>3</span>
+            <Button type="button" variant={preview ? 'outline' : 'default'} disabled={busy || !file} onClick={check}>
+              <FileSearch aria-hidden /> {t('attendance.import.preview')}
+            </Button>
+          </li>
+        </ol>
         <ErrorBanner err={fileErr} shown={[]} />
         {preview && (
           <div className="grid gap-3 border-t pt-4 sm:flex sm:flex-wrap sm:items-center">
             <div className="grid flex-1 gap-1">
-              <p className="font-medium tabular">{t('attendance.import.summary', preview.summary)}</p>
+              <p className="font-medium">{t('attendance.import.summary', preview.summary)}</p>
               <p className="text-sm text-muted-foreground">{t('attendance.import.notSaved')}</p>
             </div>
-            <Button type="button" className="h-11" disabled={busy || preview.summary.changes === 0} onClick={confirm}>
+            <Button type="button" disabled={busy || preview.summary.changes === 0} onClick={confirm}>
               <Save aria-hidden /> {t('attendance.import.confirm')}
             </Button>
           </div>
         )}
         {result && (
-          <p role="status" className="rounded-md border border-success-border bg-success-bg p-3 text-sm font-medium text-success">
-            {t('attendance.import.done', { saved: t('attendance.import.saved', { count: result.applied }), skipped: t('attendance.import.skipped', { count: result.errors.length }) })}
-          </p>
+          <Alert tone="success">
+            <p className="font-medium">{t('attendance.import.done', { saved: t('attendance.import.saved', { count: result.applied }), skipped: t('attendance.import.skipped', { count: result.errors.length }) })}</p>
+          </Alert>
         )}
       </Card>
       {!!preview?.changes.length && <Changes rows={preview.changes} />}
@@ -123,63 +138,35 @@ export function ImportTab({ group, periodStart }: { group: string; periodStart: 
   )
 }
 
-// ponytail: every row renders (a table from xl, cards below it); fine for a period's few thousand cells, paginate if files grow past that
+// ponytail: every row renders on one page; fine for a period's few thousand cells, pass DataList a page if files grow past that
 function Changes({ rows }: { rows: Change[] }) {
   const { t, i18n } = useTranslation()
   const title = t('attendance.import.changes')
-  const employee = (c: Change) => (
-    <span className="flex min-w-0 items-center gap-2">
-      <span className="tabular text-muted-foreground">{c.code}</span>
-      <bdi className="min-w-0 break-words">{localName(c, i18n.language)}</bdi>
-    </span>
-  )
   return (
     <Card className="overflow-hidden">
       <CardHeader className="border-b">
         <CardTitle>{title}</CardTitle>
       </CardHeader>
-      <div className="hidden xl:block">
-        <Table aria-label={title}>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('attendance.import.cell')}</TableHead>
-              <TableHead>{t('attendance.employee')}</TableHead>
-              <TableHead>{t('attendance.import.date')}</TableHead>
-              <TableHead>{t('attendance.import.from')}</TableHead>
-              <TableHead>{t('attendance.import.to')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((c) => (
-              <TableRow key={`${c.column}${c.row}`}>
-                <TableCell>{cellLabel(c)}</TableCell>
-                <TableCell className="whitespace-normal">{employee(c)}</TableCell>
-                <TableCell className="tabular">{ltrDates(c.date)}</TableCell>
-                <TableCell className="whitespace-normal text-muted-foreground">{dash(c.from)}</TableCell>
-                <TableCell className="font-medium whitespace-normal">{c.to}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-      <ul aria-label={title} className="divide-y xl:hidden">
-        {rows.map((c) => (
-          <li key={`${c.column}${c.row}`} className="grid gap-2 p-4 text-sm">
-            <div className="flex items-center justify-between gap-3">
-              {cellLabel(c)}
-              <span className="text-muted-foreground tabular">{ltrDates(c.date)}</span>
-            </div>
-            {employee(c)}
-            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 break-words">
-              <span className="sr-only">{t('attendance.import.from')}</span>
-              <span className="text-muted-foreground">{dash(c.from)}</span>
-              <ArrowRight className="size-4 shrink-0 text-muted-foreground rtl:-scale-x-100" aria-hidden />
-              <span className="sr-only">{t('attendance.import.to')}</span>
-              <span className="font-medium">{c.to}</span>
-            </p>
-          </li>
-        ))}
-      </ul>
+      <DataList
+        label={title}
+        rows={rows}
+        rowKey={(c) => `${c.column}${c.row}`}
+        title={{ header: t('attendance.import.cell'), cell: cellLabel }}
+        fields={[
+          {
+            header: t('attendance.employee'),
+            cell: (c) => (
+              <span className="inline-flex items-center gap-2 whitespace-normal">
+                <span className="text-muted-foreground">{c.code}</span>
+                <bdi>{localName(c, i18n.language)}</bdi>
+              </span>
+            ),
+          },
+          { header: t('attendance.import.date'), cell: (c) => ltrDates(c.date) },
+          { header: t('attendance.import.from'), cell: (c) => <span className="whitespace-normal text-muted-foreground">{dash(c.from)}</span> },
+          { header: t('attendance.import.to'), cell: (c) => <span className="font-medium whitespace-normal">{c.to}</span> },
+        ]}
+      />
     </Card>
   )
 }
@@ -187,48 +174,22 @@ function Changes({ rows }: { rows: Change[] }) {
 function Errors({ rows }: { rows: CellError[] }) {
   const { t } = useTranslation()
   const title = t('attendance.import.errors')
-  const message = (e: CellError) => <bdi>{t(errorKey(e.error), { defaultValue: e.message })}</bdi>
   return (
     <Card className="overflow-hidden">
       <CardHeader className="border-b">
         <CardTitle className="text-destructive">{title}</CardTitle>
       </CardHeader>
-      <div className="hidden xl:block">
-        <Table aria-label={title}>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('attendance.import.cell')}</TableHead>
-              <TableHead>{t('employee.code')}</TableHead>
-              <TableHead>{t('attendance.import.date')}</TableHead>
-              <TableHead>{t('attendance.import.message')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((e) => (
-              <TableRow key={`${e.column}${e.row}`}>
-                <TableCell>{cellLabel(e)}</TableCell>
-                <TableCell className="tabular">{dash(e.code)}</TableCell>
-                <TableCell className="tabular">{e.date ? ltrDates(e.date) : '—'}</TableCell>
-                <TableCell className="whitespace-normal text-destructive">{message(e)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-      <ul aria-label={title} className="divide-y xl:hidden">
-        {rows.map((e) => (
-          <li key={`${e.column}${e.row}`} className="grid gap-2 p-4 text-sm">
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2">
-                {cellLabel(e)}
-                <span className="text-muted-foreground tabular">{dash(e.code)}</span>
-              </span>
-              {e.date && <span className="text-muted-foreground tabular">{ltrDates(e.date)}</span>}
-            </div>
-            <p className="break-words text-destructive">{message(e)}</p>
-          </li>
-        ))}
-      </ul>
+      <DataList
+        label={title}
+        rows={rows}
+        rowKey={(e) => `${e.column}${e.row}`}
+        title={{ header: t('attendance.import.cell'), cell: cellLabel }}
+        fields={[
+          { header: t('employee.code'), cell: (e) => dash(e.code) },
+          { header: t('attendance.import.date'), cell: (e) => (e.date ? ltrDates(e.date) : '—') },
+          { header: t('attendance.import.message'), cell: (e) => <bdi className="whitespace-normal text-destructive">{t(errorKey(e.error), { defaultValue: e.message })}</bdi> },
+        ]}
+      />
     </Card>
   )
 }

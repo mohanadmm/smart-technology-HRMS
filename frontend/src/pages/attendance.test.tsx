@@ -32,7 +32,27 @@ test('the grid shows each employee per day with missing and derived days marked'
   expect(screen.getByRole('button', { name: 'Engineer-1 2026-10-03: غير مسجل' })).toHaveClass('bg-warning/15')
   expect(screen.getByRole('button', { name: 'Engineer-1 2026-10-01: Site-1' })).toHaveClass('focus-visible:outline-solid') // outline-none alone would hide the focus ring
   expect(screen.getByRole('button', { name: 'Engineer-1 2026-10-21: لم يأتِ بعد' })).toBeDisabled()
-  expect(screen.getByRole('group', { name: 'أيام غير مسجلة' })).toHaveTextContent('19')
+})
+
+test('the header line under the title names the period and its missing count', async () => {
+  mockFetch(routes)
+  renderWithAuth(<AttendancePage />, ['attendance.view.all'], { path: '/attendance?group=engineer&tab=grid' })
+  const line = await screen.findByText(/أيام غير مسجلة: 19/)
+  expect(line).toHaveTextContent('الفترة من 2026-09-26 إلى 2026-10-25 · أيام غير مسجلة: 19')
+  for (const d of ['2026-09-26', '2026-10-25']) expect(within(line).getByText(d)).toHaveAttribute('dir', 'ltr')
+  expect(screen.getByRole('heading', { level: 1 }).nextElementSibling).toBe(line)
+})
+
+test.each([
+  ['grid', 'bg-primary'],
+  ['sheet', 'hover:bg-muted'],
+  ['import', 'hover:bg-muted'],
+])('Lock is the solid header action on the grid tab and a ghost alternative elsewhere (%s)', async (tab, look) => {
+  mockFetch({ ...routes, 'GET /api/v1/attendance/sheet': () => new Promise<Response>(() => {}) as unknown as Response })
+  renderWithAuth(<AttendancePage />, lockPerms, { path: `/attendance?group=engineer&tab=${tab}&period=2026-09-26&date=2026-10-01` })
+  const lock = await screen.findByRole('button', { name: 'قفل الفترة' })
+  expect(lock).toHaveClass(look)
+  if (tab !== 'grid') expect(lock).not.toHaveClass('bg-primary')
 })
 
 test('the grid isolates a Latin name from the employee code so RTL does not glue them', async () => {
@@ -44,7 +64,8 @@ test('the grid isolates a Latin name from the employee code so RTL does not glue
 test('the period range stays on one line and its row wraps instead', async () => {
   mockFetch(routes)
   renderWithAuth(<AttendancePage />, ['attendance.view.all'], { path: '/attendance?group=engineer&tab=grid' })
-  const range = (await screen.findByText('2026-09-26')).parentElement!
+  await screen.findAllByText('2026-09-26')
+  const range = screen.getByRole('button', { name: 'الفترة السابقة' }).nextElementSibling!
   expect(range).toHaveTextContent('من 2026-09-26 إلى 2026-10-25')
   expect(range).toHaveClass('whitespace-nowrap')
   expect(range.parentElement).toHaveClass('flex-wrap', 'gap-1') // gap-2 pushes the next arrow onto a second line at 375 px ar
@@ -54,7 +75,7 @@ test('the period range and the day editor title draw each ISO date left to right
   mockFetch({ ...routes, 'GET /api/v1/attendance/days/e1/2026-10-03': () => json(200, { data: { ...cell('2026-10-03', 'missing'), employee_id: 'e1', type: 'engineer', version: null,
     fields: ['in_time'], leave_day_fields: [], hints: {}, period: { start: '2026-09-26', end: '2026-10-25', is_locked: false } } }) })
   renderWithAuth(<AttendancePage />, ['attendance.view.all'], { path: '/attendance?group=engineer&tab=grid' })
-  for (const d of ['2026-09-26', '2026-10-25']) expect(await screen.findByText(d)).toHaveAttribute('dir', 'ltr')
+  for (const d of ['2026-09-26', '2026-10-25']) for (const el of await screen.findAllByText(d)) expect(el).toHaveAttribute('dir', 'ltr')
   await user.click(await screen.findByRole('button', { name: 'Engineer-1 2026-10-03: غير مسجل' }))
   const editor = await screen.findByRole('dialog', { name: 'يوم 2026-10-03 — Engineer-1' })
   expect(within(editor).getByText('2026-10-03')).toHaveAttribute('dir', 'ltr')
@@ -152,6 +173,9 @@ test('reopen sends the reason', async () => {
   renderWithAuth(<AttendancePage />, lockPerms, { path: '/attendance?group=engineer&tab=grid' })
   expect(await screen.findByText(/قفلها HR-1 في/)).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'قفل الفترة' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'إعادة فتح الفترة' })).toHaveClass('hover:bg-muted') // a ghost alternative, never the main action
+  expect(screen.getByRole('button', { name: 'إعادة فتح الفترة' })).not.toHaveClass('bg-primary')
+  expect(screen.getByRole('button', { name: 'إعادة فتح الفترة' })).not.toHaveClass('border')
   await user.click(screen.getByRole('button', { name: 'إعادة فتح الفترة' }))
   const dialog = await screen.findByRole('dialog', { name: 'إعادة فتح حضور الفترة' })
   await user.type(within(dialog).getByLabelText('سبب إعادة الفتح'), 'Correction')

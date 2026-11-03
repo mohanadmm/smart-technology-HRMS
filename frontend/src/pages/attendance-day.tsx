@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { Alert } from '@/components/common/Alert'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { ErrorBanner, Field, localName, ltrDates, type Row, SelectField, stopAtMissingPeriod, TextField, toErrs, useForm } from '@/components/form'
 import { TableSkeleton } from '@/components/layout/PageSkeleton'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/input'
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { DAY_VALUES as VALUES } from '@/lib/day-sheet'
@@ -49,10 +50,10 @@ function DayBody({ employee, date, onDone, onReload }: { employee: Row; date: st
   const ready = day.ready && day.data && sites.data
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2 border-b p-5 pe-14">
+      <SheetHeader className="flex-row flex-wrap items-center gap-2">
         <SheetTitle>{ltrDates(t('attendance.day.title', { date, name: localName(employee, i18n.language) }))}</SheetTitle>
         {ready && day.data?.source && <StatusBadge variant="neutral" label={t(`attendance.source.${day.data.source}`)} />}
-      </div>
+      </SheetHeader>
       {ready ? (
         <DayForm day={day.data!} sites={sites.data!} path={path} loadErr={err} onDone={onDone} onReload={onReload} />
       ) : (
@@ -123,18 +124,21 @@ function DayForm({ day, sites, path, loadErr, onDone, onReload }: { day: Day; si
   return (
     <>
       {/* read-only: the controls' own disabled:opacity-50 would wash out the muted fill and the values */}
-      <div className={`grid flex-1 content-start gap-4 overflow-y-auto overscroll-contain p-5 [&_input]:h-11 [&_select]:h-11 [&_input:disabled]:bg-muted [&_textarea:disabled]:bg-muted [&_select:disabled]:bg-muted ${readOnly ? '[&_:disabled]:opacity-100' : ''}`}>
-        {locked && <p className="rounded-md bg-muted p-3 text-sm">{t('attendance.day.lockedNote')}</p>}
-        {readOnly && !locked && <p className="rounded-md bg-muted p-3 text-sm">{t('attendance.day.readOnlyNote')}</p>}
-        {day.state === 'derived' && <p className="rounded-md bg-muted p-3 text-sm">{t('attendance.day.derivedNote', { type: leaveName })}</p>}
-        {day.state === 'missing' && <p className="rounded-md bg-muted p-3 text-sm">{t('attendance.day.missingNote')}</p>}
+      <div className={`grid flex-1 content-start gap-4 overflow-y-auto overscroll-contain p-5 [&_input:disabled]:bg-muted [&_textarea:disabled]:bg-muted [&_select:disabled]:bg-muted ${readOnly ? '[&_:disabled]:opacity-100' : ''}`}>
+        {locked && <Alert tone="neutral">{t('attendance.day.lockedNote')}</Alert>}
+        {readOnly && !locked && <Alert tone="neutral">{t('attendance.day.readOnlyNote')}</Alert>}
+        {day.state === 'derived' && <Alert tone="neutral">{t('attendance.day.derivedNote', { type: leaveName })}</Alert>}
+        {day.state === 'missing' && <Alert tone="neutral">{t('attendance.day.missingNote')}</Alert>}
         <ErrorBanner err={loadErr} shown={[]} />
         {conflict ? (
-          <div role="alert" className="flex flex-wrap items-center gap-3 rounded-md border border-destructive p-3 text-sm text-destructive">
-            <p className="flex-1">{t('attendance.day.conflict')}</p>
-            <Button type="button" variant="outline" className="h-11" onClick={onReload}>
-              {t('attendance.day.loadLatest')}
-            </Button>
+          // it follows a Save, so it is announced even though a warning Alert has no role of its own
+          <div role="alert">
+            <Alert tone="warning">
+              <p>{t('attendance.day.conflict')}</p>
+              <Button type="button" variant="outline" className="mt-2" onClick={onReload}>
+                {t('attendance.day.loadLatest')}
+              </Button>
+            </Alert>
           </div>
         ) : (
           <ErrorBanner err={err} shown={[...shown, 'site_id']} />
@@ -143,16 +147,16 @@ function DayForm({ day, sites, path, loadErr, onDone, onReload }: { day: Day; si
         {shown.map(field)}
       </div>
       {!readOnly && (
-        <div className="flex flex-wrap gap-2 border-t p-4">
-          <Button type="button" className="h-11" disabled={busy} onClick={save}>
-            {t('common.save')}
-          </Button>
+        <SheetFooter>
           {day.state === 'stored' && (
-            <Button type="button" variant="outline" className="h-11 text-destructive" disabled={busy} onClick={clear}>
+            <Button type="button" variant="outline" className="text-destructive" disabled={busy} onClick={clear}>
               {t('attendance.day.clear')}
             </Button>
           )}
-        </div>
+          <Button type="button" disabled={busy} onClick={save}>
+            {t('common.save')}
+          </Button>
+        </SheetFooter>
       )}
     </>
   )

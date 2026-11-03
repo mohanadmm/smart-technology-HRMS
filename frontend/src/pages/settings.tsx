@@ -75,7 +75,7 @@ function RulesForm({ initial, loadErr }: { initial: Row; loadErr?: unknown }) {
         <legend className="mb-1.5 text-[13px] font-medium leading-none text-foreground">{t(`rule.${k}`)}</legend>
         <div className="flex flex-wrap gap-x-4 gap-y-2">
           {DAYS.map((d) => (
-            <label key={d} className="flex min-h-11 items-center gap-2 text-sm">
+            <label key={d} className="flex min-h-tap items-center gap-2 text-sm">
               <input type="checkbox" checked={days(k).includes(d)} onChange={(e) => set(k, (e.target.checked ? [...days(k), d] : days(k).filter((x) => x !== d)).join(','))} />
               {t(`weekday.${d}`)}
             </label>

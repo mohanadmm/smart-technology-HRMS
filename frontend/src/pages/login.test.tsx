@@ -74,3 +74,9 @@ test('canDo matches a whole action prefix or an exact permission', () => {
   expect(canDo(['employee.view.all'], 'employee.view.all')).toBe(true)
   expect(canDo([], 'employee.view')).toBe(false)
 })
+
+test('the password key on a phone keyboard says go', () => {
+  mockFetch({})
+  renderApp('/login')
+  expect(screen.getByLabelText('كلمة المرور')).toHaveAttribute('enterkeyhint', 'go')
+})
