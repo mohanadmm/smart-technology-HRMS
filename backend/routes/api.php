@@ -10,6 +10,7 @@ use App\Modules\Employees\Presentation\EmployeeDocumentController;
 use App\Modules\Identity\Presentation\AuthController;
 use App\Modules\Identity\Presentation\RoleController;
 use App\Modules\Identity\Presentation\UserController;
+use App\Modules\Leave\Presentation\LeaveBalanceController;
 use App\Modules\Notifications\Presentation\NotificationController;
 use App\Modules\Settings\Presentation\SettingController;
 use App\Modules\Sites\Presentation\FareController;
@@ -150,4 +151,6 @@ Route::middleware('auth')->group(function (): void {
             Route::patch('roles/{role}/permissions', 'syncPermissions')->middleware('permission:role.manage');
         });
     });
+
+    Route::get('employees/{employee}/leave', [LeaveBalanceController::class, 'show'])->middleware(['permission:leave.view', 'employee.scope'])->whereUuid('employee');
 });

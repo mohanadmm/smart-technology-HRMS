@@ -13,6 +13,8 @@ final class SettingController
 {
     private const INTEGER = 'regex:/^\d{1,3}$/D';
 
+    private const PERCENT = 'regex:/^(100|\d{1,2})$/D';
+
     private const DECIMAL = 'regex:/^\d{1,6}(\.\d{1,6})?$/D';
 
     private const TIME = 'date_format:H:i';
@@ -37,6 +39,7 @@ final class SettingController
         'leave_days_under_one_year' => self::INTEGER,
         'leave_days_one_year_plus' => self::INTEGER,
         'leave_casual_days' => self::INTEGER,
+        'sick_leave_pay_percent' => self::PERCENT,
     ];
 
     public function __construct(private readonly BusinessRules $rules) {}

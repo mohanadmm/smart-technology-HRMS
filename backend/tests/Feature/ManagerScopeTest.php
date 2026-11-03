@@ -115,7 +115,7 @@ class ManagerScopeTest extends TestCase
 
         $this->actingAs($a, 'api');
         $names = collect($this->getJson('/api/v1/sites')->json('data'))->pluck('name_ar')->sort()->values()->all();
-        $this->assertSame(['اجازة الجمعة', 'اجازة السبت', 'سموحة'], $names);   // leave types (the Saturday migration's too) are visible to every manager
+        $this->assertSame(['اجازة الجمعة', 'اجازة السبت', 'اعتيادية', 'بدون أجر', 'سموحة', 'عارضة'], $names);   // leave types (the migrations' too) are visible to every manager
         $this->getJson("/api/v1/sites/$mine")->assertOk();
         $this->getJson("/api/v1/sites/$leave")->assertOk();
         $this->getJson("/api/v1/sites/$other")->assertNotFound();
