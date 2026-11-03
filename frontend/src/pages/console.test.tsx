@@ -350,7 +350,7 @@ test('a scope control hugs its words and keeps them apart on one line', async ()
   renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
   await pickRole()
   const group = screen.getByRole('group', { name: 'الموظفون: عرض' })
-  expect(group).toHaveClass('inline-flex')
+  expect(group).toHaveClass('inline-flex', 'w-max') // w-max: the auto-layout table sizes the cell from the group's min-content
   expect(group).not.toHaveClass('flex')
   expect(within(group).getByText('الخاص به', { ignore: '.sr-only' })).toHaveClass('px-1.5', 'whitespace-nowrap')
   // min-w-tap replaces a flex item's min-width:auto, so without shrink-0 the table squeezes the pills below their words

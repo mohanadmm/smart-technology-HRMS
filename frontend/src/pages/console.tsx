@@ -268,7 +268,7 @@ function Matrix({ role, perms, editable }: { role: Row; perms: Row[]; editable: 
           label={label}
           value={value}
           disabled={!editable || busy}
-          className="inline-flex"
+          className="inline-flex w-max"
           onChange={(s) => pick([own.id, all.id], { none: undefined, own: own.id, all: all.id }[s])}
           // the visible text is aria-hidden: the option's sr-only label already names it
           options={(['none', 'own', 'all'] as const).map((s) => ({ value: s, label: t(`perm.scope.${s}`), content: <span aria-hidden className="px-1.5 whitespace-nowrap">{t(`perm.scope.${s}`)}</span> }))}
