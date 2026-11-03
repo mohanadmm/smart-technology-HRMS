@@ -225,7 +225,7 @@ test('in English the title, the site options and a seeded leave type without an 
 })
 
 test('in English a leave type with an unknown code and no English name shows its Arabic name, not a key', async () => {
-  const custom = [...sites, { id: 'lu', name_ar: 'إجازة-1', kind: 'leave', leave_code: 'unpaid', active: true }]
+  const custom = [...sites, { id: 'lu', name_ar: 'إجازة-1', kind: 'leave', leave_code: 'study', active: true }]
   mockFetch({ ...routes(day()), 'GET /api/v1/sites': list(custom) })
   await i18n.changeLanguage('en')
   open()

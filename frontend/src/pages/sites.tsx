@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useAuth } from '@/lib/auth'
 import { RESIDENCES, USERS, useApi, useSave } from '@/lib/query'
 
-const LEAVE_CODES = ['friday', 'saturday', 'official_holiday', 'sick', 'rest', 'absent', 'other']
+const LEAVE_CODES = ['friday', 'saturday', 'official_holiday', 'annual', 'casual', 'sick', 'unpaid', 'rest', 'absent', 'other']
 const MODES = ['none', 'share_of_wage', 'fixed']
 const LIST = '?per_page=100' // server max; these lists are small, the notice below covers overflow
 export const PAGE = 12
