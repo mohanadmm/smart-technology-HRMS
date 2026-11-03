@@ -649,7 +649,8 @@
         "times_need_both": "Enter both the in and out times.",
         "template_mismatch": "The file does not match this period's attendance template.",
         "unreadable_file": "The file could not be read.",
-        "too_many_rows": "The file has more than {{max}} rows."
+        "too_many_rows": "The file has more than {{max}} rows.",
+        "code_name_mismatch": "The ID or name changed since this file was downloaded. Download a fresh template."
       }
     }
   },
