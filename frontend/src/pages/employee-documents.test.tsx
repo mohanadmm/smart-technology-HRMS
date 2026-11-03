@@ -4,7 +4,10 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { json, mockFetch, renderWithAuth } from '@/test-utils'
 import { Documents, UploadDialog } from './employee-documents'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  delete (navigator as { pdfViewerEnabled?: boolean }).pdfViewerEnabled // own property set by view(); jsdom has none
+})
 
 const perms = ['employee_document.view.all', 'employee_document.edit.all']
 const POST = 'POST /api/v1/employees/e1/documents'
@@ -220,8 +223,9 @@ const FILE = `GET ${DOC_PATH}/file`
 const html = () => new Response('x', { headers: { 'Content-Type': 'text/html' } })
 async function view(over: object = {}, file: () => Response = html, pdfViewer = true) {
   Object.defineProperty(navigator, 'pdfViewerEnabled', { value: pdfViewer, configurable: true })
+  // jsdom has neither; stubbed so afterEach puts the real URL back
   const urls = { create: vi.fn(() => 'blob:doc-1'), revoke: vi.fn() }
-  Object.assign(URL, { createObjectURL: urls.create, revokeObjectURL: urls.revoke })
+  vi.stubGlobal('URL', class extends URL { static createObjectURL = urls.create; static revokeObjectURL = urls.revoke })
   const get = vi.fn(file)
   mockFetch({ [FILE]: get })
   const user = userEvent.setup()
@@ -258,6 +262,14 @@ test('a PDF without an in-page viewer gets an Open link', async () => {
 
 test('an unknown stored mime never renders inline', async () => {
   const { dialog, blobType } = await view({ mime: 'text/html' })
+  await within(dialog).findByRole('link', { name: 'تنزيل' })
+  expect(blobType()).toBe('application/octet-stream')
+  expect(within(dialog).queryByRole('img')).toBeNull()
+  expect(dialog.querySelector('iframe')).toBeNull()
+})
+
+test('a stored mime named like an object key is not allow-listed', async () => {
+  const { dialog, blobType } = await view({ mime: 'constructor' })
   await within(dialog).findByRole('link', { name: 'تنزيل' })
   expect(blobType()).toBe('application/octet-stream')
   expect(within(dialog).queryByRole('img')).toBeNull()

@@ -303,7 +303,7 @@ export function Viewer({ empId, doc, onClose }: { empId: string; doc: Doc | null
             <bdi>{doc?.original_name}</bdi> · {doc?.created_at && t('document.uploadedBy', { date: date.format(new Date(doc.created_at)), name: doc.uploader_name ?? '—' })}
           </DialogDescription>
         </DialogHeader>
-        {doc && <ViewerFile empId={empId} doc={doc} kind={kind!} />}
+        {doc && <ViewerFile key={doc.id} empId={empId} doc={doc} kind={kind!} />}
       </DialogContent>
     </Dialog>
   )
@@ -316,7 +316,7 @@ function ViewerFile({ empId, doc, kind }: { empId: string; doc: Doc; kind: strin
   const [failed, setFailed] = useState(false)
   const [tries, setTries] = useState(0)
   // the Blob's type comes from the stored mime, allow-listed; never from the response, so a file can't turn itself into HTML
-  const type = doc.mime && doc.mime in EXT ? doc.mime : 'application/octet-stream'
+  const type = doc.mime && Object.hasOwn(EXT, doc.mime) ? doc.mime : 'application/octet-stream'
   // as the server's file route: the base name (or "document") plus the extension of the stored type, so x.html stored as a PDF saves as x.pdf
   const name = (doc.original_name?.includes('.') ? doc.original_name.slice(0, doc.original_name.lastIndexOf('.')) : doc.original_name) || 'document'
 
@@ -357,7 +357,7 @@ function ViewerFile({ empId, doc, kind }: { empId: string; doc: Doc; kind: strin
       </DialogBody>
       {url && (
         <DialogFooter>
-          <a href={url} download={`${name}.${EXT[type] ?? 'bin'}`} className={buttonVariants({ variant: 'secondary' })}>{t('document.download')}</a>
+          <a href={url} download={`${name}.${Object.hasOwn(EXT, type) ? EXT[type] : 'bin'}`} className={buttonVariants({ variant: 'secondary' })}>{t('document.download')}</a>
         </DialogFooter>
       )}
     </>
