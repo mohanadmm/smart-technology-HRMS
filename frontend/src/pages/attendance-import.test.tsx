@@ -50,9 +50,25 @@ test('upload shows the preview and saves nothing until confirm', async () => {
 test('confirm re-sends the same file and shows the result', async () => {
   const { user, file, confirmCall } = await previewed()
   await user.click(screen.getByRole('button', { name: 'تأكيد الحفظ' }))
-  expect(await screen.findByText('تم حفظ 3 أيام، تُركت خانة واحدة بها خطأ.')).toBeInTheDocument()
+  const done = await screen.findByRole('status')
+  expect(done).toHaveTextContent('تم حفظ 3 أيام، تُركت خانة واحدة بها خطأ.')
+  expect(done).toHaveClass('border-success-border', 'bg-success-bg')
+  expect(done.querySelector('svg')).toHaveAttribute('aria-hidden', 'true') // the success Alert's icon
   expect(sent(confirmCall).get('file')).toBe(file)
   expect(screen.queryByRole('table', { name: 'التغييرات' })).not.toBeInTheDocument()
+})
+
+test('the three steps are one numbered list, and the changes and errors are tables, not second lists', async () => {
+  await previewed()
+  const steps = screen.getByRole('list') // the only list: Changes and Errors render as DataList tables (cards below sm)
+  expect(steps.tagName).toBe('OL')
+  const [download, choose, check] = within(steps).getAllByRole('listitem')
+  expect(within(steps).getAllByRole('listitem')).toHaveLength(3)
+  expect(within(download).getByRole('button', { name: 'تنزيل القالب' })).toBeInTheDocument()
+  expect(within(choose).getByLabelText(FILE_LABEL)).toBeInTheDocument()
+  expect(within(check).getByRole('button', { name: 'معاينة التغييرات' })).toBeInTheDocument()
+  expect(within(screen.getByRole('table', { name: 'التغييرات' })).getAllByRole('row')).toHaveLength(4) // the head and 3 changes
+  expect(within(screen.getByRole('table', { name: 'الأخطاء' })).getAllByRole('row')).toHaveLength(3)
 })
 
 test('confirm is disabled when the preview has no changes', async () => {
