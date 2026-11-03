@@ -55,6 +55,7 @@ class ImportMasterDataTest extends TestCase
         $this->assertStringContainsString('DRY RUN', $out);
         $this->assertMatchesRegularExpression('/employees\s*\|\s*3\b/', $out);   // the dry run did the work, then rolled it back
         $this->assertSame($before, $this->counts());
+        $this->assertSame(0, DB::table('employee_code_counter')->value('last_issued'), 'the dry run issues no employee ID');
     }
 
     #[Test]

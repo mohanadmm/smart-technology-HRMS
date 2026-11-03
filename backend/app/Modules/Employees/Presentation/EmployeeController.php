@@ -61,7 +61,7 @@ final class EmployeeController
     public function changeCode(Request $request, string $employee): JsonResponse
     {
         $data = $request->validate([
-            'code' => ['required', 'integer', 'min:0', 'max:99999'],
+            'code' => ['required', 'integer', 'min:0'],
             'swap' => ['sometimes', 'boolean'],
         ]);
 

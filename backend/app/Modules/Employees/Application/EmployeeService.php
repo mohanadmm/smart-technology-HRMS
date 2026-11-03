@@ -115,9 +115,10 @@ final class EmployeeService
         $this->assertPay($type, $pay);
 
         $id = DB::transaction(function () use ($data, $type, $pay): string {
-            // ponytail: table-wide lock serialises employee creation; fine at HR-entry rates, use a sequence if bulk import needs speed.
+            // ponytail: table-wide lock serialises employee creation; fine at HR-entry rates and the one-off master-data import.
             DB::statement('LOCK TABLE employees IN SHARE ROW EXCLUSIVE MODE');
-            $code = (int) Employee::withTrashed()->max('code') + 1;
+            $code = self::highestCodeIssued() + 1;
+            DB::table('employee_code_counter')->update(['last_issued' => $code]);
 
             $employee = Employee::create([...Arr::except($data, ['type', ...self::PAY_FIELDS]), 'code' => $code]);
             $employee->typeChanges()->create(['type' => $type->value, 'effective_from' => $data['effective_from']]);
@@ -195,6 +196,10 @@ final class EmployeeService
         if ($employee->code === $code) {
             return $this->show($id);
         }
+        // Numbers are never reissued and a typo cannot jump the numbering (owner, 2026-11-03).
+        if ($code > ($highest = self::highestCodeIssued())) {
+            throw ValidationException::withMessages(['code' => __('errors.code_above_highest', ['max' => $highest])]);
+        }
         $holder = Employee::withTrashed()->where('code', $code)->first();
         if ($holder?->trashed()) {
             throw ValidationException::withMessages(['code' => __('errors.code_deleted_holder')]);
@@ -218,6 +223,12 @@ final class EmployeeService
         }
 
         return $this->show($id);
+    }
+
+    /** The counter (migration 2026_11_03_000003), or a higher code written around create() (a seeder, a raw insert). */
+    private static function highestCodeIssued(): int
+    {
+        return (int) DB::scalar('SELECT greatest(last_issued, (SELECT coalesce(max(code), 0) FROM employees)) FROM employee_code_counter');
     }
 
     public function delete(string $id): void

@@ -20,6 +20,7 @@ return [
     'code_taken' => 'ID :code belongs to :name.',
     'code_deleted_holder' => "This ID was used by a deleted employee; deleted employees' IDs are not reused.",
     'code_changed_meanwhile' => 'This ID was just taken. Choose another one.',
+    'code_above_highest' => 'The ID cannot be above :max, the highest ID issued so far.',
     'allowance_value_required' => 'Value is required unless the allowance type is "None".',
     'employee_type' => [
         'office' => 'Office employee',

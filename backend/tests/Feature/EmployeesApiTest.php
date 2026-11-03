@@ -254,29 +254,59 @@ class EmployeesApiTest extends TestCase
         $this->signIn('ceo');
         $this->patchJson("/api/v1/employees/$id/code", ['code' => 5])->assertStatus(403);
         $this->signIn('developer');
-        $this->patchJson("/api/v1/employees/$id/code", ['code' => 5])->assertOk()->assertJsonPath('data.code', 5);
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 0])->assertOk()->assertJsonPath('data.code', 0);
+        $this->signIn('hr');
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 1])->assertOk()->assertJsonPath('data.code', 1);
     }
 
-    public function test_a_free_code_is_saved_audited_and_numbering_continues_after_it(): void
+    public function test_a_free_code_is_saved_and_audited(): void
     {
         $id = $this->make();
-        $this->patchJson("/api/v1/employees/$id/code", ['code' => 7])->assertOk()->assertJsonPath('data.code', 7)->assertJsonPath('data.id', $id)
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 0])->assertOk()->assertJsonPath('data.code', 0)->assertJsonPath('data.id', $id)
             ->assertJsonPath('data.current_type', 'office');
         $audit = DB::table('audit_log')->where(['entity_id' => $id, 'event' => 'UPDATED'])->sole();
-        $this->assertSame([['code' => 1], ['code' => 7]], [json_decode($audit->old_values, true), json_decode($audit->new_values, true)]);
-        $this->postJson('/api/v1/employees', $this->payload())->assertCreated()->assertJsonPath('data.code', 8);
+        $this->assertSame([['code' => 1], ['code' => 0]], [json_decode($audit->old_values, true), json_decode($audit->new_values, true)]);
 
-        $this->patchJson("/api/v1/employees/$id/code", ['code' => 7])->assertOk();               // the same code changes nothing
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 0])->assertOk();               // the same code changes nothing
         $this->assertSame(1, DB::table('audit_log')->where(['entity_id' => $id, 'event' => 'UPDATED'])->count());
     }
 
-    public function test_the_code_must_be_a_whole_number_from_0_to_99999(): void
+    public function test_a_number_is_never_reissued_after_renumbering_the_top_employee_down(): void
+    {
+        $this->make();
+        $top = $this->make();
+        $this->patchJson("/api/v1/employees/$top/code", ['code' => 0])->assertOk();
+
+        $this->postJson('/api/v1/employees', $this->payload())->assertCreated()->assertJsonPath('data.code', 3);
+    }
+
+    public function test_a_code_above_the_highest_issued_is_422_naming_the_highest(): void
     {
         $id = $this->make();
-        foreach ([[], ['code' => -1], ['code' => 100000], ['code' => 'abc'], ['code' => 1.5], ['code' => 3, 'swap' => 'maybe']] as $body) {
+        $this->make();
+        foreach (['ar', 'en'] as $locale) {
+            $this->patchJson("/api/v1/employees/$id/code", ['code' => 3], ['Accept-Language' => $locale])->assertStatus(422)
+                ->assertJsonPath('error.details.0.field', 'code')
+                ->assertJsonPath('error.details.0.message', __('errors.code_above_highest', ['max' => 2], $locale));
+        }
+        $this->assertSame(1, DB::table('employees')->where('id', $id)->value('code'));
+    }
+
+    public function test_create_after_an_out_of_band_higher_code_continues_above_it(): void
+    {
+        $id = $this->make();
+        DB::table('employees')->where('id', $id)->update(['code' => 50]);   // a row written outside EmployeeService::create
+
+        $this->postJson('/api/v1/employees', $this->payload())->assertCreated()->assertJsonPath('data.code', 51);
+        $this->postJson('/api/v1/employees', $this->payload())->assertCreated()->assertJsonPath('data.code', 52);
+    }
+
+    public function test_the_code_must_be_a_whole_number_from_0(): void
+    {
+        $id = $this->make();
+        foreach ([[], ['code' => -1], ['code' => 'abc'], ['code' => 1.5], ['code' => 0, 'swap' => 'maybe']] as $body) {
             $this->patchJson("/api/v1/employees/$id/code", $body)->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
         }
-        $this->patchJson("/api/v1/employees/$id/code", ['code' => 99999])->assertOk();
         $this->patchJson("/api/v1/employees/$id/code", ['code' => 0])->assertOk()->assertJsonPath('data.code', 0);
         $this->getJson('/api/v1/employees?search=0')->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $id);
         $this->getJson('/api/v1/employees?search=00')->assertJsonCount(0, 'data');
@@ -324,17 +354,18 @@ class EmployeesApiTest extends TestCase
         $this->assertSame([[['code' => 1], ['code' => 2]]], $audit($a));
         $this->assertSame([[['code' => 2], ['code' => 1]]], $audit($b));
 
-        $this->patchJson("/api/v1/employees/$a/code", ['code' => 5, 'swap' => 1])->assertOk()->assertJsonPath('data.code', 5);   // nobody holds 5: a plain change
+        $this->patchJson("/api/v1/employees/$a/code", ['code' => 0, 'swap' => 1])->assertOk()->assertJsonPath('data.code', 0);   // nobody holds 0: a plain change
     }
 
     public function test_a_code_taken_between_the_check_and_the_save_is_422(): void
     {
         $id = $this->make();
         $other = $this->make();
-        // Stands in for create() allocating the code meanwhile: a raw write, after the check, inside the save's transaction.
-        Employee::updating(fn () => DB::table('employees')->where('id', $other)->update(['code' => 7]));
+        // Stands in for another write taking the code meanwhile: a raw write, after the check, inside the save's transaction.
+        Employee::updating(fn () => DB::table('employees')->where('id', $other)->update(['code' => 0]));
 
-        $this->patchJson("/api/v1/employees/$id/code", ['code' => 7])->assertStatus(422)->assertJsonPath('error.details.0.field', 'code');
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 0], ['Accept-Language' => 'ar'])->assertStatus(422)
+            ->assertJsonPath('error.details.0.message', __('errors.code_changed_meanwhile', [], 'ar'));
         $this->assertSame(1, DB::table('employees')->where('id', $id)->value('code'));
     }
 }
