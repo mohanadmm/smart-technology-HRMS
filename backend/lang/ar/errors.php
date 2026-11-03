@@ -22,6 +22,8 @@ return [
     'code_changed_meanwhile' => 'تم استخدام هذا الرقم الوظيفي للتو. يرجى اختيار رقم آخر.',
     'code_above_highest' => 'لا يمكن أن يزيد الرقم الوظيفي عن :max، وهو أعلى رقم صدر حتى الآن.',
     'allowance_value_required' => 'القيمة مطلوبة ما لم يكن نوع البدل "بدون بدل".',
+    'document_too_large' => 'حجم الملف أكبر من :max ميجابايت.',
+    'document_type' => 'يُقبل فقط ملف PDF أو JPG أو PNG أو WEBP.',
     'employee_type' => [
         'office' => 'موظف مثبت شركة',
         'engineer' => 'مهندس',

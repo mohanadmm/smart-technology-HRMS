@@ -22,6 +22,8 @@ return [
     'code_changed_meanwhile' => 'This ID was just taken. Choose another one.',
     'code_above_highest' => 'The ID cannot be above :max, the highest ID issued so far.',
     'allowance_value_required' => 'Value is required unless the allowance type is "None".',
+    'document_too_large' => 'The file is larger than :max MB.',
+    'document_type' => 'Only PDF, JPG, PNG or WEBP files are accepted.',
     'employee_type' => [
         'office' => 'Office employee',
         'engineer' => 'Engineer',
