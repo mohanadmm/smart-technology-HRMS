@@ -8,6 +8,7 @@ use App\Modules\Employees\Application\EmployeeRules;
 use App\Modules\Employees\Application\EmployeeService;
 use App\Modules\Employees\Domain\DocumentKind;
 use App\Modules\Employees\Domain\EmployeeType;
+use App\Modules\Identity\Domain\Rbac\AuthorizationRefused;
 use App\Modules\Identity\Presentation\RequestScope;
 use App\Modules\Sites\Domain\SiteKind;
 use App\Support\Http\ApiEnvelope;
@@ -60,6 +61,10 @@ final class EmployeeController
 
     public function changeCode(Request $request, string $employee): JsonResponse
     {
+        // A swap touches the holder, who may be outside an own-scope caller's reach, and the 409 names them: only `.all` renumbers.
+        if (RequestScope::ownerId($request) !== null) {
+            throw AuthorizationRefused::of('employee.edit_code');
+        }
         $data = $request->validate([
             'code' => ['required', 'integer', 'min:0'],
             'swap' => ['sometimes', 'boolean'],

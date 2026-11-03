@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeTypeChange;
+use App\Modules\Identity\Infrastructure\Eloquent\Permission;
 use App\Modules\Identity\Infrastructure\Eloquent\Role;
 use Illuminate\Foundation\Http\Middleware\TrimStrings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -257,6 +258,22 @@ class EmployeesApiTest extends TestCase
         $this->patchJson("/api/v1/employees/$id/code", ['code' => 0])->assertOk()->assertJsonPath('data.code', 0);
         $this->signIn('hr');
         $this->patchJson("/api/v1/employees/$id/code", ['code' => 1])->assertOk()->assertJsonPath('data.code', 1);
+    }
+
+    public function test_an_own_scope_edit_code_grant_is_refused_even_for_the_callers_own_employee(): void
+    {
+        $role = Role::create(['slug' => 'lead', 'name' => 'Lead', 'name_ar' => 'مشرف']);
+        $role->permissions()->attach(Permission::create(['resource' => 'employee', 'action' => 'edit_code', 'scope' => 'own'])->getKey());
+        $lead = $this->makeUser('lead');
+        $mine = $this->make(['type' => 'engineer']);
+        $this->make(['type' => 'engineer']);
+        $this->postJson("/api/v1/employees/$mine/manager-assignments", ['manager_id' => $lead->id, 'effective_from' => '2026-01-01'])->assertCreated();
+
+        $this->actingAs($lead, 'api');
+        foreach ([['code' => 0], ['code' => 2], ['code' => 2, 'swap' => true]] as $body) {
+            $this->patchJson("/api/v1/employees/$mine/code", $body)->assertStatus(403)->assertJsonPath('error.code', 'permission_denied');
+        }
+        $this->assertSame(1, DB::table('employees')->where('id', $mine)->value('code'));
     }
 
     public function test_a_free_code_is_saved_and_audited(): void
