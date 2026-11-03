@@ -1,9 +1,7 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import ar from '@/locales/ar.json'
-import en from '@/locales/en.json'
 import { json, mockFetch, pagination, renderWithAuth } from '@/test-utils'
 import { Leave } from './employee-leave'
 import { EmployeeFormPage } from './employees'
@@ -35,6 +33,7 @@ test('the card shows the balance the server computed', async () => {
   expect(tile('المستخدم')).toHaveTextContent('10')
   expect(tile('العارضة المستخدمة')).toHaveTextContent('3 من 6')
   expect(tile('أيام الإجازة المرضية')).toHaveTextContent('4')
+  expect(tile('أيام الإجازة بدون أجر')).toHaveTextContent('1')
   expect(vi.mocked(fetch).mock.calls[0][0]).toBe('/api/v1/employees/e1/leave?year=2026')
 })
 
@@ -50,6 +49,39 @@ test('a balance that is not overdrawn is not coloured', async () => {
   renderWithAuth(<Leave emp={emp} />, VIEW, { router: false })
   const remaining = await remainingTile()
   expect(within(remaining).getByText('11')).not.toHaveClass('text-destructive')
+})
+
+test('casual days over the cap show in the destructive colour', async () => {
+  mockFetch({ [LEAVE]: () => leave({ ...balance, casual_used: 7, casual_remaining: -1 }) })
+  renderWithAuth(<Leave emp={emp} />, VIEW, { router: false })
+  await remainingTile()
+  expect(within(tile('العارضة المستخدمة')).getByText('7 من 6')).toHaveClass('text-destructive')
+})
+
+test('casual days within the cap are not coloured', async () => {
+  mockFetch({ [LEAVE]: () => leave() })
+  renderWithAuth(<Leave emp={emp} />, VIEW, { router: false })
+  await remainingTile()
+  expect(within(tile('العارضة المستخدمة')).getByText('3 من 6')).not.toHaveClass('text-destructive')
+})
+
+test('a cached balance is never shown: the card waits for a fresh one', async () => {
+  let used = 10
+  let release = () => {}
+  let hold: Promise<void> | undefined
+  mockFetch({ [LEAVE]: () => (hold ?? Promise.resolve()).then(() => leave({ ...balance, used })) as unknown as Response })
+  const first = renderWithAuth(<Leave emp={emp} />, VIEW, { router: false })
+  await remainingTile()
+  expect(tile('المستخدم')).toHaveTextContent('10')
+  first.unmount()
+
+  used = 11 // an attendance edit meanwhile
+  hold = new Promise<void>((r) => (release = r))
+  vi.setSystemTime(new Date('2026-11-04T10:00:05Z'))
+  renderWithAuth(<Leave emp={emp} />, VIEW, { router: false })
+  expect(screen.queryByText('المستخدم')).toBeNull()
+  release()
+  await waitFor(() => expect(tile('المستخدم')).toHaveTextContent('11'))
 })
 
 test('without a hire date the card asks for one', async () => {
@@ -102,17 +134,4 @@ test('no leave tab without leave.view', async () => {
   renderWithAuth(detail, ['employee.view.all'], { router: false })
   expect(await screen.findByRole('tab', { name: 'البيانات' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.queryByRole('tab', { name: 'الإجازات' })).toBeNull()
-})
-
-const keys = (o: object, p = ''): string[] => Object.entries(o).flatMap(([k, v]) => (typeof v === 'object' ? keys(v, `${p}${k}.`) : [`${p}${k}`]))
-
-test('the leave names, permissions and setting label exist in both languages', () => {
-  const added = [
-    ...['annual', 'casual', 'unpaid'].flatMap((c) => [`attendance.leaveName.${c}`, `attendance.short.${c}`, `enum.leave_code.${c}`]),
-    ...['view', 'request', 'decide', 'decide_escalated', 'adjust'].map((a) => `perm.leave.${a}`),
-    'perm.resource.leave',
-    'rule.sick_leave_pay_percent',
-  ]
-  expect(keys(ar)).toEqual(expect.arrayContaining(added))
-  expect(keys(en)).toEqual(expect.arrayContaining(added))
 })

@@ -67,6 +67,22 @@ class LeaveBalancesTest extends TestCase
             ->assertJsonPath('data.balance.used', 0)->assertJsonPath('data.balance.remaining', 21);
     }
 
+    public function test_used_counts_only_this_employees_stored_annual_and_casual_days(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $other = $this->employee('engineer', '2020-01-01');
+        $days = app(AttendanceDays::class);
+        $annual = $days->save($e, '2026-03-01', ['site_id' => $this->leave['annual']]);
+        $this->save($e, '2026-03-02', 'casual');
+        $days->save($e, '2026-03-03', ['site_id' => $this->workSite()]);
+        $this->save($e, '2026-03-06', 'friday');
+        $this->save($other, '2026-03-01', 'annual');
+        $this->balance($e)->assertJsonPath('data.balance.used', 2);
+
+        $days->clear($e, '2026-03-01', $annual['version']);
+        $this->balance($e)->assertJsonPath('data.balance.used', 1);
+    }
+
     public function test_only_the_requested_year_counts(): void
     {
         $e = $this->employee('office', '2020-01-01');

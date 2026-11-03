@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Modules\Sites\Infrastructure\Eloquent\Fare;
 use Database\Seeders\SitesSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class SitesApiTest extends TestCase
@@ -64,6 +65,26 @@ class SitesApiTest extends TestCase
         $id = $this->postJson('/api/v1/sites', ['name_ar' => 'غ', 'kind' => 'leave', 'leave_code' => 'absent'])->assertCreated()->json('data.id');
         $this->patchJson("/api/v1/sites/$id", ['kind' => 'work'])->assertStatus(422);
         $this->patchJson("/api/v1/sites/$id", ['kind' => 'work', 'leave_code' => null])->assertOk();
+    }
+
+    public function test_a_used_leave_type_keeps_its_meaning(): void
+    {
+        $used = $this->postJson('/api/v1/sites', ['name_ar' => 'غ', 'kind' => 'leave', 'leave_code' => 'absent'])->assertCreated()->json('data.id');
+        $cleared = $this->postJson('/api/v1/sites', ['name_ar' => 'أخرى', 'kind' => 'leave', 'leave_code' => 'other'])->assertCreated()->json('data.id');
+        $employee = $this->employee();
+        foreach ([[$used, '2026-03-01', null], [$cleared, '2026-03-02', now()]] as [$site, $date, $deletedAt]) {
+            \DB::table('attendance_days')->insert(['id' => (string) Str::uuid7(), 'employee_id' => $employee, 'date' => $date, 'site_id' => $site, 'source' => 'entered', 'deleted_at' => $deletedAt, 'created_at' => now(), 'updated_at' => now()]);
+        }
+
+        foreach ([$used, $cleared] as $site) {
+            $this->patchJson("/api/v1/sites/$site", ['leave_code' => 'rest'])->assertStatus(422)
+                ->assertJsonPath('error.details.0.field', 'leave_code')->assertJsonPath('error.details.0.message', __('errors.leave_type_in_use'));
+            $this->patchJson("/api/v1/sites/$site", ['kind' => 'work', 'leave_code' => null])->assertStatus(422)
+                ->assertJsonPath('error.details.0.message', __('errors.leave_type_in_use'));
+        }
+        $this->patchJson("/api/v1/sites/$used", ['name_ar' => 'غياب', 'leave_code' => 'absent', 'active' => false])->assertOk()
+            ->assertJsonPath('data.name_ar', 'غياب')->assertJsonPath('data.active', false);
+        $this->assertSame('absent', \DB::table('sites')->where('id', $used)->value('leave_code'));
     }
 
     public function test_list_filters_and_show(): void

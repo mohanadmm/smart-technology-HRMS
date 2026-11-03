@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -63,6 +64,46 @@ class LeaveSchemaTest extends TestCase
 
         $this->expectException(UniqueConstraintViolationException::class);
         $this->adjustment($employee, 2026);
+    }
+
+    public function test_opening_casual_days_are_part_of_the_opening_used_days(): void
+    {
+        $this->signIn('hr');
+        $employee = $this->employee('office');
+        $row = fn (int $used, int $casual) => ['id' => (string) Str::uuid7(), 'employee_id' => $employee, 'opening_used' => $used, 'opening_casual_used' => $casual, 'created_at' => now(), 'updated_at' => now()];
+        DB::table('leave_year_adjustments')->insert([...$row(2, 2), 'year' => 2025]);
+
+        $this->expectException(QueryException::class);
+        DB::table('leave_year_adjustments')->insert([...$row(1, 2), 'year' => 2026]);
+    }
+
+    /** Runs down() while an attendance day uses the annual type (so down() keeps it), after $change edits that type. */
+    private function keepAnnual(array $change): string
+    {
+        $this->signIn('hr');
+        $annual = $this->leaveTypes()['annual'];
+        DB::table('sites')->where('id', $annual)->update($change);
+        DB::table('attendance_days')->insert(['id' => (string) Str::uuid7(), 'employee_id' => $this->employee('office'), 'date' => '2026-03-02', 'site_id' => $annual, 'source' => 'entered', 'created_at' => now(), 'updated_at' => now()]);
+        $this->migration()->down();
+
+        return $annual;
+    }
+
+    public function test_up_reuses_a_kept_leave_type_hr_renamed(): void
+    {
+        $annual = $this->keepAnnual(['name_ar' => 'Annual-renamed']);
+        $this->migration()->up();
+        $this->assertEquals(['annual' => 'Annual-renamed', 'casual' => 'عارضة', 'unpaid' => 'بدون أجر'], $this->seeded());
+        $this->assertSame($annual, DB::table('sites')->where('leave_code', 'annual')->sole()->id);
+    }
+
+    public function test_up_reactivates_a_kept_leave_type_hr_deactivated(): void
+    {
+        $annual = $this->keepAnnual(['active' => false]);
+        $this->migration()->up();
+        $this->assertEquals(['annual' => 'اعتيادية', 'casual' => 'عارضة', 'unpaid' => 'بدون أجر'], $this->seeded());
+        $this->assertSame($annual, DB::table('sites')->where('leave_code', 'annual')->sole()->id);
+        $this->assertSame(1, DB::table('audit_log')->where(['entity_type' => 'sites', 'entity_id' => $annual, 'event' => 'UPDATED'])->count());
     }
 
     public function test_up_refuses_a_live_site_that_already_has_a_seeded_name(): void

@@ -27,19 +27,24 @@ return new class extends Migration
 
     public function up(): void
     {
-        // A leave type down() kept (an attendance day used it) is reused, not a clash.
-        $live = DB::table('sites')->whereNull('deleted_at')->whereIn('name_ar', self::LEAVE_TYPES)->get();
-        $clashes = $live->reject(fn (object $s) => $s->kind === 'leave' && array_search($s->name_ar, self::LEAVE_TYPES, true) === $s->leave_code)->pluck('name_ar');
+        // A leave type down() kept (an attendance day used it) is reused by its code, whatever HR renamed it to; any other site
+        // with one of the names is a clash.
+        $clashes = DB::table('sites')->whereNull('deleted_at')->whereIn('name_ar', self::LEAVE_TYPES)->get()
+            ->reject(fn (object $s) => $s->kind === 'leave' && array_search($s->name_ar, self::LEAVE_TYPES, true) === $s->leave_code)->pluck('name_ar');
         if ($clashes->isNotEmpty()) {
             throw new RuntimeException('A site already has the name(s) '.$clashes->implode(', ').'; rename it, then migrate again.');
         }
 
         $now = now();
         foreach (self::LEAVE_TYPES as $code => $name) {
-            if (! $live->contains('name_ar', $name)) {
+            $kept = DB::table('sites')->whereNull('deleted_at')->where(['kind' => 'leave', 'leave_code' => $code])->orderByDesc('active')->orderBy('id')->first();
+            if ($kept === null) {
                 $row = ['id' => (string) Str::uuid7(), 'name_ar' => $name, 'kind' => 'leave', 'leave_code' => $code, 'active' => true, 'outside_alexandria' => false];
                 DB::table('sites')->insert([...$row, 'created_at' => $now, 'updated_at' => $now]);
                 $this->audit('CREATED', $row['id'], null, $row);
+            } elseif (! $kept->active) {
+                DB::table('sites')->where('id', $kept->id)->update(['active' => true, 'updated_at' => $now]);
+                $this->audit('UPDATED', $kept->id, ['active' => false], ['active' => true]);
             }
         }
 
@@ -58,6 +63,7 @@ return new class extends Migration
         DB::statement('alter table leave_year_adjustments add constraint leave_year_adjustments_entitlement_check check (entitlement is null or entitlement >= 0)');
         DB::statement('alter table leave_year_adjustments add constraint leave_year_adjustments_opening_used_check check (opening_used >= 0)');
         DB::statement('alter table leave_year_adjustments add constraint leave_year_adjustments_opening_casual_used_check check (opening_casual_used >= 0)');
+        DB::statement('alter table leave_year_adjustments add constraint leave_year_adjustments_opening_casual_within_used_check check (opening_casual_used <= opening_used)');
         DB::statement('create unique index leave_year_adjustments_employee_year_unique on leave_year_adjustments (employee_id, year) where deleted_at is null');
 
         DB::table('settings')->insert(array_map(

@@ -13,7 +13,7 @@ final class SettingController
 {
     private const INTEGER = 'regex:/^\d{1,3}$/D';
 
-    private const PERCENT = 'regex:/^(100|\d{1,2})$/D';
+    private const PERCENT = 'regex:/^(100|[1-9]?\d)$/D';
 
     private const DECIMAL = 'regex:/^\d{1,6}(\.\d{1,6})?$/D';
 

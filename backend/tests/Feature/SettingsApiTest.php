@@ -95,8 +95,10 @@ class SettingsApiTest extends TestCase
     public function test_sick_leave_pay_percent_is_a_whole_percent(): void
     {
         $this->signIn('hr');
-        $this->putJson('/api/v1/settings', ['sick_leave_pay_percent' => '75'])->assertOk()->assertJsonPath('data.sick_leave_pay_percent', '75');
-        foreach (['101', '-1', '7.5'] as $bad) {
+        foreach (['0', '100', '75'] as $good) {
+            $this->putJson('/api/v1/settings', ['sick_leave_pay_percent' => $good])->assertOk()->assertJsonPath('data.sick_leave_pay_percent', $good);
+        }
+        foreach (['101', '-1', '7.5', '07', '00'] as $bad) {
             $this->putJson('/api/v1/settings', ['sick_leave_pay_percent' => $bad])->assertStatus(422)->assertJsonPath('error.details.0.field', 'sick_leave_pay_percent');
         }
         $this->assertSame('75', DB::table('settings')->where('key', 'sick_leave_pay_percent')->value('value'));

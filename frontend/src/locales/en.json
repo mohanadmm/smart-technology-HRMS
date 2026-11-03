@@ -467,7 +467,7 @@
       "time": "Pay and working hours",
       "lateness": "Lateness",
       "schedule": "Shift and weekly rest",
-      "leave": "Annual leave entitlement"
+      "leave": "Leave"
     },
     "month_days": "Days per month",
     "day_hours": "Hours per day",
@@ -604,7 +604,8 @@
     "source": {
       "entered": "Entered",
       "imported": "Imported",
-      "derived": "Automatic"
+      "derived": "Automatic",
+      "leave": "Leave request"
     },
     "sheet": {
       "kpi": {
@@ -786,6 +787,7 @@
     "casualUsed": "Casual used",
     "ofCap": "{{used}} of {{cap}}",
     "sickDays": "Sick leave days",
+    "unpaidDays": "Unpaid leave days",
     "noHireDate": "Record the hire date in the employee's profile to compute the leave balance."
   }
 }

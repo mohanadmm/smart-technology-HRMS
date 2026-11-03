@@ -17,6 +17,7 @@ return [
     'leave_code_required' => 'Leave code is required for leave types.',
     'leave_code_not_allowed' => 'Leave code applies to leave types only.',
     'leave_code_taken' => 'Another active leave type already uses this code.',
+    'leave_type_in_use' => 'Attendance days already use this site, so its kind and leave code cannot change. Rename or deactivate it and add a new one.',
     'code_taken' => 'ID :code belongs to :name.',
     'code_deleted_holder' => "This ID was used by a deleted employee; deleted employees' IDs are not reused.",
     'code_changed_meanwhile' => 'This ID was just taken. Choose another one.',

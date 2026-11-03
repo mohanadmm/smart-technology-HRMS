@@ -363,7 +363,7 @@ const rules = {
   lateness_multiplier_office: '1', lateness_multiplier_engineer: '1.5', lateness_multiplier_permanent_worker: '2', lateness_multiplier_day_laborer: '2',
   office_grace_minutes: '15', office_shift_start: '09:00', office_shift_end: '17:00', worker_shift_start: '08:00', worker_shift_end: '16:00',
   weekly_off_office: 'friday,saturday', weekly_off_field: 'friday',
-  leave_days_under_one_year: '10', leave_days_one_year_plus: '21', leave_casual_days: '6',
+  leave_days_under_one_year: '10', leave_days_one_year_plus: '21', leave_casual_days: '6', sick_leave_pay_percent: '100',
 }
 const RULES = ['site.view.all', 'setting.view.all', 'setting.manage.all']
 
@@ -399,6 +399,19 @@ test('rules tab loads the settings, saves typed values and toasts', async () => 
   await user.click(screen.getByRole('button', { name: 'حفظ التغييرات' }))
   expect(body(put)).toEqual({ ...rules, office_grace_minutes: '20', weekly_off_field: 'friday,thursday', worker_shift_end: '17:00' })
   await waitFor(() => expect(toast.success).toHaveBeenCalledWith('تم حفظ التغييرات.'))
+})
+
+test('the sick-leave pay percent is a whole-number field in the leave group', async () => {
+  const put = vi.fn(() => json(200, { data: { ...rules, sick_leave_pay_percent: '75' } }))
+  mockFetch({ 'GET /api/v1/settings': () => json(200, { data: rules }), 'PUT /api/v1/settings': put })
+  renderWithAuth(<SettingsPage />, RULES, { path: '/settings?tab=rules' })
+  const percent = within(await screen.findByRole('group', { name: 'الإجازات' })).getByLabelText('نسبة أجر الإجازة المرضية (%)')
+  expect(percent).toHaveValue('100')
+  expect(percent).toHaveAttribute('inputmode', 'numeric')
+  await user.clear(percent)
+  await user.type(percent, '75')
+  await user.click(screen.getByRole('button', { name: 'حفظ التغييرات' }))
+  expect(body(put)).toEqual({ ...rules, sick_leave_pay_percent: '75' })
 })
 
 test('a rejected rule value shows under its field', async () => {
