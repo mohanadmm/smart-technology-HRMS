@@ -121,7 +121,6 @@ final class EmployeeController
     public function document(Request $request, string $employee, string $kind): JsonResponse
     {
         $data = $request->validate([
-            'received_at' => ['nullable', 'date_format:Y-m-d'],
             'expires_at' => ['nullable', 'date_format:Y-m-d'],
             'note' => ['nullable', 'string'],
         ]);

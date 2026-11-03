@@ -303,7 +303,8 @@
       "audit_log": "Audit log",
       "setting": "Business rules",
       "attendance": "Attendance",
-      "holiday": "Official holidays"
+      "holiday": "Official holidays",
+      "employee_document": "Employee documents"
     },
     "action": {
       "view": "View",
@@ -322,6 +323,10 @@
       "edit": "Attendance: edit",
       "lock": "Attendance: lock period",
       "record": "Attendance: record"
+    },
+    "employee_document": {
+      "view": "Employee documents: view",
+      "edit": "Employee documents: edit"
     },
     "holiday": {
       "manage": "Official holidays: manage"

@@ -21,15 +21,15 @@ class RbacTest extends TestCase
     {
         $grants = fn (string $slug) => Role::where('slug', $slug)->firstOrFail()->permissions
             ->map(fn ($p) => "{$p->resource}.{$p->action}.{$p->scope}")->sort()->values()->all();
-        $this->assertSame(24, Permission::count());
+        $this->assertSame(27, Permission::count());
         $this->assertSame(['attendance.record.own', 'employee.view.own', 'site.view.own'], $grants('manager'));
-        $this->assertSame(['attendance.view.all', 'audit_log.view.all', 'employee.view.all', 'setting.view.all', 'site.view.all'], $grants('ceo'));
-        $this->assertCount(17, $grants('hr'));
-        foreach (['attendance.view.all', 'attendance.edit.all', 'attendance.lock.all', 'holiday.manage.all', 'employee.assign_site.all', 'employee.edit_code.all'] as $name) {
+        $this->assertSame(['attendance.view.all', 'audit_log.view.all', 'employee.view.all', 'employee_document.view.all', 'setting.view.all', 'site.view.all'], $grants('ceo'));
+        $this->assertCount(19, $grants('hr'));
+        foreach (['attendance.view.all', 'attendance.edit.all', 'attendance.lock.all', 'holiday.manage.all', 'employee.assign_site.all', 'employee.edit_code.all', 'employee_document.view.all', 'employee_document.edit.all'] as $name) {
             $this->assertContains($name, $grants('hr'));
         }
         $this->assertNotContains('user.manage.all', $grants('hr'));
-        $this->assertCount(21, $grants('developer'));
+        $this->assertCount(23, $grants('developer'));
     }
 
     public function test_every_api_route_requires_auth_and_a_permission(): void

@@ -347,7 +347,8 @@ final class EmployeeService
     public function upsertDocument(string $id, DocumentKind $kind, array $data): array
     {
         $employee = Employee::findOrFail($id);
-        $employee->documents()->updateOrCreate(['kind' => $kind->value], $data);
+        // Edit-only until step 2 removes this route: a row needs an uploaded file now.
+        $employee->documents()->where('kind', $kind->value)->latest('id')->firstOrFail()->update($data);
 
         return $this->show($id);
     }
