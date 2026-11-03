@@ -204,7 +204,7 @@ class EmployeesApiTest extends TestCase
 
     public function test_the_list_shows_active_employees_and_the_archive_those_whose_termination_date_has_passed(): void
     {
-        $this->travelTo('2026-10-20 22:30:00');                                     // 2026-10-21 00:30 in Cairo
+        $this->travelTo('2026-10-20 22:30:00');                                     // 2026-10-21 01:30 in Cairo (summer time, UTC+3)
         $left = $this->make(['termination_date' => '2026-10-20']);
         $lastDay = $this->make(['termination_date' => '2026-10-21']);               // the termination day is still worked
         $staying = $this->make();
