@@ -84,8 +84,8 @@ export function ImportTab({ group, periodStart }: { group: string; periodStart: 
         <p className="text-sm text-muted-foreground">{t('attendance.import.desc')}</p>
         {/* rule 3: the flow's three steps, numbered in one list; role="list" because Safari drops it with list-style none */}
         <ol role="list" className="grid gap-4">
-          <li className="flex items-start gap-3">
-            <span aria-hidden className={cn(STEP, 'mt-1.5')}>1</span>
+          <li className="flex items-center gap-3">
+            <span aria-hidden className={STEP}>1</span>
             <Button type="button" variant="outline" disabled={busy} onClick={download}>
               <Download aria-hidden /> {t('attendance.import.download')}
             </Button>
@@ -107,8 +107,8 @@ export function ImportTab({ group, periodStart }: { group: string; periodStart: 
               </Field>
             </div>
           </li>
-          <li className="flex items-start gap-3">
-            <span aria-hidden className={cn(STEP, 'mt-1.5')}>3</span>
+          <li className="flex items-center gap-3">
+            <span aria-hidden className={STEP}>3</span>
             <Button type="button" variant={preview ? 'outline' : 'default'} disabled={busy || !file} onClick={check}>
               <FileSearch aria-hidden /> {t('attendance.import.preview')}
             </Button>
@@ -156,15 +156,15 @@ function Changes({ rows }: { rows: Change[] }) {
           {
             header: t('attendance.employee'),
             cell: (c) => (
-              <span className="inline-flex items-center gap-2">
+              <span className="inline-flex items-center gap-2 whitespace-normal">
                 <span className="text-muted-foreground">{c.code}</span>
                 <bdi>{localName(c, i18n.language)}</bdi>
               </span>
             ),
           },
           { header: t('attendance.import.date'), cell: (c) => ltrDates(c.date) },
-          { header: t('attendance.import.from'), cell: (c) => <span className="text-muted-foreground">{dash(c.from)}</span> },
-          { header: t('attendance.import.to'), cell: (c) => <span className="font-medium">{c.to}</span> },
+          { header: t('attendance.import.from'), cell: (c) => <span className="whitespace-normal text-muted-foreground">{dash(c.from)}</span> },
+          { header: t('attendance.import.to'), cell: (c) => <span className="font-medium whitespace-normal">{c.to}</span> },
         ]}
       />
     </Card>
@@ -187,7 +187,7 @@ function Errors({ rows }: { rows: CellError[] }) {
         fields={[
           { header: t('employee.code'), cell: (e) => dash(e.code) },
           { header: t('attendance.import.date'), cell: (e) => (e.date ? ltrDates(e.date) : '—') },
-          { header: t('attendance.import.message'), cell: (e) => <bdi className="text-destructive">{t(errorKey(e.error), { defaultValue: e.message })}</bdi> },
+          { header: t('attendance.import.message'), cell: (e) => <bdi className="whitespace-normal text-destructive">{t(errorKey(e.error), { defaultValue: e.message })}</bdi> },
         ]}
       />
     </Card>

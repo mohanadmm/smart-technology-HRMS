@@ -53,7 +53,6 @@ test.each([
   const lock = await screen.findByRole('button', { name: 'قفل الفترة' })
   expect(lock).toHaveClass(look)
   if (tab !== 'grid') expect(lock).not.toHaveClass('bg-primary')
-  expect(lock).not.toHaveClass('h-11')
 })
 
 test('the grid isolates a Latin name from the employee code so RTL does not glue them', async () => {

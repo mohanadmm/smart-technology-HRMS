@@ -71,6 +71,13 @@ test('the three steps are one numbered list, and the changes and errors are tabl
   expect(within(screen.getByRole('table', { name: 'الأخطاء' })).getAllByRole('row')).toHaveLength(3)
 })
 
+test('long names, values and messages wrap inside their table cells instead of widening the table', async () => {
+  await previewed({ ...preview, changes: [{ ...change(2, 'F', 'Site-1'), from: 'Site-0' }] })
+  const changes = within(screen.getByRole('table', { name: 'التغييرات' }))
+  for (const text of ['Engineer-1', 'Site-0', 'Site-1']) expect(changes.getByText(text).closest('.whitespace-normal')).not.toBeNull()
+  expect(within(screen.getByRole('table', { name: 'الأخطاء' })).getByText('الموقع أو نوع اليوم غير موجود.')).toHaveClass('whitespace-normal')
+})
+
 test('confirm is disabled when the preview has no changes', async () => {
   const user = userEvent.setup()
   mockFetch({ 'POST /api/v1/attendance/import/preview': () => json(200, { data: { summary: { cells: 2, changes: 0, unchanged: 2, errors: 0 }, changes: [], errors: [] } }) })

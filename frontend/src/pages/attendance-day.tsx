@@ -50,9 +50,9 @@ function DayBody({ employee, date, onDone, onReload }: { employee: Row; date: st
   const ready = day.ready && day.data && sites.data
   return (
     <>
-      <SheetHeader>
+      <SheetHeader className="flex-row flex-wrap items-center gap-2">
         <SheetTitle>{ltrDates(t('attendance.day.title', { date, name: localName(employee, i18n.language) }))}</SheetTitle>
-        {ready && day.data?.source && <p><StatusBadge variant="neutral" label={t(`attendance.source.${day.data.source}`)} /></p>}
+        {ready && day.data?.source && <StatusBadge variant="neutral" label={t(`attendance.source.${day.data.source}`)} />}
       </SheetHeader>
       {ready ? (
         <DayForm day={day.data!} sites={sites.data!} path={path} loadErr={err} onDone={onDone} onReload={onReload} />
