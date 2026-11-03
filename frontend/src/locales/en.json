@@ -150,7 +150,7 @@
     "file": "File",
     "choose": "Choose file",
     "noFile": "No file chosen",
-    "tooLarge": "The file is {{size}}; the limit is {{max}}.",
+    "tooLarge": "The file is {{size}} MB; the limit is {{max}} MB.",
     "tooLargePdf": "Scan it at a lower quality or split it.",
     "badType": "Only PDF, JPG, PNG or WEBP files.",
     "heic": "This photo is HEIC. Save it as JPG or PDF and try again.",

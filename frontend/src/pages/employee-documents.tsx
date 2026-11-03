@@ -72,7 +72,7 @@ function UploadForm({ empId, preset, onClose }: { empId: string; preset: NonNull
     return () => URL.revokeObjectURL(url)
   }, [file])
 
-  const mb = new Intl.NumberFormat(intlLocale(i18n.language), { style: 'unit', unit: 'megabyte', maximumFractionDigits: 1 })
+  const mb = new Intl.NumberFormat(intlLocale(i18n.language), { maximumFractionDigits: 1 })
   const tooLarge = (f: File) =>
     [t('document.tooLarge', { size: mb.format(f.size / 1024 / 1024), max: mb.format(MAX_BYTES / 1024 / 1024) }), f.type === 'application/pdf' && t('document.tooLargePdf')].filter(Boolean).join(' ')
 
@@ -110,7 +110,7 @@ function UploadForm({ empId, preset, onClose }: { empId: string; preset: NonNull
     } catch (e) {
       if (e instanceof ApiError && e.status === 413) setFileErr(tooLarge(file))
       else if (e instanceof ApiError) setErr(e)
-      else setNetwork(true) // fetch itself failed: nothing reached the server
+      else setNetwork(true) // no answer: the upload may still have landed, so a retry can add a duplicate or 404 on a replace
     } finally {
       setBusy(false)
     }

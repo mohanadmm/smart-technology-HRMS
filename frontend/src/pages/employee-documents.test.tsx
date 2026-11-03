@@ -11,7 +11,7 @@ const POST = 'POST /api/v1/employees/e1/documents'
 const created = () => json(201, { data: { id: 'd1', kind: 'work_stub' } })
 const body = (f: ReturnType<typeof vi.fn>, i = 0) => (f.mock.calls[i] as [string, RequestInit])[1].body as FormData
 const pdf = (bytes: BlobPart = '%PDF', name = 'عقد.pdf') => new File([bytes], name, { type: 'application/pdf' })
-const TOO_LARGE = /حجم الملف .+ والحد الأقصى 10/
+const TOO_LARGE = /حجم الملف [\d.]+ ميجابايت والحد الأقصى 10 ميجابايت\./
 
 function open(preset: Parameters<typeof UploadDialog>[0]['preset'] = {}, user = userEvent.setup()) {
   const onClose = vi.fn()
