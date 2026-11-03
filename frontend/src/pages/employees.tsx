@@ -1,4 +1,4 @@
-import { Briefcase, CalendarDays, FileText, HardHat, History as HistoryIcon, IdCard, type LucideIcon, MapPin, UserCog, UserPlus, Users, Wrench } from 'lucide-react'
+import { Briefcase, CalendarDays, FileText, HardHat, History as HistoryIcon, IdCard, type LucideIcon, MapPin, RotateCcw, UserCog, UserPlus, Users, Wrench } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -18,8 +18,9 @@ import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTi
 import { Textarea } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { cairoToday, ErrorBanner, Field, type Errs, FormDialog, type FormApi, formatTime, type Row, SelectField, stopAtMissingPeriod, TextField, toErrs, useForm, useMoney } from '@/components/form'
+import { cairoToday, ErrorBanner, Field, type Errs, FormDialog, type FormApi, formatTime, ltrDates, type Row, SelectField, stopAtMissingPeriod, TextField, toErrs, useForm, useMoney } from '@/components/form'
 import { useDebounced } from '@/hooks/useDebounced'
+import { ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { RESIDENCES, USERS, useApi, useList, useSave } from '@/lib/query'
 
@@ -333,9 +334,12 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
           <h1 className="text-page-title">{emp.name_ar}</h1>
           {emp.name_en && <p className="text-sm text-muted-foreground">{emp.name_en}</p>}
           {emp.code != null && (
-            <p className="text-xs text-muted-foreground">
-              {t('employee.code')}: <span className="font-mono">{emp.code}</span>
-            </p>
+            <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+              <p>
+                {t('employee.code')}: <span className="font-mono">{emp.code}</span>
+              </p>
+              {can('employee.edit_code') && <ChangeCodeDialog emp={emp} />}
+            </div>
           )}
         </div>
         {emp.current_type && <Badge variant="info" className="self-start sm:self-center">{t(`enum.type.${emp.current_type}`)}</Badge>}
@@ -344,6 +348,10 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
           <dd>{worker ? emp.current_site?.name_ar ?? t('site.homeNone') : emp.current_manager?.name ?? t('manager.none')}</dd>
         </dl>
         {worker ? can('employee.assign_site') && <MoveSiteDialog empId={emp.id} /> : can('employee.assign_manager') && <AssignManagerDialog empId={emp.id} />}
+        {can('employee.edit') && emp.termination_date && emp.termination_date < cairoToday() && (
+          // the open form drops the cleared values too, so a later Save cannot send them back
+          <ReactivateDialog emp={emp} onDone={() => ['termination_date', 'termination_reason'].forEach((k) => set(k, ''))} />
+        )}
       </Card>
 
       <Tabs value={tab} onValueChange={(v) => setParams({ tab: v }, { replace: true })}>
@@ -366,6 +374,70 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
         </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+/** Undoes the termination of an archived employee: the API clears the date and reason, so the days since count as employed again. */
+function ReactivateDialog({ emp, onDone }: { emp: Row; onDone: () => void }) {
+  const { t } = useTranslation()
+  const send = useSave()
+  return (
+    <FormDialog
+      title={t('employee.reactivate.title')}
+      trigger={
+        <Button type="button" variant="outline">
+          <RotateCcw />
+          {t('employee.reactivate.button')}
+        </Button>
+      }
+      init={{}}
+      submit={() => send(`/employees/${emp.id}`, { method: 'PATCH', body: { termination_date: null, termination_reason: null } })}
+      onDone={onDone}
+      shown={[]}
+      footer="employee.reactivate.button"
+    >
+      {() => <p className="text-sm">{ltrDates(t('employee.reactivate.confirm', { date: emp.termination_date }))}</p>}
+    </FormDialog>
+  )
+}
+
+/** Sets the employee ID. When a live employee holds it the API answers 409 code_taken naming the holder; the dialog then offers to swap the two IDs. */
+function ChangeCodeDialog({ emp }: { emp: Row }) {
+  const { t } = useTranslation()
+  const send = useSave()
+  const [open, setOpen] = useState(false)
+  const [taken, setTaken] = useState(false)
+  async function submit(form: Row) {
+    try {
+      return await send(`/employees/${emp.id}/code`, { method: 'PATCH', body: { code: form.code === '' ? null : Number(form.code), ...(taken && { swap: true }) } })
+    } catch (e) {
+      setTaken(e instanceof ApiError && e.code === 'code_taken')
+      throw e
+    }
+  }
+  return (
+    <FormDialog
+      title={t('employee.changeCode.button')}
+      trigger={
+        <Button type="button" variant="link" size="xs">
+          {t('employee.changeCode.button')}
+        </Button>
+      }
+      open={open}
+      onOpenChange={(o) => { setOpen(o); setTaken(false) }}
+      init={{ code: String(emp.code ?? '') }}
+      submit={submit}
+      onDone={() => {}}
+      shown={['code']}
+      footer={taken ? 'employee.changeCode.swap' : 'common.save'}
+    >
+      {(f) => (
+        <>
+          <p className="text-sm text-muted-foreground">{t('employee.changeCode.warning')}</p>
+          <TextField name="code" label={t('employee.changeCode.new')} inputMode="numeric" dir="ltr" {...f} set={(k, v) => { setTaken(false); f.set(k, v) }} />
+        </>
+      )}
+    </FormDialog>
   )
 }
 

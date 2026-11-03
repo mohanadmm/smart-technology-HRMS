@@ -467,3 +467,81 @@ test('an employee whose termination date is today is still active; one terminate
   expect(within(screen.getByRole('row', { name: /سعيد/ })).getByText('غير نشط')).toBeInTheDocument()
 })
 
+const archived = { ...emp, code: 7, termination_date: '2026-01-31', termination_reason: 'استقالة' }
+
+test('an archived employee is reactivated after confirming, and the cleared dates show', async () => {
+  let current: Record<string, unknown> = archived
+  const patch = vi.fn(() => { current = { ...archived, termination_date: null, termination_reason: null }; return json(200, { data: current }) })
+  mockFetch({ 'GET /api/v1/residences': residences, 'GET /api/v1/employees/e1': () => json(200, { data: current }), 'PATCH /api/v1/employees/e1': patch })
+  renderWithAuth(<EmployeeDetailRoute id="e1" />, ALL, { router: false })
+  expect(await screen.findByLabelText('تاريخ إنهاء الخدمة')).toHaveValue('2026-01-31')
+  await user.click(screen.getByRole('button', { name: 'إعادة التفعيل' }))
+  expect(within(screen.getByRole('dialog')).getByText(/2026-01-31/)).toBeInTheDocument()
+  expect(patch).not.toHaveBeenCalled()
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'إعادة التفعيل' }))
+  await waitFor(() => expect(patch).toHaveBeenCalled())
+  expect(JSON.parse((patch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual({ termination_date: null, termination_reason: null })
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'إعادة التفعيل' })).toBeNull())
+  expect(screen.getByLabelText('تاريخ إنهاء الخدمة')).toHaveValue('') // the open form drops the cleared values, so Save cannot send them back
+  expect(screen.getByLabelText('سبب إنهاء الخدمة')).toHaveValue('')
+})
+
+test('Reactivate shows only for an archived employee and with employee.edit', async () => {
+  const today = cairoToday()
+  mockFetch({ 'GET /api/v1/residences': residences, 'GET /api/v1/employees/e1': () => json(200, { data: { ...archived, termination_date: today } }) })
+  const first = renderWithAuth(<EmployeeDetailRoute id="e1" />, ALL, { router: false })
+  await screen.findByLabelText('تاريخ إنهاء الخدمة')
+  expect(screen.queryByRole('button', { name: 'إعادة التفعيل' })).toBeNull() // terminated today: still active
+  first.unmount()
+  mockFetch({ 'GET /api/v1/residences': residences, 'GET /api/v1/employees/e1': () => json(200, { data: archived }) })
+  renderWithAuth(<EmployeeDetailRoute id="e1" />, ['employee.view.all'], { router: false })
+  await screen.findByLabelText('تاريخ إنهاء الخدمة')
+  expect(screen.queryByRole('button', { name: 'إعادة التفعيل' })).toBeNull()
+})
+
+const codeRoutes = (patch: (url: string, init?: RequestInit) => Response) =>
+  mockFetch({ 'GET /api/v1/residences': residences, 'GET /api/v1/employees/e1': () => json(200, { data: { ...emp, code: 7 } }), 'PATCH /api/v1/employees/e1/code': patch })
+const codeBody = (patch: ReturnType<typeof vi.fn>, i: number) => JSON.parse((patch.mock.calls[i] as unknown as [string, RequestInit])[1].body as string)
+
+test('Change ID shows only with employee.edit_code', async () => {
+  codeRoutes(() => json(200, { data: emp }))
+  const first = renderWithAuth(<EmployeeDetailRoute id="e1" />, ALL, { router: false })
+  await screen.findByLabelText('الاسم بالعربية')
+  expect(screen.queryByRole('button', { name: 'تغيير الرقم الوظيفي' })).toBeNull()
+  first.unmount()
+  renderWithAuth(<EmployeeDetailRoute id="e1" />, [...ALL, 'employee.edit_code.all'], { router: false })
+  expect(await screen.findByRole('button', { name: 'تغيير الرقم الوظيفي' })).toBeInTheDocument()
+})
+
+test('a taken ID shows the holder and offers to swap, which resends with swap', async () => {
+  const patch = vi.fn((_url: string, init?: RequestInit) =>
+    JSON.parse(init!.body as string).swap ? json(200, { data: { ...emp, code: 12 } }) : json(409, { error: { code: 'code_taken', message: 'الرقم الوظيفي 12 مستخدم للموظف سعيد' } }))
+  codeRoutes(patch)
+  renderWithAuth(<EmployeeDetailRoute id="e1" />, [...ALL, 'employee.edit_code.all'], { router: false })
+  await user.click(await screen.findByRole('button', { name: 'تغيير الرقم الوظيفي' }))
+  const dialog = screen.getByRole('dialog')
+  expect(within(dialog).getByText(/قوالب الحضور/)).toBeInTheDocument()
+  const box = within(dialog).getByLabelText('الرقم الوظيفي الجديد')
+  expect(box).toHaveValue('7')
+  await user.clear(box)
+  await user.type(box, '12')
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('الرقم الوظيفي 12 مستخدم للموظف سعيد')
+  expect(codeBody(patch, 0)).toEqual({ code: 12 })
+  await user.click(within(dialog).getByRole('button', { name: 'تبديل الرقمين' }))
+  await waitFor(() => expect(patch).toHaveBeenCalledTimes(2))
+  expect(codeBody(patch, 1)).toEqual({ code: 12, swap: true })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+test('an ID out of range shows the field error under the box', async () => {
+  codeRoutes(() => json(422, { error: { code: 'validation_failed', message: 'Invalid', details: [{ field: 'code', code: 'max', message: 'الرقم الوظيفي من 0 إلى 99999' }] } }))
+  renderWithAuth(<EmployeeDetailRoute id="e1" />, [...ALL, 'employee.edit_code.all'], { router: false })
+  await user.click(await screen.findByRole('button', { name: 'تغيير الرقم الوظيفي' }))
+  const box = screen.getByLabelText('الرقم الوظيفي الجديد')
+  await user.clear(box)
+  await user.type(box, '100000')
+  await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'حفظ' }))
+  await waitFor(() => expect(box).toHaveAccessibleDescription('الرقم الوظيفي من 0 إلى 99999'))
+  expect(screen.queryByRole('button', { name: 'تبديل الرقمين' })).toBeNull()
+})

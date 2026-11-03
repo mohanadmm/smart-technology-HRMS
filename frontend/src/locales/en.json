@@ -109,6 +109,17 @@
       "view": "Show employees",
       "active": "Active",
       "archived": "Archive"
+    },
+    "reactivate": {
+      "button": "Reactivate",
+      "title": "Reactivate employee",
+      "confirm": "The termination date and reason will be cleared, and the days since {{date}} will count as employed again."
+    },
+    "changeCode": {
+      "button": "Change ID",
+      "new": "New employee ID",
+      "warning": "After the change, Excel attendance templates downloaded earlier and IDs typed or pasted in the day sheet's quick entry will no longer match this employee.",
+      "swap": "Swap the two IDs"
     }
   },
   "pay": {
