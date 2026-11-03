@@ -2,12 +2,14 @@ import { UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { DataList } from '@/components/common/DataList'
 import { PageHeader } from '@/components/common/PageHeader'
 import { RowActions } from '@/components/common/RowActions'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { UserAvatar } from '@/components/common/UserAvatar'
 import { type Controlled, ErrorBanner, FormDialog, type Row, SelectField, TextField, useCairoTime } from '@/components/form'
 import { TableSkeleton } from '@/components/layout/PageSkeleton'
+import { SegmentedControl } from '@/components/layout/SegmentedControl'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -40,7 +42,6 @@ function AccountDialog({ account, roles, ...dialog }: { account?: Row; roles: Ro
     <FormDialog
       {...dialog}
       title={label}
-      trigger={account ? undefined : <Button type="button"><UserPlus />{label}</Button>}
       init={{ name: account?.name ?? '', email: account?.email ?? '', role_id: account?.role?.id ?? '' }}
       submit={({ name, email, role_id, password }) =>
         account ? send(`/users/${account.id}`, { method: 'PATCH', body: { name, email, role_id } }) : send('/users', { body: { name, email, role_id, password } })}
@@ -95,28 +96,18 @@ function SessionList({ account }: { account: Row }) {
       <ErrorBanner err={err} shown={[]} />
       {rows?.length === 0 && <p role="status">{t('console.noSessions')}</p>}
       {!!rows?.length && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('console.ip')}</TableHead>
-              <TableHead className="hidden sm:table-cell">{t('console.userAgent')}</TableHead>
-              <TableHead className="hidden sm:table-cell">{t('console.lastActivity')}</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((s) => (
-              <TableRow key={s.id}>
-                <TableCell dir="ltr">{s.ip_address ?? '—'}</TableCell>
-                <TableCell dir="ltr" className="hidden w-full max-w-0 truncate sm:table-cell" title={s.user_agent ?? ''}>{s.user_agent ?? '—'}</TableCell>
-                <TableCell className="hidden sm:table-cell">{time(s.last_activity_at)}</TableCell>
-                <TableCell>
-                  <Button type="button" variant="outline" size="sm" disabled={busy === s.id} onClick={() => revoke(s.id)}>{t('console.revoke')}</Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <DataList
+          label={t('console.sessions')}
+          rows={rows}
+          rowKey={(s) => s.id}
+          title={{ header: t('console.ip'), cell: (s) => <bdi dir="ltr">{s.ip_address ?? '—'}</bdi> }}
+          fields={[
+            // the table's cells are nowrap: a capped width keeps a long agent from widening the dialog; the title holds the full text
+            { header: t('console.userAgent'), cell: (s) => <div dir="ltr" className="truncate sm:max-w-40" title={s.user_agent ?? ''}>{s.user_agent ?? '—'}</div> },
+            { header: t('console.lastActivity'), cell: (s) => time(s.last_activity_at) },
+          ]}
+          actions={(s) => <Button type="button" variant="outline" size="sm" disabled={busy === s.id} onClick={() => revoke(s.id)}>{t('console.revoke')}</Button>}
+        />
       )}
     </>
   )
@@ -149,7 +140,7 @@ export function AccountsPage() {
   const send = useSave()
   const { data: roles = [], err: rolesErr } = useApi<Row[]>(manage && viewRoles ? '/roles' : null)
   const [actErr, setActErr] = useState<unknown>()
-  const [dlg, setDlg] = useState<{ type: 'edit' | 'password' | 'sessions'; row: Row }>()
+  const [dlg, setDlg] = useState<{ type: 'add' } | { type: 'edit' | 'password' | 'sessions'; row: Row }>()
   const close = { open: true, onOpenChange: () => setDlg(undefined) }
   const toggle = (u: Row) => {
     setActErr(undefined)
@@ -158,68 +149,53 @@ export function AccountsPage() {
   const now = new Date()
   return (
     <div className="space-y-6">
-      <PageHeader title={t('page.accounts')} description={t('console.accountsSubtitle')} actions={manage && viewRoles && <AccountDialog roles={roles} />} />
+      <PageHeader
+        title={t('page.accounts')}
+        description={t('console.accountsSubtitle')}
+        action={manage && viewRoles ? { label: t('console.addAccount'), icon: UserPlus, onClick: () => setDlg({ type: 'add' }) } : undefined}
+      />
       <ErrorBanner err={err ?? rolesErr ?? actErr} shown={[]} />
       <Card className="overflow-hidden">
-        {loading ? (
-          <TableSkeleton />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('console.user')}</TableHead>
-                <TableHead className="hidden md:table-cell">{t('auth.email')}</TableHead>
-                <TableHead className="hidden sm:table-cell">{t('console.role')}</TableHead>
-                <TableHead>{t('console.status')}</TableHead>
-                {manage && (
-                  <TableHead>
-                    <span className="sr-only">{t('common.actions')}</span>
-                  </TableHead>
-                )}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((u) => (
-                <TableRow key={u.id}>
-                  <TableCell className="whitespace-normal">
-                    <div className="flex items-center gap-3">
-                      <UserAvatar name={u.name} />
-                      <div className="min-w-0">
-                        <div className="font-medium">{u.name}</div>
-                        <div className="mt-1 sm:hidden">
-                          <Badge variant="neutral">{roleName(u.role)}</Badge>
-                        </div>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell dir="ltr" className="hidden text-start text-muted-foreground md:table-cell">{u.email}</TableCell>
-                  <TableCell className="hidden sm:table-cell">
-                    <Badge variant="neutral">{roleName(u.role)}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      <StatusBadge variant={u.is_active ? 'success' : 'neutral'} label={t(u.is_active ? 'console.active' : 'console.inactive')} />
-                      {u.locked_until && new Date(u.locked_until) > now && <StatusBadge variant="danger" label={t('console.locked')} />}
-                    </div>
-                  </TableCell>
-                  {manage && (
-                    <TableCell className="text-end">
-                      <RowActions
-                        items={[
-                          { label: t('common.edit'), onSelect: () => setDlg({ type: 'edit', row: u }) },
-                          { label: t('console.setPassword'), onSelect: () => setDlg({ type: 'password', row: u }) },
-                          { label: t(u.is_active ? 'console.deactivate' : 'console.reactivate'), onSelect: () => toggle(u), destructive: u.is_active },
-                          { label: t('console.sessions'), onSelect: () => setDlg({ type: 'sessions', row: u }) },
-                        ]}
-                      />
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+        <DataList
+          label={t('page.accounts')}
+          rows={rows}
+          rowKey={(u) => u.id}
+          loading={loading}
+          title={{
+            header: t('console.user'),
+            cell: (u) => (
+              <div className="flex items-center gap-3 whitespace-normal">
+                <UserAvatar name={u.name} />
+                <span className="min-w-0 font-medium">{u.name}</span>
+              </div>
+            ),
+          }}
+          fields={[
+            { header: t('auth.email'), cell: (u) => <bdi dir="ltr" className="text-muted-foreground">{u.email}</bdi>, tableFrom: 'md' },
+            { header: t('console.role'), cell: (u) => <Badge variant="neutral">{roleName(u.role)}</Badge> },
+          ]}
+          status={{
+            header: t('console.status'),
+            cell: (u) => (
+              <div className="flex flex-wrap gap-1">
+                <StatusBadge variant={u.is_active ? 'success' : 'neutral'} label={t(u.is_active ? 'console.active' : 'console.inactive')} />
+                {u.locked_until && new Date(u.locked_until) > now && <StatusBadge variant="danger" label={t('console.locked')} />}
+              </div>
+            ),
+          }}
+          actions={manage ? (u) => (
+            <RowActions
+              items={[
+                { label: t('common.edit'), onSelect: () => setDlg({ type: 'edit', row: u }) },
+                { label: t('console.setPassword'), onSelect: () => setDlg({ type: 'password', row: u }) },
+                { label: t(u.is_active ? 'console.deactivate' : 'console.reactivate'), onSelect: () => toggle(u), destructive: u.is_active },
+                { label: t('console.sessions'), onSelect: () => setDlg({ type: 'sessions', row: u }) },
+              ]}
+            />
+          ) : undefined}
+        />
       </Card>
+      {dlg?.type === 'add' && <AccountDialog roles={roles} {...close} />}
       {dlg?.type === 'edit' && <AccountDialog account={dlg.row} roles={roles} {...close} />}
       {dlg?.type === 'password' && <PasswordDialog account={dlg.row} {...close} />}
       {dlg?.type === 'sessions' && <SessionsDialog account={dlg.row} {...close} />}
@@ -227,13 +203,13 @@ export function AccountsPage() {
   )
 }
 
-function RoleDialog() {
+function RoleDialog(dialog: Controlled) {
   const { t } = useTranslation()
   const send = useSave()
   return (
     <FormDialog
+      {...dialog}
       title={t('console.addRole')}
-      trigger={<Button type="button">{t('console.addRole')}</Button>}
       init={{}}
       submit={({ slug, name, name_ar }) => send('/roles', { body: { slug, name, name_ar } })}
       onDone={() => {}}
@@ -288,19 +264,23 @@ function Matrix({ role, perms, editable }: { role: Row; perms: Row[]; editable: 
     if (own && all) {
       const value = checked.has(all.id) ? 'all' : checked.has(own.id) ? 'own' : 'none'
       return (
-        <div role="radiogroup" aria-label={label} className="inline-flex rounded-lg border bg-muted p-0.5 text-muted-foreground">
-          {([['none', undefined], ['own', own.id], ['all', all.id]] as const).map(([s, id]) => (
-            <label key={s}>
-              <input type="radio" className="peer sr-only" name={`${res}.${action}`} disabled={!editable || busy} checked={value === s} onChange={() => pick([own.id, all.id], id)} />
-              <span className="inline-flex h-7 items-center rounded-md px-2.5 text-xs peer-checked:bg-accent peer-checked:text-accent-foreground peer-checked:ring-1 peer-checked:ring-primary peer-focus-visible:outline-2 peer-focus-visible:outline-ring">{t(`perm.scope.${s}`)}</span>
-            </label>
-          ))}
-        </div>
+        <SegmentedControl
+          label={label}
+          value={value}
+          disabled={!editable || busy}
+          onChange={(s) => pick([own.id, all.id], { none: undefined, own: own.id, all: all.id }[s])}
+          // the visible text is aria-hidden: the option's sr-only label already names it
+          options={(['none', 'own', 'all'] as const).map((s) => ({ value: s, label: t(`perm.scope.${s}`), content: <span aria-hidden>{t(`perm.scope.${s}`)}</span> }))}
+        />
       )
     }
     if (ps.length === 1) {
       const id = ps[0].id as string
-      return <input type="checkbox" aria-label={label} className="size-4 accent-primary" disabled={!editable || busy} checked={checked.has(id)} onChange={() => pick([id], checked.has(id) ? undefined : id)} />
+      return (
+        <label className="inline-grid min-h-tap min-w-tap place-items-center">
+          <input type="checkbox" aria-label={label} className="size-4" disabled={!editable || busy} checked={checked.has(id)} onChange={() => pick([id], checked.has(id) ? undefined : id)} />
+        </label>
+      )
     }
     return <span className="text-muted-foreground">—</span>
   }
@@ -345,20 +325,27 @@ export function RolesPage() {
   const roleName = useRoleName()
   const manage = can('role.manage')
   const view = can('role.view') // nothing is fetched without it
-  const [selected, setSelected] = useState<string>()
+  const [picked, setPicked] = useState<string>()
+  // xl is where the list and the matrix sit side by side; there the first role opens by default, on narrower screens nothing does
+  const [wide] = useState(() => window.matchMedia?.('(min-width: 80rem)').matches ?? false)
+  const [adding, setAdding] = useState(false)
   const { data: roles = [], err: rolesErr, loading } = useApi<Row[]>(view ? '/roles' : null)
   const { data: perms = [], err: permsErr } = useApi<Row[]>(view ? '/permissions' : null)
   const err = rolesErr ?? permsErr
+  const selected = picked ?? (wide ? roles[0]?.id : undefined)
   const role = roles.find((r) => r.id === selected)
+  // while a role is open the matrix's Save changes is the screen's one solid button
+  const add = manage ? { label: t('console.addRole'), onClick: () => setAdding(true) } : undefined
   return (
     <div className="space-y-6">
-      <PageHeader title={t('page.roles')} description={t('console.rolesSubtitle')} actions={manage && <RoleDialog />} />
+      <PageHeader title={t('page.roles')} description={t('console.rolesSubtitle')} action={role ? undefined : add} secondary={role && add ? [add] : undefined} />
+      {adding && <RoleDialog open onOpenChange={setAdding} />}
       <ErrorBanner err={err} shown={[]} />
       <div className="grid gap-6 xl:grid-cols-[18rem_1fr]">
         <Card className="flex flex-col gap-1 self-start p-2">
           {loading && <TableSkeleton rows={4} />}
           {roles.map((r) => (
-            <button key={r.id} type="button" aria-pressed={r.id === selected} onClick={() => setSelected(r.id)} className="w-full rounded-lg border-s-[3px] border-transparent px-3 py-2.5 text-start hover:bg-muted aria-pressed:border-primary aria-pressed:bg-muted">
+            <button key={r.id} type="button" aria-pressed={r.id === selected} onClick={() => setPicked(r.id)} className="w-full rounded-lg border-s-[3px] border-transparent px-3 py-2.5 text-start hover:bg-muted aria-pressed:border-primary aria-pressed:bg-muted">
               <div className="font-medium">{roleName(r)}</div>
               <div className="font-mono text-xs text-muted-foreground"><span dir="ltr">{r.slug}</span></div>
               <div className="text-xs text-muted-foreground">{t('console.usersCount', { count: r.users_count })}</div>
