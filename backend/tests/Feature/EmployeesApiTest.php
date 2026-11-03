@@ -300,12 +300,15 @@ class EmployeesApiTest extends TestCase
     {
         $this->travelTo('2026-10-20 10:00:00');
         $id = $this->make();
-        $this->make(['name_ar' => 'منى', 'termination_date' => '2026-10-01']);                     // archived still holds the code
+        $this->make(['name_ar' => 'منى', 'name_en' => 'Mona', 'termination_date' => '2026-10-01']); // archived still holds the code
+        $this->make(['name_ar' => 'سعيد']);                                                           // no English name
 
         $this->patchJson("/api/v1/employees/$id/code", ['code' => 2], ['Accept-Language' => 'ar'])->assertStatus(409)
             ->assertJsonPath('error', ['code' => 'code_taken', 'message' => 'الرقم الوظيفي 2 مستخدم للموظف منى.']);
         $this->patchJson("/api/v1/employees/$id/code", ['code' => 2], ['Accept-Language' => 'en'])->assertStatus(409)
-            ->assertJsonPath('error.message', 'ID 2 belongs to منى.');
+            ->assertJsonPath('error.message', 'ID 2 belongs to Mona.');
+        $this->patchJson("/api/v1/employees/$id/code", ['code' => 3], ['Accept-Language' => 'en'])->assertStatus(409)
+            ->assertJsonPath('error.message', 'ID 3 belongs to سعيد.');
         $this->assertSame(0, DB::table('audit_log')->where(['entity_type' => 'employees', 'event' => 'UPDATED'])->count());
     }
 
