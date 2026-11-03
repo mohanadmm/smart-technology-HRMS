@@ -165,7 +165,11 @@
     "size": "{{size}} MB",
     "editDetails": "Edit details",
     "delete": "Delete",
-    "deleteConfirm": "Delete this document? It leaves the list; the audit log keeps the record."
+    "deleteConfirm": "Delete this document? It leaves the list; the audit log keeps the record.",
+    "uploadedBy": "Uploaded {{date}} by {{name}}",
+    "open": "Open",
+    "download": "Download",
+    "loadFailed": "The file could not be loaded."
   },
   "enum": {
     "type": {

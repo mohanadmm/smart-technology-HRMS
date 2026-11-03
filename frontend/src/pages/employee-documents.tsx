@@ -7,15 +7,17 @@ import { cairoToday, ErrorBanner, Field, FormDialog, intlLocale, type Row, Selec
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ApiError } from '@/lib/api'
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Skeleton } from '@/components/ui/misc'
+import { ApiError, apiBlob } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { useSave } from '@/lib/query'
 import { cn } from '@/lib/utils'
 
 export const DOC_KINDS = ['national_id_copy', 'work_stub', 'criminal_record', 'qualification', 'birth_certificate', 'insurance_form_6', 'photos', 'military_status', 'other']
-/** The only types the app accepts, uploads and renders (the server checks the bytes against the same list). */
-export const ACCEPT = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
+/** The only types the app accepts, uploads and renders, with their file extension (the server's EmployeeDocument::EXT; it checks the bytes against the same list). */
+const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' }
+export const ACCEPT = Object.keys(EXT)
 const MAX_BYTES = 10 * 1024 * 1024 // EmployeeDocumentController::MAX_KB
 const SHRINK_OVER = 1.5 * 1024 * 1024
 const EXPIRY_SOON_DAYS = 30
@@ -51,6 +53,7 @@ export function Documents({ emp }: { emp: Row }) {
   const { can } = useAuth()
   const [preset, setPreset] = useState<Preset>(null)
   const [dlg, setDlg] = useState<{ type: 'edit' | 'delete'; doc: Doc } | null>(null)
+  const [viewing, setViewing] = useState<Doc | null>(null)
   const send = useSave()
   const docs: Doc[] = emp.documents
   const viewer = can('employee_document.view')
@@ -94,8 +97,7 @@ export function Documents({ emp }: { emp: Row }) {
         rowKey={(d) => d.id}
         title={{
           header: t('document.kind'),
-          // Task 11 opens the viewer from this button
-          cell: (d) => (viewer ? <button type="button" className="text-start font-medium hover:underline">{kindName(d)}</button> : kindName(d)),
+          cell: (d) => (viewer ? <button type="button" className="text-start font-medium hover:underline" onClick={() => setViewing(d)}>{kindName(d)}</button> : kindName(d)),
         }}
         fields={[
           ...(viewer
@@ -135,6 +137,7 @@ export function Documents({ emp }: { emp: Row }) {
         </p>
       )}
       <UploadDialog empId={emp.id} preset={preset} onClose={() => setPreset(null)} />
+      <Viewer empId={emp.id} doc={viewing} onClose={() => setViewing(null)} />
       {dlg?.type === 'edit' && (
         <FormDialog
           title={t('document.editDetails')}
@@ -282,5 +285,81 @@ function UploadForm({ empId, preset, onClose }: { empId: string; preset: NonNull
         </Button>
       </DialogFooter>
     </form>
+  )
+}
+
+/** Shows one document's file in the app: photos as an img, PDFs in an iframe where the browser can, otherwise an Open link; always a Download link. */
+export function Viewer({ empId, doc, onClose }: { empId: string; doc: Doc | null; onClose: () => void }) {
+  const { t, i18n } = useTranslation()
+  const kind = doc && t(`enum.document.${doc.kind}`)
+  const date = new Intl.DateTimeFormat(intlLocale(i18n.language), { dateStyle: 'medium', timeZone: 'Africa/Cairo' })
+  return (
+    <Dialog open={doc !== null} onOpenChange={(o) => !o && onClose()}>
+      {/* full screen under sm, below the notch (the close button sits at the top) */}
+      <DialogContent className="top-[env(safe-area-inset-top)] max-h-none rounded-none sm:h-[85vh] sm:max-h-none sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>{kind}</DialogTitle>
+          <DialogDescription>
+            <bdi>{doc?.original_name}</bdi> · {doc?.created_at && t('document.uploadedBy', { date: date.format(new Date(doc.created_at)), name: doc.uploader_name ?? '—' })}
+          </DialogDescription>
+        </DialogHeader>
+        {doc && <ViewerFile empId={empId} doc={doc} kind={kind!} />}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** The dialog's body: mounted only while open, so the object URL lives exactly as long as the dialog. */
+function ViewerFile({ empId, doc, kind }: { empId: string; doc: Doc; kind: string }) {
+  const { t } = useTranslation()
+  const [url, setUrl] = useState<string>()
+  const [failed, setFailed] = useState(false)
+  const [tries, setTries] = useState(0)
+  // the Blob's type comes from the stored mime, allow-listed; never from the response, so a file can't turn itself into HTML
+  const type = doc.mime && doc.mime in EXT ? doc.mime : 'application/octet-stream'
+  // as the server's file route: the base name (or "document") plus the extension of the stored type, so x.html stored as a PDF saves as x.pdf
+  const name = (doc.original_name?.includes('.') ? doc.original_name.slice(0, doc.original_name.lastIndexOf('.')) : doc.original_name) || 'document'
+
+  useEffect(() => {
+    let made: string | undefined
+    let live = true
+    setFailed(false)
+    apiBlob(`/employees/${empId}/documents/${doc.id}/file`).then(
+      (b) => live && setUrl((made = URL.createObjectURL(new Blob([b], { type })))),
+      () => live && setFailed(true),
+    )
+    return () => {
+      live = false
+      if (made) URL.revokeObjectURL(made)
+    }
+  }, [empId, doc.id, type, tries])
+
+  const center = 'm-auto grid justify-items-center gap-3 text-center'
+  return (
+    <>
+      <DialogBody className="flex min-h-0 flex-col p-2 sm:p-4">
+        {failed ? (
+          <div className={center}>
+            <p className="text-sm text-muted-foreground">{t('document.loadFailed')}</p>
+            <Button type="button" variant="outline" onClick={() => setTries((n) => n + 1)}>{t('document.retry')}</Button>
+          </div>
+        ) : !url ? (
+          <Skeleton aria-busy="true" aria-label={t('auth.loading')} className="min-h-64 flex-1" />
+        ) : type.startsWith('image/') ? (
+          <img src={url} alt={`${kind}: ${doc.original_name}`} className="min-h-0 w-full flex-1 object-contain" />
+        ) : type === 'application/pdf' && navigator.pdfViewerEnabled ? (
+          // no sandbox: Chromium refuses to show a PDF inside one
+          <iframe src={url} title={kind} className="min-h-0 w-full flex-1 rounded-lg border" />
+        ) : (
+          // a link the user taps, not window.open: iOS blocks a window opened after an await
+          <a href={url} target="_blank" rel="noopener" className={cn(buttonVariants(), center)}>{t('document.open')}</a>
+        )}
+      </DialogBody>
+      {url && (
+        <DialogFooter>
+          <a href={url} download={`${name}.${EXT[type] ?? 'bin'}`} className={buttonVariants({ variant: 'secondary' })}>{t('document.download')}</a>
+        </DialogFooter>
+      )}
+    </>
   )
 }

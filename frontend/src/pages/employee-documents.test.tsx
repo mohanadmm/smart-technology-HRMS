@@ -215,3 +215,83 @@ test('edit details without the view permission leaves the unseen note out', asyn
   await vi.waitFor(() => expect(patch).toHaveBeenCalled())
   expect(JSON.parse((patch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual({ kind: 'work_stub', expires_at: null })
 })
+
+const FILE = `GET ${DOC_PATH}/file`
+const html = () => new Response('x', { headers: { 'Content-Type': 'text/html' } })
+async function view(over: object = {}, file: () => Response = html, pdfViewer = true) {
+  Object.defineProperty(navigator, 'pdfViewerEnabled', { value: pdfViewer, configurable: true })
+  const urls = { create: vi.fn(() => 'blob:doc-1'), revoke: vi.fn() }
+  Object.assign(URL, { createObjectURL: urls.create, revokeObjectURL: urls.revoke })
+  const get = vi.fn(file)
+  mockFetch({ [FILE]: get })
+  const user = userEvent.setup()
+  showDocs([{ ...d1, ...over }], VIEW)
+  await user.click(screen.getByRole('button', { name: 'صحيفة الحالة الجنائية' }))
+  const dialog = await screen.findByRole('dialog', { name: 'صحيفة الحالة الجنائية' })
+  const blobType = () => (urls.create.mock.calls[0] as unknown as [Blob])[0].type
+  return { user, dialog, urls, get, blobType }
+}
+
+test('an image opens as an img built from the stored mime', async () => {
+  const { dialog, blobType } = await view({ mime: 'image/png', original_name: 'id.png' })
+  const img = await within(dialog).findByRole('img')
+  expect(img).toHaveAttribute('src', 'blob:doc-1')
+  expect(img.getAttribute('alt')).toContain('صحيفة الحالة الجنائية')
+  expect(img.getAttribute('alt')).toContain('id.png')
+  expect(blobType()).toBe('image/png')
+})
+
+test('a PDF opens in an iframe when the browser shows PDFs', async () => {
+  const { dialog, blobType } = await view()
+  const frame = await vi.waitFor(() => dialog.querySelector('iframe')!)
+  expect(frame).toHaveAttribute('title', 'صحيفة الحالة الجنائية')
+  expect(frame).toHaveAttribute('src', 'blob:doc-1')
+  expect(blobType()).toBe('application/pdf')
+  expect(within(dialog).queryByRole('img')).toBeNull()
+})
+
+test('a PDF without an in-page viewer gets an Open link', async () => {
+  const { dialog } = await view({}, html, false)
+  expect(await within(dialog).findByRole('link', { name: 'فتح' })).toHaveAttribute('href', 'blob:doc-1')
+  expect(dialog.querySelector('iframe')).toBeNull()
+})
+
+test('an unknown stored mime never renders inline', async () => {
+  const { dialog, blobType } = await view({ mime: 'text/html' })
+  await within(dialog).findByRole('link', { name: 'تنزيل' })
+  expect(blobType()).toBe('application/octet-stream')
+  expect(within(dialog).queryByRole('img')).toBeNull()
+  expect(dialog.querySelector('iframe')).toBeNull()
+})
+
+test('the download name takes its extension from the stored mime', async () => {
+  const { dialog } = await view({ original_name: 'x.html' })
+  expect(await within(dialog).findByRole('link', { name: 'تنزيل' })).toHaveAttribute('download', 'x.pdf')
+})
+
+test('a name with no base downloads as document', async () => {
+  const { dialog } = await view({ original_name: '.pdf', mime: 'image/jpeg' })
+  expect(await within(dialog).findByRole('link', { name: 'تنزيل' })).toHaveAttribute('download', 'document.jpg')
+})
+
+test('closing revokes the URL', async () => {
+  const { user, dialog, urls } = await view()
+  await within(dialog).findByRole('link', { name: 'تنزيل' })
+  await user.click(within(dialog).getByRole('button', { name: 'إغلاق' }))
+  await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(urls.revoke).toHaveBeenCalledWith('blob:doc-1')
+})
+
+test('a failed fetch shows Retry', async () => {
+  const { user, dialog, get } = await view({}, () => json(500, { error: { code: 'x', message: 'x' } }))
+  expect(await within(dialog).findByText('تعذّر تحميل الملف.')).toBeInTheDocument()
+  get.mockImplementation(html)
+  await user.click(within(dialog).getByRole('button', { name: 'إعادة المحاولة' }))
+  await vi.waitFor(() => expect(dialog.querySelector('iframe')).not.toBeNull())
+  expect(get).toHaveBeenCalledTimes(2)
+})
+
+test('the viewer says who uploaded the file and when', async () => {
+  const { dialog } = await view()
+  expect(dialog).toHaveTextContent(/scan\.pdf.*رُفع في .*2026.* بواسطة HR/)
+})
