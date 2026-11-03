@@ -138,14 +138,48 @@
   },
   "history": {
     "types": "سجل تغييرات نوع الموظف",
-    "pay": "سجل تغييرات الأجر",
-    "documents": "المستندات"
+    "pay": "سجل تغييرات الأجر"
   },
   "document": {
     "kind": "المستند",
-    "received_at": "تاريخ الاستلام",
+    "pickKind": "اختر نوع المستند",
     "expires_at": "تاريخ الانتهاء",
-    "note": "ملاحظات"
+    "note": "ملاحظات",
+    "upload": "رفع مستند",
+    "uploading": "جارٍ الرفع…",
+    "replace": "استبدال الملف",
+    "file": "الملف",
+    "choose": "اختيار ملف",
+    "noFile": "لم يُختر ملف",
+    "tooLarge": "حجم الملف {{size}} ميجابايت والحد الأقصى {{max}} ميجابايت.",
+    "tooLargePdf": "امسحه ضوئيًا بجودة أقل أو قسّمه.",
+    "tooLargeServer": "الملف أكبر من الحد الذي يقبله الخادم.",
+    "badType": "يُقبل فقط ملف PDF أو JPG أو PNG أو WEBP.",
+    "heic": "هذه الصورة بصيغة HEIC. احفظها بصيغة JPG أو PDF ثم أعد المحاولة.",
+    "network": "تعذّر الاتصال.",
+    "retry": "إعادة المحاولة",
+    "title": "المستندات · {{count}}",
+    "empty": "لم يُرفع أي مستند بعد.",
+    "missing": "لم يُرفع بعد:",
+    "expired": "منتهي الصلاحية",
+    "expiresToday": "ينتهي اليوم",
+    "expiresIn_zero": "ينتهي خلال {{count}} يوم",
+    "expiresIn_one": "ينتهي خلال يوم واحد",
+    "expiresIn_two": "ينتهي خلال يومين",
+    "expiresIn_few": "ينتهي خلال {{count}} أيام",
+    "expiresIn_many": "ينتهي خلال {{count}} يومًا",
+    "expiresIn_other": "ينتهي خلال {{count}} يوم",
+    "size": "{{size}} ميجابايت",
+    "sizeKb": "{{size}} كيلوبايت",
+    "editDetails": "تعديل البيانات",
+    "delete": "حذف",
+    "deleteTitle": "حذف {{name}}؟",
+    "deleteConfirm": "سيختفي من القائمة ويبقى أثره في سجل التدقيق.",
+    "uploadedBy": "<file/> · رُفع في {{date}} بواسطة <name/>",
+    "imageAlt": "{{kind}}: {{name}}",
+    "open": "فتح",
+    "download": "تنزيل",
+    "loadFailed": "تعذّر تحميل الملف."
   },
   "enum": {
     "type": {
@@ -303,7 +337,8 @@
       "audit_log": "سجل التدقيق",
       "setting": "قواعد العمل",
       "attendance": "الحضور",
-      "holiday": "الإجازات الرسمية"
+      "holiday": "الإجازات الرسمية",
+      "employee_document": "مستندات الموظفين"
     },
     "action": {
       "view": "عرض",
@@ -322,6 +357,10 @@
       "edit": "الحضور: تعديل",
       "lock": "الحضور: قفل الفترة",
       "record": "الحضور: تسجيل"
+    },
+    "employee_document": {
+      "view": "مستندات الموظفين: عرض",
+      "edit": "مستندات الموظفين: تعديل"
     },
     "holiday": {
       "manage": "الإجازات الرسمية: إدارة"

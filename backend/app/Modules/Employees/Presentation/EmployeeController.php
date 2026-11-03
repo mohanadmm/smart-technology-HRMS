@@ -6,7 +6,6 @@ namespace App\Modules\Employees\Presentation;
 
 use App\Modules\Employees\Application\EmployeeRules;
 use App\Modules\Employees\Application\EmployeeService;
-use App\Modules\Employees\Domain\DocumentKind;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Identity\Domain\Rbac\AuthorizationRefused;
 use App\Modules\Identity\Presentation\RequestScope;
@@ -116,16 +115,5 @@ final class EmployeeController
         ]);
 
         return ApiEnvelope::single($request, $this->employees->assignSite($employee, $data), 201);
-    }
-
-    public function document(Request $request, string $employee, string $kind): JsonResponse
-    {
-        $data = $request->validate([
-            'received_at' => ['nullable', 'date_format:Y-m-d'],
-            'expires_at' => ['nullable', 'date_format:Y-m-d'],
-            'note' => ['nullable', 'string'],
-        ]);
-
-        return ApiEnvelope::single($request, $this->employees->upsertDocument($employee, DocumentKind::from($kind), $data));
     }
 }

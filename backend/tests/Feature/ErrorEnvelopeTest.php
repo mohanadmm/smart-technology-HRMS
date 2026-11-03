@@ -57,4 +57,10 @@ class ErrorEnvelopeTest extends TestCase
 
         $this->getJson('/api/v1/_t')->assertForbidden();
     }
+
+    public function test_a_body_over_post_max_size_is_413_in_the_envelope(): void
+    {
+        $this->call('POST', '/api/v1/employees', [], [], [], ['CONTENT_LENGTH' => (string) (1024 ** 3), 'HTTP_ACCEPT' => 'application/json'])
+            ->assertStatus(413)->assertJsonPath('error.code', 'payload_too_large');
+    }
 }

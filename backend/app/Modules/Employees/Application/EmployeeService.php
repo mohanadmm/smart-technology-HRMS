@@ -15,10 +15,13 @@ use App\Modules\Employees\Infrastructure\Eloquent\EmployeeManagerAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeePayChange;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeTypeChange;
+use App\Modules\Identity\Application\Rbac\AuthorizeAction;
+use App\Modules\Identity\Domain\Rbac\Scope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -35,6 +38,8 @@ final class EmployeeService
 
     /** Coding standard §9: kept out of own-scoped (manager-facing) responses. */
     private const SENSITIVE = ['national_id', 'insurance_no', 'bank_account', 'hr_notes'];
+
+    public function __construct(private readonly AuthorizeAction $authorize) {}
 
     /**
      * @param  array{type?: string, site_id?: string, search?: string, per_page?: int, archived?: bool}  $filters
@@ -133,11 +138,11 @@ final class EmployeeService
 
     /**
      * @param  string|null  $ownerId  set for own-scoped callers: pay and sensitive identity fields are left out
-     * @return array<string, mixed>
+     * @return array<string, mixed> documents carry their file fields when seesFiles()
      */
     public function show(string $id, ?string $ownerId = null): array
     {
-        $e = Employee::with(['typeChanges', 'payChanges', 'documents', 'managerAssignments.manager', 'siteAssignments.site'])->findOrFail($id);
+        $e = Employee::with(['typeChanges', 'payChanges', 'documents.uploader', 'managerAssignments.manager', 'siteAssignments.site'])->findOrFail($id);
         $types = $e->typeChanges->sortBy('effective_from')->values()->map(fn ($t) => $this->row($t))->all();
         $pays = $e->payChanges->sortBy('effective_from')->values()->map(fn ($p) => $this->row($p))->all();
         $managers = $e->managerAssignments->sortBy('effective_from')->values()->map(fn (EmployeeManagerAssignment $m) => [
@@ -157,6 +162,8 @@ final class EmployeeService
         $manager = EffectiveDated::at($managers, $today);
         $site = EffectiveDated::at($sites, $today);
         $full = $ownerId === null;
+        $kinds = array_flip(array_column(DocumentKind::cases(), 'value'));
+        $files = $this->seesFiles($id);
 
         return [
             ...$this->summary($e, $full),
@@ -167,7 +174,10 @@ final class EmployeeService
             'manager_assignments' => $managers,
             'current_site' => $site === null ? null : ['id' => $site['site_id'], 'name_ar' => $site['site_name_ar'], 'name_en' => $site['site_name_en']],
             'site_assignments' => $sites,
-            'documents' => $e->documents->sortBy('kind')->values()->map(fn ($d) => $this->row($d))->all(),
+            'documents' => $e->documents->sortBy([
+                fn (EmployeeDocument $a, EmployeeDocument $b) => $kinds[$a->kind] <=> $kinds[$b->kind],
+                ['id', 'desc'], // UUIDv7: newest first
+            ])->values()->map(fn (EmployeeDocument $d) => EmployeeDocuments::row($d, $files))->all(),
         ];
     }
 
@@ -291,6 +301,18 @@ final class EmployeeService
         return EmployeeReach::reaches($employeeId, $userId, $date ?? self::today());
     }
 
+    /** The signed-in user sees this employee's document file fields and notes: employee_document.view at `all`, or `own` with the employee in reach today. */
+    public function seesFiles(string $employeeId): bool
+    {
+        $user = Auth::user();
+        if ($user === null) {
+            return false;
+        }
+        $view = $this->authorize->decide($user, 'employee_document.view');
+
+        return $view->allows(Scope::All) || ($view->allows(Scope::Own) && $this->isManagedBy($employeeId, (string) $user->getAuthIdentifier()));
+    }
+
     /**
      * @param  array{manager_id: string, effective_from: string}  $data
      * @return array<string, mixed>
@@ -336,18 +358,6 @@ final class EmployeeService
 
             $employee->siteAssignments()->createMany($rows);
         });
-
-        return $this->show($id);
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     * @return array<string, mixed>
-     */
-    public function upsertDocument(string $id, DocumentKind $kind, array $data): array
-    {
-        $employee = Employee::findOrFail($id);
-        $employee->documents()->updateOrCreate(['kind' => $kind->value], $data);
 
         return $this->show($id);
     }
@@ -405,7 +415,7 @@ final class EmployeeService
     }
 
     /** @return array<string, mixed> */
-    private function row(EmployeeTypeChange|EmployeePayChange|EmployeeDocument $m): array
+    private function row(EmployeeTypeChange|EmployeePayChange $m): array
     {
         return Arr::except($m->toArray(), [...self::HIDDEN, 'employee_id']);
     }

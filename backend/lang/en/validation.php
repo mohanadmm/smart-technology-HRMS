@@ -31,7 +31,6 @@ return [
         'daily_wage' => 'Daily wage',
         'shift_start' => 'Shift start',
         'shift_end' => 'Shift end',
-        'received_at' => 'Date received',
         'expires_at' => 'Expiry date',
         'note' => 'Notes',
         'kind' => 'Type',

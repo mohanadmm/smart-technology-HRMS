@@ -138,14 +138,44 @@
   },
   "history": {
     "types": "Type history",
-    "pay": "Pay history",
-    "documents": "Documents"
+    "pay": "Pay history"
   },
   "document": {
     "kind": "Document",
-    "received_at": "Date received",
+    "pickKind": "Choose a document type",
     "expires_at": "Expiry date",
-    "note": "Notes"
+    "note": "Notes",
+    "upload": "Upload document",
+    "uploading": "Uploading…",
+    "replace": "Replace file",
+    "file": "File",
+    "choose": "Choose file",
+    "noFile": "No file chosen",
+    "tooLarge": "The file is {{size}} MB; the limit is {{max}} MB.",
+    "tooLargePdf": "Scan it at a lower quality or split it.",
+    "tooLargeServer": "The file is larger than the server accepts.",
+    "badType": "Only PDF, JPG, PNG or WEBP files.",
+    "heic": "This photo is HEIC. Save it as JPG or PDF and try again.",
+    "network": "The connection failed.",
+    "retry": "Retry",
+    "title": "Documents · {{count}}",
+    "empty": "No documents uploaded yet.",
+    "missing": "Not uploaded yet:",
+    "expired": "Expired",
+    "expiresToday": "Expires today",
+    "expiresIn_one": "Expires in {{count}} day",
+    "expiresIn_other": "Expires in {{count}} days",
+    "size": "{{size}} MB",
+    "sizeKb": "{{size}} KB",
+    "editDetails": "Edit details",
+    "delete": "Delete",
+    "deleteTitle": "Delete {{name}}?",
+    "deleteConfirm": "It leaves the list; the audit log keeps its record.",
+    "uploadedBy": "<file/> · Uploaded {{date}} by <name/>",
+    "imageAlt": "{{kind}}: {{name}}",
+    "open": "Open",
+    "download": "Download",
+    "loadFailed": "The file could not be loaded."
   },
   "enum": {
     "type": {
@@ -303,7 +333,8 @@
       "audit_log": "Audit log",
       "setting": "Business rules",
       "attendance": "Attendance",
-      "holiday": "Official holidays"
+      "holiday": "Official holidays",
+      "employee_document": "Employee documents"
     },
     "action": {
       "view": "View",
@@ -322,6 +353,10 @@
       "edit": "Attendance: edit",
       "lock": "Attendance: lock period",
       "record": "Attendance: record"
+    },
+    "employee_document": {
+      "view": "Employee documents: view",
+      "edit": "Employee documents: edit"
     },
     "holiday": {
       "manage": "Official holidays: manage"

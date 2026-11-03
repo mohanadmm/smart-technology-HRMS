@@ -23,13 +23,13 @@ import { useDebounced } from '@/hooks/useDebounced'
 import { ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { RESIDENCES, USERS, useApi, useList, useSave } from '@/lib/query'
+import { Documents } from './employee-documents'
 
 const TYPES = ['office', 'engineer', 'permanent_worker', 'day_laborer']
 const WORKERS = ['permanent_worker', 'day_laborer'] // a worker belongs to a home site; its manager follows the site
 const WORK_SITES = '/sites?per_page=100&kind=work&active=true' // the same list the fares grid loads
 const GENDERS = ['male', 'female']
 const PAY_METHODS = ['cash', 'bank']
-const DOC_KINDS = ['national_id_copy', 'work_stub', 'criminal_record', 'qualification', 'birth_certificate', 'insurance_form_6', 'photos', 'military_status', 'other']
 const IDENTITY = ['name_ar', 'name_en', 'fingerprint_name', 'gender', 'national_id', 'insurance_no', 'phone', 'address', 'department', 'residence_id', 'pay_method', 'bank_account', 'hire_date', 'contract_end_date', 'termination_date', 'termination_reason', 'hr_notes']
 const PAY = ['salary', 'raise', 'insured_basic', 'daily_wage', 'shift_start', 'shift_end']
 
@@ -703,71 +703,5 @@ function ChangeDialog({ kind, emp }: { kind: 'type' | 'pay'; emp: Row }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-/** One row per document kind; its dialog PUTs and the page shows the record the API returns. */
-function Documents({ emp }: { emp: Row }) {
-  const { t } = useTranslation()
-  const { can } = useAuth()
-  const send = useSave()
-  return (
-    <Card className="overflow-hidden">
-      <CardHeader>
-        <CardTitle>{t('history.documents')}</CardTitle>
-      </CardHeader>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('document.kind')}</TableHead>
-            <TableHead>{t('document.received_at')}</TableHead>
-            <TableHead className="hidden md:table-cell">{t('document.expires_at')}</TableHead>
-            <TableHead className="hidden lg:table-cell">{t('document.note')}</TableHead>
-            <TableHead>
-              <span className="sr-only">{t('common.actions')}</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {DOC_KINDS.map((kind) => {
-            const doc: Row | undefined = emp.documents.find((d: Row) => d.kind === kind)
-            return (
-              <TableRow key={kind}>
-                <TableCell className="font-medium">{t(`enum.document.${kind}`)}</TableCell>
-                <TableCell>{doc?.received_at ?? '—'}</TableCell>
-                <TableCell className="hidden md:table-cell">{doc?.expires_at ?? '—'}</TableCell>
-                <TableCell className="hidden text-muted-foreground lg:table-cell">{doc?.note ?? '—'}</TableCell>
-                <TableCell className="text-end">
-                  {can('employee.edit') && (
-                    <FormDialog
-                      title={t(`enum.document.${kind}`)}
-                      trigger={
-                        <Button type="button" variant="outline" size="sm">
-                          {t('common.edit')}
-                        </Button>
-                      }
-                      init={{ received_at: doc?.received_at ?? '', expires_at: doc?.expires_at ?? '', note: doc?.note ?? '' }}
-                      submit={(form) =>
-                        send(`/employees/${emp.id}/documents/${kind}`, { method: 'PUT', body: Object.fromEntries(Object.entries(form).map(([k, v]) => [k, v || null])) })
-                      }
-                      onDone={() => {}}
-                      shown={['received_at', 'expires_at', 'note']}
-                    >
-                      {(f) => (
-                        <>
-                          <TextField name="received_at" label={t('document.received_at')} type="date" {...f} />
-                          <TextField name="expires_at" label={t('document.expires_at')} type="date" {...f} />
-                          <TextField name="note" label={t('document.note')} {...f} />
-                        </>
-                      )}
-                    </FormDialog>
-                  )}
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
-    </Card>
   )
 }

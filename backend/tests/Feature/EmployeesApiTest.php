@@ -126,17 +126,6 @@ class EmployeesApiTest extends TestCase
         $this->getJson('/api/v1/employees/not-a-uuid')->assertNotFound();
     }
 
-    public function test_document_upsert(): void
-    {
-        $id = $this->make();
-        $this->putJson("/api/v1/employees/$id/documents/work_stub", ['received_at' => '2026-02-01'])->assertOk();
-        $this->putJson("/api/v1/employees/$id/documents/work_stub", ['received_at' => '2026-02-02', 'note' => 'x'])->assertOk();
-        $this->putJson("/api/v1/employees/$id/documents/bogus", [])->assertNotFound();
-        $docs = $this->getJson("/api/v1/employees/$id")->json('data.documents');
-        $this->assertCount(1, $docs);
-        $this->assertSame('2026-02-02', $docs[0]['received_at']);
-    }
-
     public function test_null_or_empty_raise_defaults_to_zero(): void
     {
         $id = $this->make(['raise' => null]);
