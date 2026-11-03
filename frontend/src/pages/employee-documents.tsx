@@ -21,15 +21,15 @@ const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', '
 const ACCEPT = Object.keys(EXT)
 const MB = 1024 * 1024
 const MAX_BYTES = 10 * MB // EmployeeDocumentController::MAX_KB
-const SHRINK_OVER = 1.5 * 1024 * 1024
+const SHRINK_OVER = 1.5 * MB
 // ponytail: iOS Safari can kill the tab decoding a huge image instead of throwing; above this the size check refuses it unshrunk
-const SHRINK_UNDER = 40 * 1024 * 1024
+const SHRINK_UNDER = 40 * MB
 const EXPIRY_SOON_DAYS = 30 // until Release 3 makes it a setting: the lead time for ID and document expiry (docs/hrms-module-plan.md)
 /** The one number format for every file size the tab shows. */
 const sizeFormat = (lng: string) => new Intl.NumberFormat(intlLocale(lng), { maximumFractionDigits: 1 })
 const isHeic = (f: File) => /^image\/hei[cf](-sequence)?$/.test(f.type) || /\.hei[cf]$/i.test(f.name)
 /** The browser's type, or (when the OS gave none) the one its extension names. */
-const typeOf = (f: File) => f.type || ACCEPT.find((m) => f.name.toLowerCase().endsWith(`.${EXT[m]}`)) || ''
+const typeOf = (f: File) => f.type || ACCEPT.find((m) => f.name.toLowerCase().replace(/\.jpeg$/, '.jpg').endsWith(`.${EXT[m]}`)) || ''
 
 /** A big phone photo as a JPEG of at most 2400 px on its long edge (transparency on white); the original when that is not smaller or anything fails. */
 async function shrinkPhoto(file: File): Promise<File> {

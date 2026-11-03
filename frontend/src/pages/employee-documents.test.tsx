@@ -92,6 +92,10 @@ test('a file the browser gives no type gets one from its extension', async () =>
   await user.click(await screen.findByRole('button', { name: 'رفع مستند' }))
   const sent = await sentFile(post)
   expect([sent.name, sent.type]).toEqual(['ID.WEBP', 'image/webp'])
+  await user.upload(screen.getByLabelText('الملف'), new File(['x'], 'scan.JPEG', { type: '' }))
+  await user.click(await screen.findByRole('button', { name: 'رفع مستند' }))
+  await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(2))
+  expect((body(post, 1).get('file') as File).type).toBe('image/jpeg')
 })
 
 /** createImageBitmap and the canvas, which jsdom lacks: a 4000×3000 photo that encodes to a 400 KB JPEG. */
