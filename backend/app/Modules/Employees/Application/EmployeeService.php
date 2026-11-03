@@ -15,10 +15,13 @@ use App\Modules\Employees\Infrastructure\Eloquent\EmployeeManagerAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeePayChange;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeTypeChange;
+use App\Modules\Identity\Application\Rbac\AuthorizeAction;
+use App\Modules\Identity\Domain\Rbac\Scope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -35,6 +38,8 @@ final class EmployeeService
 
     /** Coding standard §9: kept out of own-scoped (manager-facing) responses. */
     private const SENSITIVE = ['national_id', 'insurance_no', 'bank_account', 'hr_notes'];
+
+    public function __construct(private readonly AuthorizeAction $authorize) {}
 
     /**
      * @param  array{type?: string, site_id?: string, search?: string, per_page?: int, archived?: bool}  $filters
@@ -133,10 +138,9 @@ final class EmployeeService
 
     /**
      * @param  string|null  $ownerId  set for own-scoped callers: pay and sensitive identity fields are left out
-     * @param  bool  $files  the caller holds employee_document.view: documents carry their file fields
-     * @return array<string, mixed>
+     * @return array<string, mixed> documents carry their file fields when seesFiles()
      */
-    public function show(string $id, ?string $ownerId = null, bool $files = false): array
+    public function show(string $id, ?string $ownerId = null): array
     {
         $e = Employee::with(['typeChanges', 'payChanges', 'documents.uploader', 'managerAssignments.manager', 'siteAssignments.site'])->findOrFail($id);
         $types = $e->typeChanges->sortBy('effective_from')->values()->map(fn ($t) => $this->row($t))->all();
@@ -159,6 +163,7 @@ final class EmployeeService
         $site = EffectiveDated::at($sites, $today);
         $full = $ownerId === null;
         $kinds = array_flip(array_column(DocumentKind::cases(), 'value'));
+        $files = $this->seesFiles($id);
 
         return [
             ...$this->summary($e, $full),
@@ -294,6 +299,18 @@ final class EmployeeService
     public function isManagedBy(string $employeeId, string $userId, ?string $date = null): bool
     {
         return EmployeeReach::reaches($employeeId, $userId, $date ?? self::today());
+    }
+
+    /** The signed-in user sees this employee's document file fields and notes: employee_document.view at `all`, or `own` with the employee in reach today. */
+    public function seesFiles(string $employeeId): bool
+    {
+        $user = Auth::user();
+        if ($user === null) {
+            return false;
+        }
+        $view = $this->authorize->decide($user, 'employee_document.view');
+
+        return $view->allows(Scope::All) || ($view->allows(Scope::Own) && $this->isManagedBy($employeeId, (string) $user->getAuthIdentifier()));
     }
 
     /**

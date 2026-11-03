@@ -321,6 +321,44 @@ class EmployeeDocumentsTest extends TestCase
         $this->fileOf($other, $theirs)->assertNotFound();
     }
 
+    private function grant(string ...$triples): void
+    {
+        foreach ($triples as $t) {
+            [$resource, $action, $scope] = explode('.', $t);
+            Role::where('slug', 'manager')->sole()->permissions()->attach(Permission::where(compact('resource', 'action', 'scope'))->sole()->id);
+        }
+    }
+
+    public function test_an_own_view_grant_shows_file_fields_only_in_reach_even_with_employee_view_all(): void
+    {
+        $this->grant('employee.view.all', 'employee_document.view.own');
+        [$manager, $emp] = $this->managed();
+        $other = $this->employee();
+        $this->upload($emp)->assertCreated();
+        $this->upload($other, ['note' => 'سري'])->assertCreated();
+        $this->actingAs($manager, 'api');
+        $this->getJson("/api/v1/employees/$emp")->assertOk()->assertJsonPath('data.documents.0.original_name', 'عقد.pdf');
+        $res = $this->getJson("/api/v1/employees/$other")->assertOk();
+        $this->assertSame(['id', 'kind', 'expires_at'], array_keys($res->json('data.documents.0')));
+        $this->assertStringNotContainsString('سري', (string) $res->getContent());
+    }
+
+    public function test_an_employee_mutation_answers_hr_with_the_file_fields(): void
+    {
+        $emp = $this->employee();
+        $this->upload($emp)->assertCreated();
+        $this->patchJson("/api/v1/employees/$emp", ['name_ar' => 'اسم'])->assertOk()->assertJsonPath('data.documents.0.original_name', 'عقد.pdf');
+    }
+
+    public function test_the_old_document_route_needs_the_document_edit_permission(): void
+    {
+        $this->grant('employee.edit.all');
+        [$manager, $emp] = $this->managed();
+        $this->upload($emp)->assertCreated();
+        $this->actingAs($manager, 'api');
+        $this->putJson("/api/v1/employees/$emp/documents/work_stub", ['note' => 'x'])->assertStatus(403)->assertJsonPath('error.code', 'permission_denied');
+    }
+
     public function test_hr_sees_the_file_fields_sorted_by_kind_then_newest(): void
     {
         $emp = $this->employee();

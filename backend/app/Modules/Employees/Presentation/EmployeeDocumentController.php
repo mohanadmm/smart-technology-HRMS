@@ -6,9 +6,7 @@ namespace App\Modules\Employees\Presentation;
 
 use App\Modules\Employees\Application\EmployeeDocuments;
 use App\Modules\Employees\Domain\DocumentKind;
-use App\Modules\Identity\Application\Rbac\AuthorizeAction;
 use App\Support\Http\ApiEnvelope;
-use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -22,13 +20,13 @@ final class EmployeeDocumentController
 {
     public const MAX_KB = 10240;
 
-    public function __construct(private readonly EmployeeDocuments $documents, private readonly AuthorizeAction $authorize) {}
+    public function __construct(private readonly EmployeeDocuments $documents) {}
 
     public function store(Request $request, string $employee): JsonResponse
     {
         $tooLarge = __('errors.document_too_large', ['max' => self::MAX_KB / 1024]);
         $data = $request->validate([
-            'file' => ['required', File::types(['pdf', 'jpg', 'jpeg', 'png', 'webp'])->max(self::MAX_KB)],
+            'file' => ['required', File::types(EmployeeDocuments::extensions())->max(self::MAX_KB)],
             'kind' => ['required', Rule::enum(DocumentKind::class)],
             'expires_at' => ['nullable', 'date_format:Y-m-d'],
             'note' => ['nullable', 'string'],
@@ -40,7 +38,7 @@ final class EmployeeDocumentController
             'file.mimes' => __('errors.document_type'),
         ]);
 
-        return ApiEnvelope::single($request, $this->documents->upload($employee, $request->file('file'), Arr::except($data, 'file'), $this->seesFiles($request)), 201);
+        return ApiEnvelope::single($request, $this->documents->upload($employee, $request->file('file'), Arr::except($data, 'file')), 201);
     }
 
     public function update(Request $request, string $employee, string $document): JsonResponse
@@ -51,7 +49,7 @@ final class EmployeeDocumentController
             'note' => ['sometimes', 'nullable', 'string'],
         ]);
 
-        return ApiEnvelope::single($request, $this->documents->update($employee, $document, $data, $this->seesFiles($request)));
+        return ApiEnvelope::single($request, $this->documents->update($employee, $document, $data));
     }
 
     public function destroy(string $employee, string $document): Response
@@ -71,10 +69,5 @@ final class EmployeeDocumentController
             'X-Content-Type-Options' => 'nosniff',
             'Cache-Control' => 'private, no-store',
         ]);
-    }
-
-    private function seesFiles(Request $request): bool
-    {
-        return $this->authorize->decide($request->user() ?? throw new AuthenticationException, 'employee_document.view')->granted();
     }
 }

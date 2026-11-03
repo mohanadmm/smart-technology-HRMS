@@ -17,6 +17,8 @@ use Throwable;
 
 final class EmployeeDocuments
 {
+    public function __construct(private readonly EmployeeService $employees) {}
+
     /**
      * Stores the file under a name built from a new id and the detected type, then inserts the row (and soft-deletes the
      * replaced one) in one transaction; a failure after the write deletes the new file.
@@ -24,7 +26,7 @@ final class EmployeeDocuments
      * @param  array<string, mixed>  $data  kind, and optional expires_at, note, replaces (the id of a live document of this employee)
      * @return array<string, mixed>
      */
-    public function upload(string $employeeId, UploadedFile $file, array $data, bool $files): array
+    public function upload(string $employeeId, UploadedFile $file, array $data): array
     {
         $employee = Employee::findOrFail($employeeId);
         $mime = (string) $file->getMimeType();
@@ -58,19 +60,19 @@ final class EmployeeDocuments
             throw $e;
         }
 
-        return self::row($doc->load('uploader'), $files);
+        return self::row($doc->load('uploader'), $this->employees->seesFiles($employeeId));
     }
 
     /**
      * @param  array<string, mixed>  $data  a subset of kind, expires_at, note
      * @return array<string, mixed>
      */
-    public function update(string $employeeId, string $documentId, array $data, bool $files): array
+    public function update(string $employeeId, string $documentId, array $data): array
     {
         $doc = $this->find($employeeId, $documentId);
         $doc->update($data);
 
-        return self::row($doc->load('uploader'), $files);
+        return self::row($doc->load('uploader'), $this->employees->seesFiles($employeeId));
     }
 
     /** Model delete: soft and audited; the file stays. */
@@ -87,12 +89,18 @@ final class EmployeeDocuments
         return ['path' => $doc->path(), 'mime' => $doc->mime, 'name' => (Str::beforeLast($doc->original_name, '.') ?: 'document').'.'.EmployeeDocument::EXT[$doc->mime]];
     }
 
+    /** @return list<string> the accepted extensions, read from the one mime map (Laravel's `mimes` also accepts jpeg for jpg) */
+    public static function extensions(): array
+    {
+        return array_values(EmployeeDocument::EXT);
+    }
+
     private function find(string $employeeId, string $documentId): EmployeeDocument
     {
         return Employee::findOrFail($employeeId)->documents()->findOrFail($documentId);
     }
 
-    /** @return array<string, mixed> without the view grant only id, kind and expiry; never the path */
+    /** @return array<string, mixed> without $files (EmployeeService::seesFiles) only id, kind and expiry; never the path */
     public static function row(EmployeeDocument $d, bool $files): array
     {
         // Contract key order, whatever the attribute order (a fresh insert and a loaded row differ); dates serialized as EmployeeService::row.
