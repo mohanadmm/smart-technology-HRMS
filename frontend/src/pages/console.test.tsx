@@ -112,6 +112,18 @@ test('without role.manage the matrix is read-only', async () => {
   expect(screen.queryByRole('button', { name: 'حفظ التغييرات' })).toBeNull()
 })
 
+test('an action outside the known list still gets a column, after the known ones', async () => {
+  const assignSite = { id: 'p-assign-site', resource: 'employee', action: 'assign_site', scope: 'all', key: 'employee.assign_site.all' }
+  mockFetch({
+    'GET /api/v1/roles': () => json(200, { data: [{ ...role, permissions: [...role.permissions, assignSite.key] }] }),
+    'GET /api/v1/permissions': () => json(200, { data: [assignSite, ...perms] }),
+  })
+  renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
+  await pickRole()
+  expect(screen.getAllByRole('columnheader').at(-1)).toHaveTextContent('تعيين الموقع الأساسي')
+  expect(screen.getByRole('checkbox', { name: 'الموظفون: تعيين الموقع الأساسي' })).toBeChecked()
+})
+
 test('account create shows a server field error under its field', async () => {
   mockFetch({ 'GET /api/v1/users': () => json(200, { data: [], meta: { pagination } }), 'GET /api/v1/roles': () => json(200, { data: [role] }),
     'POST /api/v1/users': () => json(422, { error: { code: 'validation_failed', message: 'x', details: [{ field: 'email', code: 'invalid', message: 'البريد مستخدم' }] } }) })
