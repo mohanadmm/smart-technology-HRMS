@@ -237,8 +237,8 @@ export type Controlled = { open?: boolean; onOpenChange?: (open: boolean) => voi
 
 export type FormApi = { values: Row; set: (k: string, v: string) => void; errs: Record<string, string> }
 
-/** Dialog whose form state lives in the body, so it is fresh on every open (Radix unmounts closed content). Passing `open` makes it controlled. */
-export function FormDialog({ title, trigger, open: openProp, onOpenChange, init, submit, onDone, shown, children, footer = 'common.save' }: {
+/** Dialog whose form state lives in the body, so it is fresh on every open (Radix unmounts closed content). Passing `open` makes it controlled; `clearErrOnEdit` drops the last error once a value changes. */
+export function FormDialog({ title, trigger, open: openProp, onOpenChange, init, submit, onDone, shown, children, footer = 'common.save', clearErrOnEdit }: {
   title: string
   trigger?: React.ReactNode
   open?: boolean
@@ -249,6 +249,7 @@ export function FormDialog({ title, trigger, open: openProp, onOpenChange, init,
   shown: string[]
   children: (f: FormApi) => React.ReactNode
   footer?: string
+  clearErrOnEdit?: boolean
 }) {
   const [own, setOwn] = useState(false)
   const open = openProp ?? own
@@ -260,7 +261,7 @@ export function FormDialog({ title, trigger, open: openProp, onOpenChange, init,
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <FormBody init={init} submit={submit} shown={shown} footer={footer} onDone={() => { setOpen(false); onDone() }}>
+        <FormBody init={init} submit={submit} shown={shown} footer={footer} clearErrOnEdit={clearErrOnEdit} onDone={() => { setOpen(false); onDone() }}>
           {children}
         </FormBody>
       </DialogContent>
@@ -268,7 +269,7 @@ export function FormDialog({ title, trigger, open: openProp, onOpenChange, init,
   )
 }
 
-function FormBody({ init, submit, onDone, shown, footer, children }: { init: Row; submit: (form: Row) => Promise<unknown>; onDone: () => void; shown: string[]; footer: string; children: (f: FormApi) => React.ReactNode }) {
+function FormBody({ init, submit, onDone, shown, footer, clearErrOnEdit, children }: { init: Row; submit: (form: Row) => Promise<unknown>; onDone: () => void; shown: string[]; footer: string; clearErrOnEdit?: boolean; children: (f: FormApi) => React.ReactNode }) {
   const { t } = useTranslation()
   const { form, set } = useForm(init)
   const [err, setErr] = useState<unknown>()
@@ -293,7 +294,7 @@ function FormBody({ init, submit, onDone, shown, footer, children }: { init: Row
     <>
       <DialogBody className="grid gap-4">
         <ErrorBanner err={err} shown={shown} />
-        {children({ values: form, set, errs: toErrs(err) })}
+        {children({ values: form, set: clearErrOnEdit ? (k, v) => { setErr(undefined); set(k, v) } : set, errs: toErrs(err) })}
       </DialogBody>
       <DialogFooter>
         <Button type="button" disabled={busy.current} onClick={go}>

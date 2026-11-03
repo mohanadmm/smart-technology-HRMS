@@ -409,7 +409,8 @@ function ChangeCodeDialog({ emp }: { emp: Row }) {
   const [taken, setTaken] = useState(false)
   async function submit(form: Row) {
     try {
-      return await send(`/employees/${emp.id}/code`, { method: 'PATCH', body: { code: form.code === '' ? null : Number(form.code), ...(taken && { swap: true }) } })
+      const code = String(form.code ?? '').trim() // as typed: the server's integer rule rejects the rest
+      return await send(`/employees/${emp.id}/code`, { method: 'PATCH', body: { code: code === '' ? null : code, ...(taken && { swap: true }) } })
     } catch (e) {
       setTaken(e instanceof ApiError && e.code === 'code_taken')
       throw e
@@ -430,6 +431,7 @@ function ChangeCodeDialog({ emp }: { emp: Row }) {
       onDone={() => {}}
       shown={['code']}
       footer={taken ? 'employee.changeCode.swap' : 'common.save'}
+      clearErrOnEdit // the holder banner names the ID that was tried, not the one now typed
     >
       {(f) => (
         <>
