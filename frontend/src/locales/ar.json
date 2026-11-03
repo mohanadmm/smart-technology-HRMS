@@ -138,8 +138,7 @@
   },
   "history": {
     "types": "سجل تغييرات نوع الموظف",
-    "pay": "سجل تغييرات الأجر",
-    "documents": "المستندات"
+    "pay": "سجل تغييرات الأجر"
   },
   "document": {
     "kind": "المستند",
@@ -155,7 +154,19 @@
     "badType": "يُقبل فقط ملف PDF أو JPG أو PNG أو WEBP.",
     "heic": "هذه الصورة بصيغة HEIC. احفظها بصيغة JPG أو PDF ثم أعد المحاولة.",
     "network": "تعذّر الاتصال.",
-    "retry": "إعادة المحاولة"
+    "retry": "إعادة المحاولة",
+    "title": "المستندات · {{count}}",
+    "empty": "لم يُرفع أي مستند بعد.",
+    "missing": "لم يُرفع بعد:",
+    "expired": "منتهي",
+    "expiresToday": "ينتهي اليوم",
+    "expiresIn_zero": "ينتهي خلال {{count}} يوم",
+    "expiresIn_one": "ينتهي خلال يوم واحد",
+    "expiresIn_two": "ينتهي خلال يومين",
+    "expiresIn_few": "ينتهي خلال {{count}} أيام",
+    "expiresIn_many": "ينتهي خلال {{count}} يومًا",
+    "expiresIn_other": "ينتهي خلال {{count}} يوم",
+    "size": "{{size}} ميجابايت"
   },
   "enum": {
     "type": {

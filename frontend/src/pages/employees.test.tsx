@@ -105,21 +105,6 @@ test('no move button without employee.assign_site', async () => {
   expect(screen.queryByRole('button', { name: 'نقل إلى موقع' })).toBeNull()
 })
 
-test('a document is updated from its row dialog and the refetched record is shown', async () => {
-  let docs: unknown[] = []
-  const put = vi.fn(() => { docs = [{ id: 'd1', kind: 'criminal_record', expires_at: null, note: 'أصل' }]; return json(200, { data: { ...emp, documents: docs } }) })
-  mockFetch({ 'GET /api/v1/residences': residences, 'GET /api/v1/employees/e1': () => json(200, { data: { ...emp, documents: docs } }),
-    'PUT /api/v1/employees/e1/documents/criminal_record': put })
-  renderWithAuth(<EmployeeDetailRoute id="e1" tab="documents" />, ALL, { router: false })
-  const row = await screen.findByRole('row', { name: /صحيفة الحالة الجنائية/ })
-  expect(screen.queryByText('تاريخ الاستلام')).toBeNull()
-  await user.click(within(row).getByRole('button', { name: 'تعديل' }))
-  await user.type(screen.getByLabelText('ملاحظات'), 'أصل')
-  await user.click(screen.getByRole('button', { name: 'حفظ' }))
-  expect(JSON.parse((put.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual({ expires_at: null, note: 'أصل' })
-  expect(await within(screen.getByRole('row', { name: /صحيفة الحالة الجنائية/ })).findByText('أصل')).toBeInTheDocument()
-})
-
 test('list rows show the employee, ID, type badge, department, hire date and status', async () => {
   mockFetch({ 'GET /api/v1/employees': () => json(200, { data: [row1], meta: { pagination } }) })
   renderWithAuth(<EmployeesPage />, ['employee.view.all'])

@@ -1,8 +1,8 @@
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 import { json, mockFetch, renderWithAuth } from '@/test-utils'
-import { UploadDialog } from './employee-documents'
+import { Documents, UploadDialog } from './employee-documents'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -86,4 +86,64 @@ test('a network failure offers Retry', async () => {
   await user.click(screen.getByRole('button', { name: 'إعادة المحاولة' }))
   await vi.waitFor(() => expect(onClose).toHaveBeenCalled())
   expect(post).toHaveBeenCalledTimes(2)
+})
+
+const VIEW = ['employee_document.view.all']
+const doc = (kind: string, expires_at: string | null = null) => ({ id: `d-${kind}-${expires_at}`, kind, expires_at, original_name: 'scan.pdf', mime: 'application/pdf', size_bytes: 250_000, note: null, created_at: '2026-11-01T08:00:00Z', uploader_name: 'HR' })
+const missingLine = (_: string, el: Element | null) => el?.tagName === 'P' && !!el.textContent?.startsWith('لم يُرفع بعد:')
+const showDocs = (documents: object[], permissions = perms) => renderWithAuth(<Documents emp={{ id: 'e1', documents }} />, permissions, { router: false })
+
+test('an empty list shows one sentence and one Upload button', () => {
+  const { unmount } = showDocs([])
+  expect(screen.getByText('لم يُرفع أي مستند بعد.')).toBeInTheDocument()
+  expect(screen.getAllByRole('button', { name: 'رفع مستند' })).toHaveLength(1)
+  unmount()
+  showDocs([], VIEW)
+  expect(screen.getByText('لم يُرفع أي مستند بعد.')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'رفع مستند' })).toBeNull()
+})
+
+test('the header counts documents and the missing line lists the other kinds', async () => {
+  const user = userEvent.setup()
+  const { unmount } = showDocs([doc('national_id_copy')])
+  expect(screen.getByRole('heading', { name: 'المستندات · 1' })).toBeInTheDocument()
+  expect(screen.getAllByRole('button', { name: 'رفع مستند' })).toHaveLength(1)
+  const line = screen.getByText(missingLine)
+  expect(within(line).getAllByRole('button').map((b) => b.textContent)).toEqual(['عقد عمل', 'صحيفة الحالة الجنائية', 'المؤهل الدراسي', 'شهادة الميلاد', 'استمارة رقم 6 (التأمينات الاجتماعية)', 'صور شخصية', 'الموقف من التجنيد'])
+  await user.click(within(line).getByRole('button', { name: 'صحيفة الحالة الجنائية' }))
+  expect(await screen.findByLabelText('المستند')).toHaveValue('criminal_record')
+  unmount()
+  showDocs([doc('national_id_copy')], VIEW)
+  expect(screen.queryByText(missingLine)).toBeNull()
+  expect(screen.queryByRole('button', { name: 'رفع مستند' })).toBeNull()
+})
+
+test('expiry badges', () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-11-03T10:00:00Z'))
+  try {
+    const badge = (expires: string) => {
+      const { unmount } = showDocs([doc('work_stub', expires)])
+      const text = screen.getByRole('row', { name: /عقد عمل/ }).textContent
+      unmount()
+      return text
+    }
+    expect(badge('2026-11-02')).toContain('منتهي')
+    expect(badge('2026-11-03')).toContain('ينتهي اليوم')
+    expect(badge('2026-12-03')).toContain('ينتهي خلال 30 يومًا')
+    expect(badge('2026-12-04')).not.toMatch(/ينتهي|منتهي/)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('without the view permission the kind is plain text', () => {
+  const { unmount } = showDocs([{ id: 'd1', kind: 'work_stub', expires_at: null }], [])
+  expect(screen.getByText('عقد عمل')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'عقد عمل' })).toBeNull()
+  expect(screen.queryByText('scan.pdf')).toBeNull()
+  unmount()
+  showDocs([doc('work_stub')], VIEW)
+  expect(screen.getByRole('button', { name: 'عقد عمل' })).toBeInTheDocument()
+  expect(screen.getByText('scan.pdf')).toBeInTheDocument()
 })

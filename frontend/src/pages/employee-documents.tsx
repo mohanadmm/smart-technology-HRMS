@@ -1,10 +1,14 @@
-import { Upload } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { FileText, Upload } from 'lucide-react'
+import { Fragment, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ErrorBanner, Field, intlLocale, type Row, SelectField, TextField, toErrs, useForm } from '@/components/form'
+import { DataList } from '@/components/common/DataList'
+import { cairoToday, ErrorBanner, Field, intlLocale, type Row, SelectField, TextField, toErrs, useForm } from '@/components/form'
+import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ApiError } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import { useSave } from '@/lib/query'
 import { cn } from '@/lib/utils'
 
@@ -13,6 +17,7 @@ export const DOC_KINDS = ['national_id_copy', 'work_stub', 'criminal_record', 'q
 export const ACCEPT = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
 const MAX_BYTES = 10 * 1024 * 1024 // EmployeeDocumentController::MAX_KB
 const SHRINK_OVER = 1.5 * 1024 * 1024
+const EXPIRY_SOON_DAYS = 30
 const isHeic = (f: File) => /^image\/hei[cf]$/.test(f.type) || /\.hei[cf]$/i.test(f.name)
 
 /** A big phone photo as a JPEG of at most 2400 px on its long edge (transparency on white); the original when that is not smaller or anything fails. */
@@ -36,6 +41,91 @@ async function shrinkPhoto(file: File): Promise<File> {
 }
 
 type Preset = { kind?: string; replaces?: Row } | null
+/** A document row from `GET /employees/{id}`: only id, kind and expiry without `employee_document.view`. */
+type Doc = { id: string; kind: string; expires_at: string | null } & Partial<{ original_name: string; mime: string; size_bytes: number; note: string | null; created_at: string; uploader_name: string | null }>
+
+/** The employee's documents (API order: kind, then newest); editors upload, and see which kinds are still missing. */
+export function Documents({ emp }: { emp: Row }) {
+  const { t, i18n } = useTranslation()
+  const { can } = useAuth()
+  const [preset, setPreset] = useState<Preset>(null)
+  const docs: Doc[] = emp.documents
+  const viewer = can('employee_document.view')
+  const editor = can('employee_document.edit')
+  const lng = intlLocale(i18n.language)
+  const date = new Intl.DateTimeFormat(lng, { dateStyle: 'medium', timeZone: 'UTC' })
+  const mb = new Intl.NumberFormat(lng, { maximumSignificantDigits: 2 })
+  const today = Date.parse(cairoToday())
+  const kindName = (d: Doc) => t(`enum.document.${d.kind}`)
+  const missing = DOC_KINDS.filter((k) => k !== 'other' && !docs.some((d) => d.kind === k))
+  const upload = (
+    <Button type="button" onClick={() => setPreset({})}>
+      <Upload aria-hidden /> {t('document.upload')}
+    </Button>
+  )
+
+  function expiry(d: Doc) {
+    if (!d.expires_at) return '—'
+    const days = (Date.parse(d.expires_at) - today) / 86_400_000
+    const badge =
+      days < 0 ? <Badge variant="danger">{t('document.expired')}</Badge>
+      : days === 0 ? <Badge variant="warning">{t('document.expiresToday')}</Badge>
+      : days <= EXPIRY_SOON_DAYS && <Badge variant="warning">{t('document.expiresIn', { count: days })}</Badge>
+    return (
+      <span className="inline-flex flex-wrap items-center justify-end gap-2">
+        {date.format(new Date(d.expires_at))}
+        {badge}
+      </span>
+    )
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader>
+        <CardTitle>{t('document.title', { count: docs.length })}</CardTitle>
+        {docs.length > 0 && editor && upload}
+      </CardHeader>
+      <DataList
+        label={t('document.title', { count: docs.length })}
+        rows={docs}
+        rowKey={(d) => d.id}
+        title={{
+          header: t('document.kind'),
+          // Task 11 opens the viewer from this button
+          cell: (d) => (viewer ? <button type="button" className="text-start font-medium hover:underline">{kindName(d)}</button> : kindName(d)),
+        }}
+        fields={[
+          ...(viewer
+            ? [{ header: t('document.file'), cell: (d: Doc) => (
+                <span className="inline-flex min-w-0 items-baseline gap-2">
+                  <bdi className="block max-w-56 truncate" title={d.original_name}>{d.original_name}</bdi>
+                  <span className="shrink-0 text-muted-foreground">{t('document.size', { size: mb.format((d.size_bytes ?? 0) / 1024 / 1024) })}</span>
+                </span>
+              ) }]
+            : []),
+          { header: t('document.expires_at'), cell: expiry },
+        ]}
+        empty={{ icon: FileText, title: t('document.empty'), action: editor ? upload : undefined }}
+      />
+      {docs.length > 0 && editor && missing.length > 0 && (
+        <p className="border-t px-5 py-3 text-sm text-muted-foreground">
+          {t('document.missing')}{' '}
+          {new Intl.ListFormat(lng, { type: 'conjunction' }).formatToParts(missing).map((part, i) =>
+            part.type === 'literal' ? (
+              <Fragment key={i}>{part.value}</Fragment>
+            ) : (
+              // a link inside a sentence: exempt from the 44 px target (WCAG 2.5.8)
+              <button key={i} type="button" className="text-primary underline-offset-4 hover:underline" onClick={() => setPreset({ kind: part.value })}>
+                {t(`enum.document.${part.value}`)}
+              </button>
+            ),
+          )}
+        </p>
+      )}
+      <UploadDialog empId={emp.id} preset={preset} onClose={() => setPreset(null)} />
+    </Card>
+  )
+}
 
 /** Uploads one file for an employee; open while `preset` is not null. `replaces` prefills kind, expiry and note and sends the old document's id. */
 export function UploadDialog({ empId, preset, onClose }: { empId: string; preset: Preset; onClose: () => void }) {
