@@ -3,6 +3,9 @@
 namespace Tests\Feature;
 
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeDocument;
+use App\Modules\Identity\Infrastructure\Eloquent\Permission;
+use App\Modules\Identity\Infrastructure\Eloquent\Role;
+use App\Modules\Identity\Infrastructure\Eloquent\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -227,5 +230,107 @@ class EmployeeDocumentsTest extends TestCase
         $this->patchJson("/api/v1/employees/$a/documents/$id", ['note' => 'x'])->assertNotFound();
         $this->deleteJson("/api/v1/employees/$a/documents/$id")->assertNotFound();
         $this->assertSame($before, EmployeeDocument::findOrFail($id)->getAttributes());
+    }
+
+    public function test_only_document_editors_edit_and_delete(): void
+    {
+        [$manager, $emp] = $this->managed();
+        $id = $this->upload($emp)->assertCreated()->json('data.id');
+        $this->actingAs($manager, 'api');
+        $this->patchJson("/api/v1/employees/$emp/documents/$id", ['note' => 'x'])->assertStatus(403)->assertJsonPath('error.code', 'permission_denied');
+        $this->deleteJson("/api/v1/employees/$emp/documents/$id")->assertStatus(403)->assertJsonPath('error.code', 'permission_denied');
+        $this->assertNull(EmployeeDocument::findOrFail($id)->deleted_at);
+    }
+
+    /** @return array{User, string} a manager and an engineer in their reach */
+    private function managed(): array
+    {
+        $manager = $this->makeUser('manager');
+        $emp = $this->employee();
+        $this->postJson("/api/v1/employees/$emp/manager-assignments", ['manager_id' => $manager->id, 'effective_from' => '2026-01-01'])->assertCreated();
+
+        return [$manager, $emp];
+    }
+
+    private function fileOf(string $emp, string $id): TestResponse
+    {
+        return $this->get("/api/v1/employees/$emp/documents/$id/file", ['Accept' => 'application/json']);
+    }
+
+    public function test_the_file_is_served_with_safe_headers(): void
+    {
+        $emp = $this->employee();
+        $id = $this->upload($emp)->assertCreated()->json('data.id');
+        $res = $this->fileOf($emp, $id)->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->assertStringContainsString('no-store', (string) $res->headers->get('Cache-Control'));
+        $this->assertStringContainsString('private', (string) $res->headers->get('Cache-Control'));
+        $this->assertSame(self::PDF, $res->streamedContent());
+    }
+
+    public function test_the_download_name_uses_the_detected_extension(): void
+    {
+        $emp = $this->employee();
+        $name = fn (string $n) => (string) $this->fileOf($emp, $this->upload($emp, ['file' => $this->file($n)])->assertCreated()->json('data.id'))
+            ->assertOk()->headers->get('Content-Disposition');
+        $html = $name('x.html');
+        $this->assertStringContainsString('x.pdf', $html);
+        $this->assertStringNotContainsString('.html', $html);
+        $this->assertStringContainsString('document.pdf', $name("\u{202E}"));
+        $this->assertStringContainsString('document.pdf', $name('.pdf'));
+    }
+
+    public function test_a_deleted_document_is_404_on_file(): void
+    {
+        $emp = $this->employee();
+        $id = $this->upload($emp)->assertCreated()->json('data.id');
+        $this->deleteJson("/api/v1/employees/$emp/documents/$id")->assertNoContent();
+        $this->fileOf($emp, $id)->assertNotFound()->assertJsonPath('error.code', 'not_found');
+    }
+
+    public function test_a_missing_file_on_disk_is_404(): void
+    {
+        $emp = $this->employee();
+        $id = $this->upload($emp)->assertCreated()->json('data.id');
+        Storage::disk('local')->delete(EmployeeDocument::findOrFail($id)->path());
+        $this->fileOf($emp, $id)->assertNotFound()->assertJsonPath('error.code', 'not_found');
+    }
+
+    public function test_a_manager_sees_the_list_only(): void
+    {
+        [$manager, $emp] = $this->managed();
+        $id = $this->upload($emp, ['note' => 'سري'])->assertCreated()->json('data.id');
+        $this->actingAs($manager, 'api');
+        $res = $this->getJson("/api/v1/employees/$emp")->assertOk();
+        $this->assertSame(['id', 'kind', 'expires_at'], array_keys($res->json('data.documents.0')));
+        $this->assertStringNotContainsString('سري', (string) $res->getContent());
+        $this->fileOf($emp, $id)->assertStatus(403)->assertJsonPath('error.code', 'permission_denied');
+    }
+
+    public function test_an_own_view_grant_reaches_only_the_managers_employees(): void
+    {
+        Role::where('slug', 'manager')->sole()->permissions()->attach(Permission::where(['resource' => 'employee_document', 'action' => 'view', 'scope' => 'own'])->value('id'));
+        [$manager, $emp] = $this->managed();
+        $other = $this->employee();
+        $mine = $this->upload($emp)->assertCreated()->json('data.id');
+        $theirs = $this->upload($other)->assertCreated()->json('data.id');
+        $this->actingAs($manager, 'api');
+        $this->fileOf($emp, $mine)->assertOk();
+        $this->getJson("/api/v1/employees/$emp")->assertOk()->assertJsonPath('data.documents.0.original_name', 'عقد.pdf');
+        $this->fileOf($other, $theirs)->assertNotFound();
+    }
+
+    public function test_hr_sees_the_file_fields_sorted_by_kind_then_newest(): void
+    {
+        $emp = $this->employee();
+        $this->upload($emp, ['kind' => 'other'])->assertCreated();
+        $this->upload($emp, ['kind' => 'national_id_copy'])->assertCreated();
+        $newer = $this->upload($emp, ['kind' => 'national_id_copy'])->assertCreated()->json('data.id');
+        $res = $this->getJson("/api/v1/employees/$emp")->assertOk()
+            ->assertJsonPath('data.documents.*.kind', ['national_id_copy', 'national_id_copy', 'other'])
+            ->assertJsonPath('data.documents.0.id', $newer);
+        $this->assertSame(['id', 'kind', 'expires_at', 'original_name', 'mime', 'size_bytes', 'note', 'created_at', 'uploader_name'], array_keys($res->json('data.documents.0')));
+        $this->assertStringNotContainsString('received_at', (string) $res->getContent());
     }
 }

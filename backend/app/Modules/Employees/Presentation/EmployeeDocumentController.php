@@ -13,8 +13,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\File;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class EmployeeDocumentController
 {
@@ -57,6 +59,18 @@ final class EmployeeDocumentController
         $this->documents->delete($employee, $document);
 
         return response()->noContent();
+    }
+
+    public function file(string $employee, string $document): StreamedResponse
+    {
+        $f = $this->documents->file($employee, $document);
+        abort_unless(Storage::disk('local')->exists($f['path']), 404);
+
+        return Storage::disk('local')->response($f['path'], $f['name'], [
+            'Content-Type' => $f['mime'],
+            'X-Content-Type-Options' => 'nosniff',
+            'Cache-Control' => 'private, no-store',
+        ]);
     }
 
     private function seesFiles(Request $request): bool

@@ -133,11 +133,12 @@ final class EmployeeService
 
     /**
      * @param  string|null  $ownerId  set for own-scoped callers: pay and sensitive identity fields are left out
+     * @param  bool  $files  the caller holds employee_document.view: documents carry their file fields
      * @return array<string, mixed>
      */
-    public function show(string $id, ?string $ownerId = null): array
+    public function show(string $id, ?string $ownerId = null, bool $files = false): array
     {
-        $e = Employee::with(['typeChanges', 'payChanges', 'documents', 'managerAssignments.manager', 'siteAssignments.site'])->findOrFail($id);
+        $e = Employee::with(['typeChanges', 'payChanges', 'documents.uploader', 'managerAssignments.manager', 'siteAssignments.site'])->findOrFail($id);
         $types = $e->typeChanges->sortBy('effective_from')->values()->map(fn ($t) => $this->row($t))->all();
         $pays = $e->payChanges->sortBy('effective_from')->values()->map(fn ($p) => $this->row($p))->all();
         $managers = $e->managerAssignments->sortBy('effective_from')->values()->map(fn (EmployeeManagerAssignment $m) => [
@@ -157,6 +158,7 @@ final class EmployeeService
         $manager = EffectiveDated::at($managers, $today);
         $site = EffectiveDated::at($sites, $today);
         $full = $ownerId === null;
+        $kinds = array_flip(array_column(DocumentKind::cases(), 'value'));
 
         return [
             ...$this->summary($e, $full),
@@ -167,7 +169,10 @@ final class EmployeeService
             'manager_assignments' => $managers,
             'current_site' => $site === null ? null : ['id' => $site['site_id'], 'name_ar' => $site['site_name_ar'], 'name_en' => $site['site_name_en']],
             'site_assignments' => $sites,
-            'documents' => $e->documents->sortBy('kind')->values()->map(fn ($d) => $this->row($d))->all(),
+            'documents' => $e->documents->sortBy([
+                fn (EmployeeDocument $a, EmployeeDocument $b) => $kinds[$a->kind] <=> $kinds[$b->kind],
+                ['id', 'desc'], // UUIDv7: newest first
+            ])->values()->map(fn (EmployeeDocument $d) => EmployeeDocuments::row($d, $files))->all(),
         ];
     }
 
@@ -406,7 +411,7 @@ final class EmployeeService
     }
 
     /** @return array<string, mixed> */
-    private function row(EmployeeTypeChange|EmployeePayChange|EmployeeDocument $m): array
+    private function row(EmployeeTypeChange|EmployeePayChange $m): array
     {
         return Arr::except($m->toArray(), [...self::HIDDEN, 'employee_id']);
     }

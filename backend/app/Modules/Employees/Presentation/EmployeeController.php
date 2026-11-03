@@ -8,10 +8,12 @@ use App\Modules\Employees\Application\EmployeeRules;
 use App\Modules\Employees\Application\EmployeeService;
 use App\Modules\Employees\Domain\DocumentKind;
 use App\Modules\Employees\Domain\EmployeeType;
+use App\Modules\Identity\Application\Rbac\AuthorizeAction;
 use App\Modules\Identity\Domain\Rbac\AuthorizationRefused;
 use App\Modules\Identity\Presentation\RequestScope;
 use App\Modules\Sites\Domain\SiteKind;
 use App\Support\Http\ApiEnvelope;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -47,9 +49,11 @@ final class EmployeeController
         return ApiEnvelope::single($request, $this->employees->create($data), 201);
     }
 
-    public function show(Request $request, string $employee): JsonResponse
+    public function show(Request $request, string $employee, AuthorizeAction $authorize): JsonResponse
     {
-        return ApiEnvelope::single($request, $this->employees->show($employee, RequestScope::ownerId($request)));
+        $files = $authorize->decide($request->user() ?? throw new AuthenticationException, 'employee_document.view')->granted();
+
+        return ApiEnvelope::single($request, $this->employees->show($employee, RequestScope::ownerId($request), $files));
     }
 
     public function update(Request $request, string $employee): JsonResponse

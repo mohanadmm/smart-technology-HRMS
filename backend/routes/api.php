@@ -54,6 +54,7 @@ Route::middleware('auth')->group(function (): void {
         Route::get('{employee}/fare', [FareController::class, 'show'])->middleware(['permission:employee.view', 'employee.scope']);
         Route::post('{employee}/documents', [EmployeeDocumentController::class, 'store'])->middleware(['permission:employee_document.edit', 'employee.scope']);
         Route::patch('{employee}/documents/{document}', [EmployeeDocumentController::class, 'update'])->middleware(['permission:employee_document.edit', 'employee.scope'])->whereUuid('document');
+        Route::get('{employee}/documents/{document}/file', [EmployeeDocumentController::class, 'file'])->middleware(['permission:employee_document.view', 'employee.scope'])->whereUuid('document');
         Route::delete('{employee}/documents/{document}', [EmployeeDocumentController::class, 'destroy'])->middleware(['permission:employee_document.edit', 'employee.scope'])->whereUuid('document');
     });
 

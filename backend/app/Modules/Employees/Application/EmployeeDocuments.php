@@ -79,6 +79,14 @@ final class EmployeeDocuments
         $this->find($employeeId, $documentId)->delete();
     }
 
+    /** @return array{path: string, mime: string, name: string} the download name is the original base name + the detected extension */
+    public function file(string $employeeId, string $documentId): array
+    {
+        $doc = $this->find($employeeId, $documentId);
+
+        return ['path' => $doc->path(), 'mime' => $doc->mime, 'name' => (Str::beforeLast($doc->original_name, '.') ?: 'document').'.'.EmployeeDocument::EXT[$doc->mime]];
+    }
+
     private function find(string $employeeId, string $documentId): EmployeeDocument
     {
         return Employee::findOrFail($employeeId)->documents()->findOrFail($documentId);
