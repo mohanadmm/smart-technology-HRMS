@@ -458,13 +458,14 @@ test('the archive switch asks for archived employees from page 1 and shows the t
   expect(await within(screen.getByRole('row', { name: /أحمد علي/ })).findByText('2026-01-31')).toBeInTheDocument()
 })
 
-test('an employee whose termination date is today is still active; one terminated yesterday is not', async () => {
+test('an active employee with a future termination date shows when they leave; the others show Active', async () => {
   const today = cairoToday()
-  const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 864e5).toISOString().slice(0, 10)
-  mockFetch({ 'GET /api/v1/employees': () => json(200, { data: [{ ...row1, termination_date: today }, { ...row1, id: 'e2', name_ar: 'سعيد', termination_date: yesterday }], meta: { pagination } }) })
+  const later = new Date(Date.parse(`${today}T00:00:00Z`) + 864e5).toISOString().slice(0, 10)
+  mockFetch({ 'GET /api/v1/employees': () => json(200, { data: [{ ...row1, termination_date: today }, { ...row1, id: 'e2', name_ar: 'سعيد', termination_date: later }], meta: { pagination } }) })
   renderWithAuth(<EmployeesPage />, ['employee.view.all'])
-  expect(within(await screen.findByRole('row', { name: /أحمد علي/ })).getByText('نشط')).toBeInTheDocument()
-  expect(within(screen.getByRole('row', { name: /سعيد/ })).getByText('غير نشط')).toBeInTheDocument()
+  expect(within(await screen.findByRole('row', { name: /أحمد علي/ })).getByText('نشط')).toBeInTheDocument() // the termination day is still worked
+  expect(within(screen.getByRole('row', { name: /سعيد/ })).getByText(later)).toHaveAttribute('dir', 'ltr')
+  expect(within(screen.getByRole('row', { name: /سعيد/ })).getByText(/ينتهي في/)).toBeInTheDocument()
 })
 
 const archived = { ...emp, code: 7, termination_date: '2026-01-31', termination_reason: 'استقالة' }

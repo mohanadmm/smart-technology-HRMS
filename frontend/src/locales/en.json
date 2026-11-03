@@ -105,6 +105,7 @@
     },
     "status": "Status",
     "employee": "Employee",
+    "leavesOn": "Leaves on {{date}}",
     "archive": {
       "view": "Show employees",
       "active": "Active",

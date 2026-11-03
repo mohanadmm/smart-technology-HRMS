@@ -105,6 +105,7 @@
     },
     "status": "الحالة",
     "employee": "الموظف",
+    "leavesOn": "ينتهي في {{date}}",
     "archive": {
       "view": "عرض الموظفين",
       "active": "النشطون",

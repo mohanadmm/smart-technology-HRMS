@@ -153,7 +153,7 @@ export function EmployeesPage() {
             </TableHeader>
             <TableBody>
               {rows.map((e) => {
-                const left = e.termination_date && e.termination_date < today // matches the API: the termination day is still worked
+                const leaving = e.termination_date && e.termination_date > today // the active list never holds a past date: the termination day is still worked
                 const badge = e.current_type && <Badge variant="info">{t(`enum.type.${e.current_type}`)}</Badge>
                 return (
                   <TableRow
@@ -178,7 +178,7 @@ export function EmployeesPage() {
                     <TableCell className="hidden md:table-cell">{e.department ?? '—'}</TableCell>
                     <TableCell className="hidden text-muted-foreground xl:table-cell">{e.hire_date ?? '—'}</TableCell>
                     <TableCell>
-                      {archive ? e.termination_date : <StatusBadge variant={left ? 'neutral' : 'success'} label={t(left ? 'status.inactive' : 'status.active')} />}
+                      {archive ? e.termination_date : <StatusBadge variant={leaving ? 'neutral' : 'success'} label={leaving ? ltrDates(t('employee.leavesOn', { date: e.termination_date })) : t('status.active')} />}
                     </TableCell>
                   </TableRow>
                 )
