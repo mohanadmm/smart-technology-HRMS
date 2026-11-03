@@ -356,3 +356,15 @@ test('a scope control hugs its words and keeps them apart on one line', async ()
   // min-w-tap replaces a flex item's min-width:auto, so without shrink-0 the table squeezes the pills below their words
   for (const b of within(group).getAllByRole('button')) expect(b).toHaveClass('shrink-0')
 })
+
+test('the matrix has an Edit ID column, so employee.edit_code can be granted', async () => {
+  const editCode = { id: 'p-edit-code', resource: 'employee', action: 'edit_code', scope: 'all', key: 'employee.edit_code.all' }
+  mockFetch({
+    'GET /api/v1/roles': () => json(200, { data: [{ ...role, permissions: [...role.permissions, editCode.key] }] }),
+    'GET /api/v1/permissions': () => json(200, { data: [...perms, editCode] }),
+  })
+  renderWithAuth(<RolesPage />, ['role.view.all', 'role.manage.all'])
+  await pickRole()
+  expect(screen.getByRole('columnheader', { name: 'تعديل الرقم الوظيفي' })).toBeInTheDocument()
+  expect(screen.getByRole('checkbox', { name: 'الموظفون: تعديل الرقم الوظيفي' })).toBeChecked()
+})
