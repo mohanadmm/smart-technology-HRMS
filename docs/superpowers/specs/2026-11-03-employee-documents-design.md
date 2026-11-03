@@ -91,7 +91,7 @@ One new migration on `employee_documents`:
 - `{document}` is always resolved through the employee (`$employee->documents()->findOrFail`), also for `replaces`; soft-deleted rows 404, including on `/file`.
 - **Upload order:** new id `Str::uuid7()` → `storeAs` the file → `DB::transaction` (`lockForUpdate` the `replaces` row and check it is live, insert, soft-delete the old one) → on any exception delete the new file and rethrow. Test: a failed insert leaves no file.
 - The old `PUT …/documents/{kind}` is removed in **step 2**, together with the dialog that calls it, so step 1 doesn't break the live tab.
-- `GET /employees/{id}`: `EmployeeController::show` calls `AuthorizeAction::decide($user, 'employee_document.view')` (as `ImportMasterDataCommand` already does) and passes the result to `show()`. Without it, each document carries only `id`, `kind`, `expires_at` (D2a). With it: plus `original_name`, `mime`, `size_bytes`, `note`, `created_at`, uploader name. `received_at` gone.
+- `GET /employees/{id}`: `EmployeeService::show()` asks `seesFiles()`: `employee_document.view` at `all`, or `own` with the employee in reach today (the `/file` rule). Without it, each document carries only `id`, `kind`, `expires_at` (D2a). With it: plus `original_name`, `mime`, `size_bytes`, `note`, `created_at`, uploader name. `received_at` gone.
 
 ### Permissions (seeded in the feature migration with the `GRANTS` const pattern)
 - Grants: `employee_document.view.all` → developer, hr, ceo; `employee_document.view.own` → seeded, granted to nobody (the Developer may grant it to managers); `employee_document.edit.all` → developer, hr. Routes name only `employee_document.view` / `.edit`.
@@ -111,7 +111,7 @@ One new migration on `employee_documents`:
 `Audited` covers it: upload = CREATED (kind, name, mime, size); replace = CREATED + DELETED in one transaction; edit = UPDATED; delete = DELETED, always through the model. Tests assert each entry. File views are not audited (D8a).
 
 ### Frontend
-- **List:** `DataList` (table ≥ 640 px, cards below, built-in states). Title cell = a `<button>` with the kind name that opens the viewer (`DataList` has no row click, and a button is keyboard-reachable and gives Radix a focus-return target). Then `<bdi>` file name (`max-w-*` + `truncate` + `title` on desktop) and size, expiry + badge (constant 30 days), `RowActions` ⋮ (Replace file, Edit details, Delete). Sizes and dates with `tabular-nums` and `intlLocale()` (`form.tsx`). Sort by `DocumentKind` order, then newest (new work: today's sort is alphabetical).
+- **List:** `DataList` (table ≥ 640 px, cards below, built-in states). Title cell = a `<button>` with the kind name that opens the viewer (`DataList` has no row click, and a button is keyboard-reachable and gives Radix a focus-return target). Then `<bdi>` file name (`max-w-*` + `truncate` + `title` on desktop) and size, expiry + badge (constant 30 days), `RowActions` ⋮ (Replace file, Edit details, Delete). Sizes and dates with `intlLocale()` (`form.tsx`); figures are tabular app-wide (`index.css`), so no `tabular-nums` class. Sort by `DocumentKind` order, then newest (new work: today's sort is alphabetical).
 - **Header:** title "Documents · N"; the Upload button only when N > 0 and the user can edit. When N = 0, `EmptyState` carries the single Upload action (or only the sentence for non-editors).
 - **Missing line:** only when N > 0 and the user can edit; styled as content; each kind is a text link that opens the upload dialog with the kind preset.
 - **Upload dialog** (bottom sheet on phones): the `attendance-import` file-input pattern (`sr-only` input + label styled as an outline button + chosen name in `<bdi>`), `accept="image/jpeg,image/png,image/webp,application/pdf"`, no `capture`, never `image/heic`. Kind select, `type=date` expiry, note (`enterkeyhint="done"`), image preview (its object URL revoked too). The `File` lives in the dialog's own state, because `FormApi.set` is string-typed (`form.tsx:238`). Order: check type → if a JPEG/PNG/WEBP image over ~1.5 MB, shrink → check size of the result. Shrink = `createImageBitmap(file, { imageOrientation: 'from-image' })`, `drawImage` to a 2400 px long edge on a white-filled canvas, `toBlob('image/jpeg', 0.85)`, keep whichever file is smaller, rename to `.jpg`, fall back to the original on any error. Busy state on the button; no progress bar. Errors: too large (with size and limit; for PDFs, "scan at lower quality or split it"), wrong type, HEIC ("save it as JPG or PDF"), network with Retry.
@@ -177,7 +177,7 @@ Upload stores file + row (fake disk); wrong type, SVG renamed to `.png`, HTML re
 | 12 | ~70% modal backdrop | ✅ `--scrim` is `rgb(0 0 0 / 0.7)` (`index.css:130`) |
 | 13 | Real titles, no placeholder copy | ✅ "Documents · 5", "Expires in 12 days" |
 | 14 | Deltas vs a named baseline | N/A |
-| 15 | Tabular figures | ✅ `tabular-nums` on sizes and dates |
+| 15 | Tabular figures | ✅ app-wide from `index.css` (the class is banned by `theme.test.ts`) |
 | 16 | Fill in what you know | ✅ kind preset from the missing links; Replace prefills kind, expiry, note |
 | 17 | Warnings inline, not as banners | ✅ the missing line and expiry tags sit in the list |
 | 18 | 16 px inputs, right keyboard hints | ✅ global 16 px on coarse pointers (`index.css:345`); `enterkeyhint` on the note |
