@@ -21,12 +21,21 @@ class EmployeeDocumentsTest extends TestCase
 
     private const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
+    /** @var list<string> */
+    private array $tmp = [];
+
     protected function setUp(): void
     {
         parent::setUp();
         Storage::fake('local');
         $this->signIn('hr');
         $this->travelTo('2026-11-03 10:00:00');
+    }
+
+    protected function tearDown(): void
+    {
+        array_map(fn (string $p) => @unlink($p), $this->tmp);
+        parent::tearDown();
     }
 
     private function employee(): string
@@ -46,7 +55,7 @@ class EmployeeDocumentsTest extends TestCase
     /** Real bytes: UploadedFile::fake() reports a mime from the name and would skip the sniff. */
     private function file(string $name, string $bytes = self::PDF): UploadedFile
     {
-        $path = (string) tempnam(sys_get_temp_dir(), 'doc');
+        $path = $this->tmp[] = (string) tempnam(sys_get_temp_dir(), 'doc');
         file_put_contents($path, $bytes);
 
         return new UploadedFile($path, $name, null, null, true);
@@ -68,6 +77,7 @@ class EmployeeDocumentsTest extends TestCase
             ->assertJsonPath('data.uploader_name', 'hr')
             ->assertJsonMissingPath('data.received_at')
             ->assertJsonMissingPath('data.path');
+        $this->assertSame(['id', 'kind', 'expires_at', 'original_name', 'mime', 'size_bytes', 'note', 'created_at', 'uploader_name'], array_keys($res->json('data')));
         $id = $res->json('data.id');
         Storage::disk('local')->assertExists("employee-documents/$emp/{$id}.pdf");
         $this->assertStringNotContainsString('employee-documents/', (string) $res->getContent());
@@ -107,7 +117,7 @@ class EmployeeDocumentsTest extends TestCase
     public function test_too_large_is_422_with_the_size_message(): void
     {
         $emp = $this->employee();
-        $tmp = (string) tempnam(sys_get_temp_dir(), 'doc');
+        $tmp = $this->tmp[] = (string) tempnam(sys_get_temp_dir(), 'doc');
         foreach ([
             UploadedFile::fake()->create('big.pdf', 10241, 'application/pdf'),
             new UploadedFile($tmp, 'big.pdf', 'application/pdf', UPLOAD_ERR_INI_SIZE, true), // PHP dropped it between its two limits

@@ -64,7 +64,9 @@ final class EmployeeDocuments
     /** @return array<string, mixed> without the view grant only id, kind and expiry; never the path */
     public static function row(EmployeeDocument $d, bool $files): array
     {
-        $row = Arr::only($d->toArray(), ['id', 'kind', 'expires_at', ...($files ? ['original_name', 'mime', 'size_bytes', 'note', 'created_at'] : [])]);
+        // Contract key order, whatever the attribute order (a fresh insert and a loaded row differ); dates serialized as EmployeeService::row.
+        $keys = ['id', 'kind', 'expires_at', ...($files ? ['original_name', 'mime', 'size_bytes', 'note', 'created_at'] : [])];
+        $row = array_merge(array_fill_keys($keys, null), Arr::only($d->toArray(), $keys));
 
         return $files ? [...$row, 'uploader_name' => $d->uploader?->name] : $row;
     }
