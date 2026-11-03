@@ -104,7 +104,12 @@
       "day_laborer": "Day laborers"
     },
     "status": "Status",
-    "employee": "Employee"
+    "employee": "Employee",
+    "archive": {
+      "view": "Show employees",
+      "active": "Active",
+      "archived": "Archive"
+    }
   },
   "pay": {
     "salary": "Salary",

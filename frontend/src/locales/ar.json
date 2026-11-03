@@ -104,7 +104,12 @@
       "day_laborer": "عمال اليومية"
     },
     "status": "الحالة",
-    "employee": "الموظف"
+    "employee": "الموظف",
+    "archive": {
+      "view": "عرض الموظفين",
+      "active": "النشطون",
+      "archived": "الأرشيف"
+    }
   },
   "pay": {
     "salary": "المرتب",

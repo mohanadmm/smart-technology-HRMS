@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { cairoToday } from '@/components/form'
 import { queryClient } from '@/lib/query'
 import { json, mockFetch, pagination, renderWithAuth } from '@/test-utils'
 import { EmployeeFormPage, EmployeeRoute, EmployeesPage } from './employees'
@@ -439,3 +440,30 @@ test('saving a record that came without the sensitive fields does not send them'
   for (const k of ['national_id', 'insurance_no', 'bank_account', 'hr_notes']) expect(body).not.toHaveProperty(k)
   expect(body).toMatchObject({ name_ar: 'أحمد', phone: '0100' })
 })
+
+test('the archive switch asks for archived employees from page 1 and shows the termination date instead of the status', async () => {
+  const list = vi.fn((url: string) => json(200, { data: [url.includes('archived=true') ? { ...row1, termination_date: '2026-01-31' } : row1], meta: { pagination: { ...pagination, total: 30 } } }))
+  mockFetch({ 'GET /api/v1/employees': list })
+  renderWithAuth(<EmployeesPage />, ['employee.view.all'])
+  const main = () => list.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('per_page=12')).at(-1)!
+  await screen.findByRole('row', { name: /أحمد علي/ })
+  expect(main()).not.toContain('archived')
+  await user.click(screen.getByRole('button', { name: 'التالي' })) // page 2, so the switch must send the list back to page 1
+  await waitFor(() => expect(main()).toContain('page=2'))
+  await user.click(within(screen.getByRole('group', { name: 'عرض الموظفين' })).getByRole('button', { name: 'الأرشيف' }))
+  await waitFor(() => expect(main()).toContain('archived=true'))
+  expect(main()).toContain('page=1')
+  expect(await screen.findByRole('columnheader', { name: 'تاريخ إنهاء الخدمة' })).toBeInTheDocument()
+  expect(screen.queryByRole('columnheader', { name: 'الحالة' })).toBeNull()
+  expect(await within(screen.getByRole('row', { name: /أحمد علي/ })).findByText('2026-01-31')).toBeInTheDocument()
+})
+
+test('an employee whose termination date is today is still active; one terminated yesterday is not', async () => {
+  const today = cairoToday()
+  const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 864e5).toISOString().slice(0, 10)
+  mockFetch({ 'GET /api/v1/employees': () => json(200, { data: [{ ...row1, termination_date: today }, { ...row1, id: 'e2', name_ar: 'سعيد', termination_date: yesterday }], meta: { pagination } }) })
+  renderWithAuth(<EmployeesPage />, ['employee.view.all'])
+  expect(within(await screen.findByRole('row', { name: /أحمد علي/ })).getByText('نشط')).toBeInTheDocument()
+  expect(within(screen.getByRole('row', { name: /سعيد/ })).getByText('غير نشط')).toBeInTheDocument()
+})
+

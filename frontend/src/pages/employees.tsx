@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { UserAvatar } from '@/components/common/UserAvatar'
 import { TableSkeleton } from '@/components/layout/PageSkeleton'
+import { SegmentedControl } from '@/components/layout/SegmentedControl'
 import { Pagination } from '@/components/tables/Pagination'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -69,12 +70,14 @@ export function EmployeesPage() {
   const [q, setQ] = useState('')
   const [type, setType] = useState('')
   const [page, setPage] = useState(1)
+  const [view, setView] = useState<'active' | 'archived'>('active')
+  const archive = view === 'archived'
   const search = useDebounced(q, 250) // the box stays instant; the request waits for a pause in typing
-  const qs = new URLSearchParams({ page: String(page), per_page: String(PAGE), ...(search && { search }), ...(type && { type }) })
+  const qs = new URLSearchParams({ page: String(page), per_page: String(PAGE), ...(search && { search }), ...(type && { type }), ...(archive && { archived: 'true' }) })
   const { rows, total, err, loading } = useList(`/employees?${qs}`)
   const { data: counts } = useApi<Record<string, number>>('/employees/summary') // a failed tile stays at —; the list shows the banner
 
-  const filter = (set: (v: string) => void) => (v: string) => {
+  const filter = <T,>(set: (v: T) => void) => (v: T) => {
     set(v)
     setPage(1)
   }
@@ -114,6 +117,14 @@ export function EmployeesPage() {
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
             <SearchInput value={q} onChange={filter(setQ)} placeholder={t('employee.search')} className="sm:w-full sm:max-w-md" />
             <FilterSelect value={type} onChange={filter(setType)} label={t('employee.type')} allLabel={t('employee.allTypes')} options={TYPES.map((v) => [v, t(`enum.type.${v}`)])} />
+            <SegmentedControl
+              label={t('employee.archive.view')}
+              value={view}
+              onChange={filter(setView)}
+              className="w-max"
+              // the visible text is aria-hidden: the option's sr-only label already names it
+              options={(['active', 'archived'] as const).map((v) => ({ value: v, label: t(`employee.archive.${v}`), content: <span aria-hidden className="px-1.5 whitespace-nowrap">{t(`employee.archive.${v}`)}</span> }))}
+            />
             {(q || type) && (
               <Button variant="ghost" size="sm" onClick={clear} className="xl:ms-auto">
                 {t('common.clearFilters')}
@@ -136,12 +147,12 @@ export function EmployeesPage() {
                 <TableHead className="hidden sm:table-cell">{t('employee.type')}</TableHead>
                 <TableHead className="hidden md:table-cell">{t('employee.department')}</TableHead>
                 <TableHead className="hidden xl:table-cell">{t('employee.hire_date')}</TableHead>
-                <TableHead>{t('employee.status')}</TableHead>
+                <TableHead>{t(archive ? 'employee.termination_date' : 'employee.status')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((e) => {
-                const left = e.termination_date && e.termination_date <= today
+                const left = e.termination_date && e.termination_date < today // matches the API: the termination day is still worked
                 const badge = e.current_type && <Badge variant="info">{t(`enum.type.${e.current_type}`)}</Badge>
                 return (
                   <TableRow
@@ -166,7 +177,7 @@ export function EmployeesPage() {
                     <TableCell className="hidden md:table-cell">{e.department ?? '—'}</TableCell>
                     <TableCell className="hidden text-muted-foreground xl:table-cell">{e.hire_date ?? '—'}</TableCell>
                     <TableCell>
-                      <StatusBadge variant={left ? 'neutral' : 'success'} label={t(left ? 'status.inactive' : 'status.active')} />
+                      {archive ? e.termination_date : <StatusBadge variant={left ? 'neutral' : 'success'} label={t(left ? 'status.inactive' : 'status.active')} />}
                     </TableCell>
                   </TableRow>
                 )
