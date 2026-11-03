@@ -27,6 +27,7 @@ test('upload posts the file, kind, expiry and note as multipart', async () => {
   const post = vi.fn(created)
   mockFetch({ [POST]: post })
   const { user, onClose } = open()
+  expect(screen.getByLabelText('المستند')).toHaveDisplayValue('اختر نوع المستند')
   await user.upload(screen.getByLabelText('الملف'), pdf())
   expect(screen.getByRole('button', { name: 'رفع مستند' })).toBeDisabled() // no kind yet: nothing is sent only to be refused
   await user.selectOptions(screen.getByLabelText('المستند'), 'work_stub')
@@ -228,6 +229,8 @@ test('the header counts documents and the missing line lists the other kinds', a
   expect(screen.getAllByRole('button', { name: 'رفع مستند' })).toHaveLength(1)
   const line = screen.getByText(missingLine)
   expect(within(line).getAllByRole('button').map((b) => b.textContent)).toEqual(['عقد عمل', 'صحيفة الحالة الجنائية', 'المؤهل الدراسي', 'شهادة الميلاد', 'استمارة رقم 6 (التأمينات الاجتماعية)', 'صور شخصية', 'الموقف من التجنيد'])
+  // «و» never wraps alone: it shares an unbreakable span with the kind after it
+  expect(within(line).getByRole('button', { name: 'شهادة الميلاد' }).parentElement).toHaveTextContent(/^وشهادة الميلاد$/)
   await user.click(within(line).getByRole('button', { name: 'صحيفة الحالة الجنائية' }))
   expect(await screen.findByLabelText('المستند')).toHaveValue('criminal_record')
   unmount()

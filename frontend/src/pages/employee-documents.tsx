@@ -51,6 +51,8 @@ async function shrinkPhoto(file: File): Promise<File> {
   }
 }
 
+/** The trailing word of a list separator (ar « و», en ", and "), kept with the item after it; punctuation stays behind. */
+const GLUE = /\p{L}+\s*$/u
 const kindName = (t: TFunction, kind: string) => t(`enum.document.${kind}`)
 const kindOptions = (t: TFunction): [string, string][] => DOC_KINDS.map((k) => [k, kindName(t, k)])
 
@@ -138,14 +140,18 @@ export function Documents({ emp }: { emp: Row }) {
       {docs.length > 0 && editor && missing.length > 0 && (
         <p className="border-t px-5 py-3 text-sm text-muted-foreground">
           {t('document.missing')}{' '}
-          {new Intl.ListFormat(lng, { type: 'conjunction' }).formatToParts(missing).map((part, i) =>
+          {new Intl.ListFormat(lng, { type: 'conjunction' }).formatToParts(missing).map((part, a, parts) =>
             part.type === 'literal' ? (
-              <Fragment key={i}>{part.value}</Fragment>
+              <Fragment key={a}>{part.value.replace(GLUE, '')}</Fragment>
             ) : (
-              // a link inside a sentence: exempt from the 44 px target (WCAG 2.5.8)
-              <button key={i} type="button" className="text-primary underline-offset-4 hover:underline" onClick={() => setPreset({ kind: part.value })}>
-                {kindName(t, part.value)}
-              </button>
+              // the literal's last word («و», "and") sticks to the kind after it; a long kind can still wrap inside its button
+              <span key={a} className="whitespace-nowrap">
+                {parts[a - 1]?.value.match(GLUE)?.[0]}
+                {/* a link inside a sentence: exempt from the 44 px target (WCAG 2.5.8) */}
+                <button type="button" className="whitespace-normal text-primary underline-offset-4 hover:underline" onClick={() => setPreset({ kind: part.value })}>
+                  {kindName(t, part.value)}
+                </button>
+              </span>
             ),
           )}
         </p>
@@ -303,7 +309,7 @@ function UploadForm({ empId, preset, onClose, busy, setBusy }: { empId: string; 
           )}
         </Field>
         {preview && <img src={preview} alt="" className="max-h-48 w-full rounded-lg border object-contain" />}
-        <SelectField name="kind" label={t('document.kind')} options={kindOptions(t)} blank values={form} set={set} errs={errs} />
+        <SelectField name="kind" label={t('document.kind')} options={kindOptions(t)} blank={t('document.pickKind')} values={form} set={set} errs={errs} />
         <TextField name="expires_at" label={t('document.expires_at')} type="date" values={form} set={set} errs={errs} />
         <TextField name="note" label={t('document.note')} enterKeyHint="done" values={form} set={set} errs={errs} />
       </DialogBody>
