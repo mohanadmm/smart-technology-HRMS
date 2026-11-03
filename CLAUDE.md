@@ -6,7 +6,7 @@ It replaces 6 Excel workbooks. Standalone now; a REST API for the company's Lara
 - `backend/`: Laravel API + PostgreSQL. `frontend/`: React 19 + Vite + TS, forked from HRMS-DEMO.
 - Each folder has its own CLAUDE.md with its commands.
 - `CONTEXT.md`: the domain glossary. Use its terms in code, UI keys and docs.
-- `docs/hrms-module-plan.md`: what ships in each of the 4 monthly releases, plus every settled decision. Read it before starting a module.
+- `docs/hrms-module-plan.md`: what ships in each of the 4 monthly releases, plus every settled decision. Read it before starting a module. Its last two sections are the client's revision 1 (gap analysis, draft) and the module ownership plan (proposal): check who owns a module and its shared files before editing them.
 - `docs/excel-system-analysis.md`: the current payroll formulas, cell by cell, and the known Excel errors. Read it before touching attendance, payroll, advances or site costing.
 - `docs/calculations.md`: every formula the system computes, with the open questions marked ⚠️. It is the spec for payroll, leave, insurance and site costing code; update it in the same PR as any formula change.
 - `docs/client-questions.md`: questions still open with the client, by release. Check it before building a module; the client may change settled defaults during the build.
@@ -70,3 +70,12 @@ Payroll must reproduce the Excel results. The October 2026 totals (engineers net
 - One branch per feature, a PR into `main`, and the other developer reviews it.
 - Backups are not configured; they are manual until the owner confirms. Do not add backup automation unprompted.
 - Out of scope for the 4 months: employee self-service, a WhatsApp API, a live fingerprint-device connection, CRM integration (an optional `crm_user_id` on the employee is allowed).
+
+## Claude workflow (agreed 2026-10-31)
+Both developers use the same skills, committed to `.claude/skills/` so that every account and machine loads the same set. (They are added in a follow-up PR, after PR #4 merges, because PR #4 changes `.gitignore` to allow that folder.)
+- **Settle open questions:** `grill-with-docs`, against `docs/client-questions.md` and this file. Record answers in the spec docs, and record terms with `domain-modeling` in `CONTEXT.md` / `docs/adr/`.
+- **Design and plan:** `superpowers:brainstorming` → a spec in `docs/superpowers/specs/`, then `superpowers:writing-plans` → a plan in `docs/superpowers/plans/`.
+- **Build:** `superpowers:subagent-driven-development` or `superpowers:test-driven-development`, always following `ponytail` and `andrej-karpathy-skills:karpathy-guidelines` and `docs/coding-standards.md`.
+- **Review before the PR:** `code-review` (standards and spec), plus `security-review` for uploads, permissions and imports. The other developer still reviews the PR.
+- **End of session and account switch:** run `handoff`, which updates `CLAUDE_HANDOFF.md`, then commit and push the branch. Nothing a session needs may live only in a Claude account's memory or conversations: a new session (any account) starts by reading this file and `CLAUDE_HANDOFF.md`.
+- **Git identity:** set `user.name` and `user.email` in each clone to your GitHub account before the first commit.

@@ -19,6 +19,7 @@ _Avoid_: permanent employees, مثبتين (alone; it is ambiguous)
 **Manager** (مدير):
 An account holder who covers one or more sites and acts on behalf of the people they reach on a date: the workers whose home site is one of their sites, and the engineers assigned to them. Office staff are in no manager's reach.
 _Avoid_: supervisor, team leader
+_Under revision_: the client asked to rename this role to team lead (مسؤول التيم) and limit it to day laborers. Keep "Manager" until the owner answers R1–R2 in `docs/client-questions.md`.
 
 **Fingerprint name**:
 The English name an office employee has on the fingerprint device, used to match its export to the employee.
@@ -27,6 +28,7 @@ _Avoid_: English name, device ID
 **Employee ID** (الرقم الوظيفي):
 The number the company gives each employee; stored as the employee's `code`.
 _Avoid_: الكود; code (in the UI)
+_Under revision_: the client asked to hide this number or renumber it 1…N with the CEO as 0 (R5 in `docs/client-questions.md`). The hidden key is already the UUID `id`.
 
 ## Work and attendance
 
