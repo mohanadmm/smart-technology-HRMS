@@ -193,4 +193,55 @@ class EmployeesApiTest extends TestCase
         $this->signIn('empty');
         $this->getJson('/api/v1/employees/summary')->assertStatus(403)->assertJsonPath('error.code', 'permission_denied');
     }
+
+    /** @return list<string> the ids the list returns for this query string */
+    private function listed(string $query = ''): array
+    {
+        return array_column($this->getJson('/api/v1/employees'.$query)->assertOk()->json('data'), 'id');
+    }
+
+    public function test_the_list_shows_active_employees_and_the_archive_those_whose_termination_date_has_passed(): void
+    {
+        $this->travelTo('2026-10-20 22:30:00');                                     // 2026-10-21 00:30 in Cairo
+        $left = $this->make(['termination_date' => '2026-10-20']);
+        $lastDay = $this->make(['termination_date' => '2026-10-21']);               // the termination day is still worked
+        $staying = $this->make();
+
+        $this->assertSame([$lastDay, $staying], $this->listed());
+        $this->assertSame([$lastDay, $staying], $this->listed('?archived=false'));
+        $this->assertSame([$lastDay, $staying], $this->listed('?archived=0'));
+        $this->assertSame([$left], $this->listed('?archived=true'));
+        $this->assertSame([$left], $this->listed('?archived=1'));
+        $this->getJson('/api/v1/employees?archived=yes')->assertStatus(422)->assertJsonPath('error.details.0.field', 'archived');
+        $this->getJson('/api/v1/employees/summary')->assertJsonPath('data.total', 2)->assertJsonPath('data.office', 2);
+    }
+
+    public function test_a_manager_sees_the_archive_of_their_own_employees_only(): void
+    {
+        $this->travelTo('2026-10-20 10:00:00');
+        $manager = $this->makeUser('manager');
+        $mine = $this->make(['type' => 'engineer', 'termination_date' => '2026-10-01']);
+        $this->make(['type' => 'engineer', 'termination_date' => '2026-10-01']);
+        $this->postJson("/api/v1/employees/$mine/manager-assignments", ['manager_id' => $manager->id, 'effective_from' => '2026-01-01'])->assertCreated();
+
+        $this->actingAs($manager, 'api');
+        $this->assertSame([$mine], $this->listed('?archived=true'));
+        $this->assertSame([], $this->listed());
+        $this->getJson('/api/v1/employees/summary')->assertJsonPath('data.total', 0);
+    }
+
+    public function test_reactivating_clears_the_termination_and_brings_the_employee_back_to_the_list(): void
+    {
+        $this->travelTo('2026-10-20 10:00:00');
+        $id = $this->make(['termination_date' => '2026-10-01', 'termination_reason' => 'استقالة']);
+        $this->assertSame([$id], $this->listed('?archived=true'));
+
+        $this->patchJson("/api/v1/employees/$id", ['termination_date' => null, 'termination_reason' => null])->assertOk()
+            ->assertJsonPath('data.termination_date', null)->assertJsonPath('data.termination_reason', null);
+        $this->assertSame([$id], $this->listed());
+        $this->assertSame([], $this->listed('?archived=true'));
+        $audit = DB::table('audit_log')->where(['entity_id' => $id, 'event' => 'UPDATED'])->sole();
+        $this->assertSame(['termination_date' => '2026-10-01', 'termination_reason' => 'استقالة'], json_decode($audit->old_values, true));
+        $this->assertSame(['termination_date' => null, 'termination_reason' => null], json_decode($audit->new_values, true));
+    }
 }

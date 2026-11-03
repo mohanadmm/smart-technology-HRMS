@@ -34,12 +34,12 @@ final class EmployeeService
     private const SENSITIVE = ['national_id', 'insurance_no', 'bank_account', 'hr_notes'];
 
     /**
-     * @param  array{type?: string, site_id?: string, search?: string, per_page?: int}  $filters
+     * @param  array{type?: string, site_id?: string, search?: string, per_page?: int, archived?: bool}  $filters
      * @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}}
      */
     public function list(array $filters, ?string $ownerId = null): array
     {
-        $query = $this->visibleTo($ownerId)->select('employees.*')->selectRaw(self::CURRENT_TYPE.' as current_type', [self::today()])->orderBy('code');
+        $query = $this->visibleTo($ownerId, $filters['archived'] ?? false)->select('employees.*')->selectRaw(self::CURRENT_TYPE.' as current_type', [self::today()])->orderBy('code');
 
         if (isset($filters['type'])) {
             $query->whereRaw(self::CURRENT_TYPE.' = ?', [self::today(), $filters['type']]);
@@ -75,7 +75,7 @@ final class EmployeeService
         ];
     }
 
-    /** @return array<string, int> `total` plus one count per employee type, by the type in force today, over the list's scope; `total` also counts employees with no type in force yet, so it can exceed the sum of the types */
+    /** @return array<string, int> `total` plus one count per employee type, by the type in force today, over the list's scope of active employees; `total` also counts employees with no type in force yet, so it can exceed the sum of the types */
     public function countsByType(?string $ownerId = null): array
     {
         $counts = $this->visibleTo($ownerId)->toBase()
@@ -86,12 +86,19 @@ final class EmployeeService
         return ['total' => (int) $counts->sum(), ...$byType];
     }
 
-    /** @return Builder<Employee> live employees, or only those a manager reaches today */
-    private function visibleTo(?string $ownerId): Builder
+    /**
+     * The archive is the employees whose termination date has passed; the termination day itself is still worked (Attendance\Domain\Employment).
+     *
+     * @return Builder<Employee> live employees, active or archived, or only those a manager reaches today
+     */
+    private function visibleTo(?string $ownerId, bool $archived = false): Builder
     {
-        $query = Employee::query();
+        $today = self::today();
+        $query = Employee::query()->where(fn (Builder $q) => $archived
+            ? $q->where('termination_date', '<', $today)
+            : $q->whereNull('termination_date')->orWhere('termination_date', '>=', $today));
 
-        return $ownerId === null ? $query : EmployeeReach::apply($query, $ownerId, self::today());
+        return $ownerId === null ? $query : EmployeeReach::apply($query, $ownerId, $today);
     }
 
     /**

@@ -27,8 +27,9 @@ final class EmployeeController
             'site_id' => ['sometimes', 'uuid'],
             'search' => ['sometimes', 'nullable', 'string'],
             'per_page' => ['sometimes', 'integer', 'min:1'],
+            'archived' => ['sometimes', 'in:true,false,1,0'],
         ]);
-        $r = $this->employees->list($f, RequestScope::ownerId($request));
+        $r = $this->employees->list([...$f, 'archived' => $request->boolean('archived')], RequestScope::ownerId($request));
 
         return ApiEnvelope::collection($request, $r['data'], $r['pagination']);
     }
