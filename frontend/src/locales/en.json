@@ -144,7 +144,18 @@
   "document": {
     "kind": "Document",
     "expires_at": "Expiry date",
-    "note": "Notes"
+    "note": "Notes",
+    "upload": "Upload document",
+    "replace": "Replace file",
+    "file": "File",
+    "choose": "Choose file",
+    "noFile": "No file chosen",
+    "tooLarge": "The file is {{size}}; the limit is {{max}}.",
+    "tooLargePdf": "Scan it at a lower quality or split it.",
+    "badType": "Only PDF, JPG, PNG or WEBP files.",
+    "heic": "This photo is HEIC. Save it as JPG or PDF and try again.",
+    "network": "The connection failed.",
+    "retry": "Retry"
   },
   "enum": {
     "type": {
