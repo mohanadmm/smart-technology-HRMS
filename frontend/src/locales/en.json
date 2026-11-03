@@ -152,6 +152,7 @@
     "noFile": "No file chosen",
     "tooLarge": "The file is {{size}} MB; the limit is {{max}} MB.",
     "tooLargePdf": "Scan it at a lower quality or split it.",
+    "tooLargeServer": "The file is larger than the server accepts.",
     "badType": "Only PDF, JPG, PNG or WEBP files.",
     "heic": "This photo is HEIC. Save it as JPG or PDF and try again.",
     "network": "The connection failed.",

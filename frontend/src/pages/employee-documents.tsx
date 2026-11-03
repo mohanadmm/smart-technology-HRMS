@@ -245,6 +245,7 @@ function UploadForm({ empId, preset, onClose, busy, setBusy }: { empId: string; 
     if (form.expires_at) body.set('expires_at', form.expires_at)
     if (form.note) body.set('note', form.note)
     if (old) body.set('replaces', old.id)
+    const retry = network
     setBusy(true)
     setErr(undefined)
     setNetwork(false)
@@ -252,9 +253,13 @@ function UploadForm({ empId, preset, onClose, busy, setBusy }: { empId: string; 
       await send(`/employees/${empId}/documents`, { body })
       onClose()
     } catch (e) {
-      if (e instanceof ApiError && e.status === 413) setFileErr(tooLarge(file))
-      else if (e instanceof ApiError) setErr(e)
-      else setNetwork(true) // no answer: the upload may still have landed, so a retry can add a duplicate or 404 on a replace
+      // no answer (or a gateway's): the upload may still have landed, so a Retry can add a duplicate (HR deletes it) or 404 on a replace
+      if (retry && old && e instanceof ApiError && e.status === 404) return onClose() // the first replace landed and hid the old row
+      if (e instanceof ApiError && e.status === 413) {
+        setFile(undefined) // the server's limit is below ours: resending the same file cannot work
+        setFileErr(t('document.tooLargeServer'))
+      } else if (e instanceof ApiError && e.status < 500) setErr(e)
+      else setNetwork(true)
     } finally {
       setBusy(false)
     }
@@ -283,7 +288,7 @@ function UploadForm({ empId, preset, onClose, busy, setBusy }: { empId: string; 
         <TextField name="note" label={t('document.note')} enterKeyHint="done" values={form} set={set} errs={errs} />
       </DialogBody>
       <DialogFooter>
-        <Button type="submit" disabled={busy || !file}>
+        <Button type="submit" disabled={busy || !file || !form.kind}>
           {t(busy ? 'document.uploading' : network ? 'document.retry' : 'document.upload')}
         </Button>
       </DialogFooter>

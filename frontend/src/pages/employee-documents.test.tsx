@@ -27,6 +27,7 @@ test('upload posts the file, kind, expiry and note as multipart', async () => {
   mockFetch({ [POST]: post })
   const { user, onClose } = open()
   await user.upload(screen.getByLabelText('الملف'), pdf())
+  expect(screen.getByRole('button', { name: 'رفع مستند' })).toBeDisabled() // no kind yet: nothing is sent only to be refused
   await user.selectOptions(screen.getByLabelText('المستند'), 'work_stub')
   await user.type(screen.getByLabelText('تاريخ الانتهاء'), '2027-01-31')
   await user.type(screen.getByLabelText('ملاحظات'), 'نسخة موقعة')
@@ -70,12 +71,15 @@ test('HEIC and other types are refused', async () => {
   expect(fetch).not.toHaveBeenCalled()
 })
 
-test('a 413 answer shows the too-large message', async () => {
+test('a 413 answer says the server refused the size and clears the file', async () => {
   mockFetch({ [POST]: () => new Response('<html>', { status: 413 }) })
   const { user, onClose } = open({ kind: 'other' })
   await user.upload(screen.getByLabelText('الملف'), pdf())
   await user.click(screen.getByRole('button', { name: 'رفع مستند' }))
-  expect(await screen.findByText(TOO_LARGE)).toBeInTheDocument()
+  expect(await screen.findByText('الملف أكبر من الحد الذي يقبله الخادم.')).toBeInTheDocument()
+  expect(screen.queryByText(TOO_LARGE)).toBeNull()
+  expect(screen.getByText('لم يُختر ملف')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'رفع مستند' })).toBeDisabled()
   expect(onClose).not.toHaveBeenCalled()
 })
 
@@ -89,6 +93,29 @@ test('a network failure offers Retry', async () => {
   await user.click(screen.getByRole('button', { name: 'إعادة المحاولة' }))
   await vi.waitFor(() => expect(onClose).toHaveBeenCalled())
   expect(post).toHaveBeenCalledTimes(2)
+})
+
+test('a server error offers Retry like a network failure', async () => {
+  const post = vi.fn().mockReturnValueOnce(new Response('<html>', { status: 503, statusText: 'Service Unavailable' })).mockResolvedValueOnce(created())
+  vi.stubGlobal('fetch', post)
+  const { user, onClose } = open({ kind: 'other' })
+  await user.upload(screen.getByLabelText('الملف'), pdf())
+  await user.click(screen.getByRole('button', { name: 'رفع مستند' }))
+  expect(await screen.findByText('تعذّر الاتصال.')).toBeInTheDocument()
+  expect(screen.queryByText('Service Unavailable')).toBeNull()
+  await user.click(screen.getByRole('button', { name: 'إعادة المحاولة' }))
+  await vi.waitFor(() => expect(onClose).toHaveBeenCalled())
+})
+
+test('a replace whose Retry answers not found had landed the first time, so the dialog closes', async () => {
+  const post = vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce(json(404, { error: { code: 'not_found', message: 'غير موجود' } }))
+  vi.stubGlobal('fetch', post)
+  const { user, onClose } = open({ replaces: { id: 'd0', kind: 'criminal_record', expires_at: null } })
+  await user.upload(screen.getByLabelText('الملف'), pdf())
+  await user.click(screen.getByRole('button', { name: 'رفع مستند' }))
+  await user.click(await screen.findByRole('button', { name: 'إعادة المحاولة' }))
+  await vi.waitFor(() => expect(onClose).toHaveBeenCalled())
+  expect(screen.queryByText('غير موجود')).toBeNull()
 })
 
 const pending = () => {
