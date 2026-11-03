@@ -45,7 +45,7 @@ export function LoginPage() {
               <h1 className="text-section-title">{t('auth.title')}</h1>
               <ErrorBanner err={error && t(`auth.error.${error}`, { defaultValue: t('auth.error.unknown') })} shown={[]} />
               <TextField name="email" label={t('auth.email')} values={form} set={set} errs={{}} type="email" dir="ltr" autoComplete="username" required />
-              <TextField name="password" label={t('auth.password')} values={form} set={set} errs={{}} type="password" dir="ltr" autoComplete="current-password" required />
+              <TextField name="password" label={t('auth.password')} values={form} set={set} errs={{}} type="password" dir="ltr" autoComplete="current-password" enterKeyHint="go" required />
               <Button type="submit" className="w-full" disabled={busy}>
                 {t('auth.submit')}
               </Button>

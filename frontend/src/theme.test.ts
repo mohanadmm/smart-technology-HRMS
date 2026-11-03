@@ -39,7 +39,6 @@ test('cn() keeps the touch floor next to a caller size, and an explicit opt-out 
 // pages/site-day.tsx stays until its owner's hand-over.
 const SKIP = [
   'pages/holidays.tsx',
-  'pages/settings.tsx',
   'pages/site-day.tsx',
   'pages/sites.tsx',
 ]
