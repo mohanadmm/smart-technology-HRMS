@@ -2,7 +2,7 @@ import { useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Alert } from '@/components/common/Alert'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError } from '@/lib/api'
@@ -237,9 +237,10 @@ export type Controlled = { open?: boolean; onOpenChange?: (open: boolean) => voi
 
 export type FormApi = { values: Row; set: (k: string, v: string) => void; errs: Record<string, string> }
 
-/** Dialog whose form state lives in the body, so it is fresh on every open (Radix unmounts closed content). Passing `open` makes it controlled; `clearErrOnEdit` drops the last error once a value changes. */
-export function FormDialog({ title, trigger, open: openProp, onOpenChange, init, submit, onDone, shown, children, footer = 'common.save', clearErrOnEdit }: {
+/** Dialog whose form state lives in the body, so it is fresh on every open (Radix unmounts closed content). Passing `open` makes it controlled; `clearErrOnEdit` drops the last error once a value changes; `description` opens the body as small muted text and is what screen readers announce after the title. */
+export function FormDialog({ title, description, trigger, open: openProp, onOpenChange, init, submit, onDone, shown, children, footer = 'common.save', clearErrOnEdit }: {
   title: string
+  description?: React.ReactNode
   trigger?: React.ReactNode
   open?: boolean
   onOpenChange?: (open: boolean) => void
@@ -257,11 +258,11 @@ export function FormDialog({ title, trigger, open: openProp, onOpenChange, init,
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {trigger && <span onClick={() => setOpen(true)}>{trigger}</span>}
-      <DialogContent aria-describedby={undefined}>
+      <DialogContent {...(!description && { 'aria-describedby': undefined })}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <FormBody init={init} submit={submit} shown={shown} footer={footer} clearErrOnEdit={clearErrOnEdit} onDone={() => { setOpen(false); onDone() }}>
+        <FormBody init={init} submit={submit} shown={shown} footer={footer} clearErrOnEdit={clearErrOnEdit} description={description} onDone={() => { setOpen(false); onDone() }}>
           {children}
         </FormBody>
       </DialogContent>
@@ -269,7 +270,7 @@ export function FormDialog({ title, trigger, open: openProp, onOpenChange, init,
   )
 }
 
-function FormBody({ init, submit, onDone, shown, footer, clearErrOnEdit, children }: { init: Row; submit: (form: Row) => Promise<unknown>; onDone: () => void; shown: string[]; footer: string; clearErrOnEdit?: boolean; children: (f: FormApi) => React.ReactNode }) {
+function FormBody({ init, submit, onDone, shown, footer, clearErrOnEdit, description, children }: { init: Row; submit: (form: Row) => Promise<unknown>; onDone: () => void; shown: string[]; footer: string; clearErrOnEdit?: boolean; description?: React.ReactNode; children: (f: FormApi) => React.ReactNode }) {
   const { t } = useTranslation()
   const { form, set } = useForm(init)
   const [err, setErr] = useState<unknown>()
@@ -294,6 +295,7 @@ function FormBody({ init, submit, onDone, shown, footer, clearErrOnEdit, childre
     <>
       <DialogBody className="grid gap-4">
         <ErrorBanner err={err} shown={shown} />
+        {description && <DialogDescription className="text-sm">{description}</DialogDescription>}
         {children({ values: form, set: clearErrOnEdit ? (k, v) => { setErr(undefined); set(k, v) } : set, errs: toErrs(err) })}
       </DialogBody>
       <DialogFooter>

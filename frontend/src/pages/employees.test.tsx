@@ -487,6 +487,20 @@ test('an archived employee is reactivated after confirming, and the cleared date
   expect(screen.getByLabelText('سبب إنهاء الخدمة')).toHaveValue('')
 })
 
+test('the Reactivate dialog describes its warning to screen readers', async () => {
+  mockFetch({ 'GET /api/v1/residences': residences, 'GET /api/v1/employees/e1': () => json(200, { data: archived }) })
+  renderWithAuth(<EmployeeDetailRoute id="e1" />, ALL, { router: false })
+  await user.click(await screen.findByRole('button', { name: 'إعادة التفعيل' }))
+  expect(screen.getByRole('dialog')).toHaveAccessibleDescription(/سيُمسح تاريخ إنهاء الخدمة وسببه/)
+})
+
+test('a form dialog without a description has no aria-describedby', async () => {
+  mockFetch({ 'GET /api/v1/residences': residences, 'GET /api/v1/employees/e1': () => json(200, { data: emp }), 'GET /api/v1/users': () => json(200, { data: [], meta: { pagination } }) })
+  renderWithAuth(<EmployeeDetailRoute id="e1" />, ['employee.view.all', 'employee.assign_manager.all'], { router: false })
+  await user.click(await screen.findByRole('button', { name: 'تعيين مدير' }))
+  expect(screen.getByRole('dialog')).not.toHaveAttribute('aria-describedby')
+})
+
 test('Reactivate shows only for an archived employee and with employee.edit', async () => {
   const today = cairoToday()
   mockFetch({ 'GET /api/v1/residences': residences, 'GET /api/v1/employees/e1': () => json(200, { data: { ...archived, termination_date: today } }) })
