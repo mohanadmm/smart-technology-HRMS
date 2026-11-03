@@ -289,6 +289,16 @@ class AttendanceImportTest extends TestCase
         $this->assertSame(0, AttendanceDay::count());
     }
 
+    public function test_a_row_typed_in_for_an_employee_missing_from_the_downloaded_template_skips_the_name_check(): void
+    {
+        $template = $this->download();
+        $late = $this->employee('engineer');                                    // hired after the download: no line in the hidden sheet
+        $file = $this->edit($template, [], [[$this->code($late), ['2026-10-01' => 'Site-1']]]);
+
+        $this->upload('confirm', $file)->assertOk()->assertJsonPath('data.errors', [])->assertJsonPath('data.applied', 1);
+        $this->assertSame($this->site, AttendanceDay::where(['employee_id' => $late, 'date' => '2026-10-01'])->value('site_id'));
+    }
+
     public function test_the_name_check_reads_the_hidden_versions_sheet_normalised(): void
     {
         $file = $this->edit($this->download(), [$this->code($this->eng) => ['2026-10-01' => 'Site-1']]);

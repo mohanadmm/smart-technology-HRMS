@@ -124,8 +124,9 @@ final class AttendanceImport
                 continue;
             }
             // HR may have changed or swapped IDs since the download: the hidden sheet's name (as downloaded) must still be the code's
-            // employee. ponytail: two people with the identical full name swapping IDs still pass.
-            if (self::key($versions[$code][1] ?? '') !== self::key((string) $employee['name_ar'])) {
+            // employee. A row typed in for someone not in the download has no line there and is not checked.
+            // ponytail: two people with the identical full name swapping IDs still pass.
+            if (isset($versions[$code]) && self::key($versions[$code][1] ?? '') !== self::key((string) $employee['name_ar'])) {
                 $plan['errors'][] = self::error($row, 0, $code, null, 'code_name_mismatch');
 
                 continue;
