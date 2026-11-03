@@ -6,6 +6,7 @@ import { Documents, UploadDialog } from './employee-documents'
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   delete (navigator as { pdfViewerEnabled?: boolean }).pdfViewerEnabled // own property set by view(); jsdom has none
 })
 
@@ -65,10 +66,74 @@ test('HEIC and other types are refused', async () => {
   const { user } = open({ kind: 'photos' }, userEvent.setup({ applyAccept: false }))
   await user.upload(screen.getByLabelText('الملف'), new File(['x'], 'photo.heic', { type: 'image/heic' }))
   expect(await screen.findByText('هذه الصورة بصيغة HEIC. احفظها بصيغة JPG أو PDF ثم أعد المحاولة.')).toBeInTheDocument()
+  await user.upload(screen.getByLabelText('الملف'), new File(['x'], 'live', { type: 'image/heif-sequence' }))
+  expect(await screen.findByText('هذه الصورة بصيغة HEIC. احفظها بصيغة JPG أو PDF ثم أعد المحاولة.')).toBeInTheDocument()
   await user.upload(screen.getByLabelText('الملف'), new File(['x'], 'notes.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }))
   expect(await screen.findByText('يُقبل فقط ملف PDF أو JPG أو PNG أو WEBP.')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'رفع مستند' })).toBeDisabled()
   expect(fetch).not.toHaveBeenCalled()
+})
+
+// jsdom has no object URLs; the image preview needs one
+const stubUrls = () => vi.stubGlobal('URL', class extends URL { static createObjectURL = () => 'blob:preview'; static revokeObjectURL = () => {} })
+const sentFile = async (post: ReturnType<typeof vi.fn>) => {
+  await vi.waitFor(() => expect(post).toHaveBeenCalled())
+  return body(post).get('file') as File
+}
+
+test('a file the browser gives no type gets one from its extension', async () => {
+  stubUrls()
+  const post = vi.fn(created)
+  mockFetch({ [POST]: post })
+  const { user } = open({ kind: 'photos' }, userEvent.setup({ applyAccept: false }))
+  await user.upload(screen.getByLabelText('الملف'), new File(['x'], 'notes.docx', { type: '' }))
+  expect(await screen.findByText('يُقبل فقط ملف PDF أو JPG أو PNG أو WEBP.')).toBeInTheDocument()
+  await user.upload(screen.getByLabelText('الملف'), new File(['x'], 'ID.WEBP', { type: '' }))
+  await user.click(await screen.findByRole('button', { name: 'رفع مستند' }))
+  const sent = await sentFile(post)
+  expect([sent.name, sent.type]).toEqual(['ID.WEBP', 'image/webp'])
+})
+
+/** createImageBitmap and the canvas, which jsdom lacks: a 4000×3000 photo that encodes to a 400 KB JPEG. */
+function stubShrink(bitmap = () => Promise.resolve({ width: 4000, height: 3000, close() {} })) {
+  stubUrls()
+  const decode = vi.fn(bitmap)
+  vi.stubGlobal('createImageBitmap', decode)
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ fillRect() {}, drawImage() {} } as never)
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((done) => done(new Blob([new Uint8Array(400_000)], { type: 'image/jpeg' })))
+  return decode
+}
+
+test('a big photo is shrunk to a JPEG before the size check', async () => {
+  stubShrink()
+  const post = vi.fn(created)
+  mockFetch({ [POST]: post })
+  const { user } = open({ kind: 'photos' })
+  await user.upload(screen.getByLabelText('الملف'), new File([new Uint8Array(11 * 1024 * 1024)], 'IMG_1.jpeg', { type: 'image/jpeg' }))
+  await user.click(await screen.findByRole('button', { name: 'رفع مستند' }))
+  const sent = await sentFile(post)
+  expect([sent.name, sent.type, sent.size]).toEqual(['IMG_1.jpg', 'image/jpeg', 400_000])
+})
+
+test('a photo the browser cannot shrink is sent unchanged', async () => {
+  stubShrink(() => Promise.reject(new Error('decode')))
+  const post = vi.fn(created)
+  mockFetch({ [POST]: post })
+  const { user } = open({ kind: 'photos' })
+  const png = new File([new Uint8Array(1.6 * 1024 * 1024)], 'scan.png', { type: 'image/png' })
+  await user.upload(screen.getByLabelText('الملف'), png)
+  await user.click(await screen.findByRole('button', { name: 'رفع مستند' }))
+  const sent = await sentFile(post)
+  expect([sent.name, sent.type, sent.size]).toEqual(['scan.png', 'image/png', png.size])
+})
+
+test('a photo too big to decode safely is refused without shrinking', async () => {
+  const decode = stubShrink()
+  mockFetch({})
+  const { user } = open({ kind: 'photos' })
+  await user.upload(screen.getByLabelText('الملف'), new File([new Uint8Array(41 * 1024 * 1024)], 'huge.jpg', { type: 'image/jpeg' }))
+  expect(await screen.findByText(TOO_LARGE)).toBeInTheDocument()
+  expect(decode).not.toHaveBeenCalled()
 })
 
 test('a 413 answer says the server refused the size and clears the file', async () => {

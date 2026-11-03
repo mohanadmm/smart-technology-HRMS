@@ -20,8 +20,12 @@ const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', '
 export const ACCEPT = Object.keys(EXT)
 const MAX_BYTES = 10 * 1024 * 1024 // EmployeeDocumentController::MAX_KB
 const SHRINK_OVER = 1.5 * 1024 * 1024
+// ponytail: iOS Safari can kill the tab decoding a huge image instead of throwing; above this the size check refuses it unshrunk
+const SHRINK_UNDER = 40 * 1024 * 1024
 const EXPIRY_SOON_DAYS = 30
-const isHeic = (f: File) => /^image\/hei[cf]$/.test(f.type) || /\.hei[cf]$/i.test(f.name)
+const isHeic = (f: File) => /^image\/hei[cf](-sequence)?$/.test(f.type) || /\.hei[cf]$/i.test(f.name)
+/** The browser's type, or (when the OS gave none) the one its extension names. */
+const typeOf = (f: File) => f.type || ACCEPT.find((m) => f.name.toLowerCase().endsWith(`.${EXT[m]}`)) || ''
 
 /** A big phone photo as a JPEG of at most 2400 px on its long edge (transparency on white); the original when that is not smaller or anything fails. */
 async function shrinkPhoto(file: File): Promise<File> {
@@ -221,15 +225,17 @@ function UploadForm({ empId, preset, onClose, busy, setBusy }: { empId: string; 
     [t('document.tooLarge', { size: mb.format(f.size / 1024 / 1024), max: mb.format(MAX_BYTES / 1024 / 1024) }), f.type === 'application/pdf' && t('document.tooLargePdf')].filter(Boolean).join(' ')
 
   // check the type, then shrink a big photo, then check the size: the limit must not refuse the photos the shrink is for
-  async function pick(picked: File | undefined) {
+  async function pick(chosen: File | undefined) {
     setFile(undefined)
     setErr(undefined)
     setNetwork(false)
-    if (!picked) return setFileErr(undefined)
-    if (isHeic(picked)) return setFileErr(t('document.heic'))
-    if (!ACCEPT.includes(picked.type)) return setFileErr(t('document.badType'))
+    if (!chosen) return setFileErr(undefined)
+    if (isHeic(chosen)) return setFileErr(t('document.heic'))
+    const type = typeOf(chosen)
+    if (!ACCEPT.includes(type)) return setFileErr(t('document.badType'))
+    const picked = type === chosen.type ? chosen : new File([chosen], chosen.name, { type })
     setBusy(true)
-    const f = picked.type.startsWith('image/') && picked.size > SHRINK_OVER ? await shrinkPhoto(picked) : picked
+    const f = type.startsWith('image/') && picked.size > SHRINK_OVER && picked.size <= SHRINK_UNDER ? await shrinkPhoto(picked) : picked
     setBusy(false)
     if (f.size > MAX_BYTES) return setFileErr(tooLarge(f))
     setFileErr(undefined)
