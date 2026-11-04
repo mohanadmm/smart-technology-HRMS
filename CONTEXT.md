@@ -40,8 +40,20 @@ A place where a day of work is done, usually a client location.
 _Avoid_: location, project, place (المكان)
 
 **Home site** (الموقع الأساسي):
-The site a worker belongs to from a date until HR moves them. A worker helping at another site, even for one day, is moved there first.
+The site a worker belongs to from a date until HR moves them. A worker helping at another site, even for one day, is moved there first; a day laborer's one-day move is a crew change instead (see Crew).
 _Avoid_: current site, assigned site
+
+**Crew** (طاقم):
+The day laborers on a site's list for one date: those whose home site it is, changed for that date only by the site manager's crew changes (add someone to today's crew, move them between their own sites, or take them off). A crew change never touches the home site, yesterday's records or tomorrow's list (owner, 2026-11-04).
+_Avoid_: team, gang, roster (that is the whole list, workers and engineers)
+
+**Proposed laborer** (عامل مقترح):
+A new day laborer a site manager adds to today's crew, with their name, gender, optional mobile and a proposed wage. They have no home site and no pay row until HR approves the wage; if HR refuses it, they end on that day and leave every crew, and the days already recorded wait for HR.
+_Avoid_: temporary worker, new hire
+
+**Proposed wage** (أجر مقترح):
+The daily wage a site manager types for a proposed laborer. A request, never a pay rate: HR sets the wage when approving it. The site manager never sees a stored wage.
+_Avoid_: wage, rate
 
 **Leave day-type**:
 A non-work value recorded instead of a site for a day: Friday, Saturday, official holiday, sick, rest, absent (غ). It gets its own row in site costing. Stored as a `sites` row with `kind=leave` and a `leave_code`; the UI calls them أنواع الإجازات / Leave types and never "leave site".
@@ -79,6 +91,10 @@ Either a one-day permission to leave before shift end, or a permanent change to 
 **Attendance day** (يوم حضور):
 One employee's record for one date: one site, one leave day-type, or (office) present. A day with none is a missing day, never an absence.
 _Avoid_: timesheet row, punch
+
+**Open day** (يوم مفتوح):
+A field day (engineer, permanent worker, day laborer) with an arrival and no departure, in a period that is not locked. The site manager records no later day for that person until it is completed; past the yesterday window they may still add its departure, and HR hears of it at once. A period with an open day cannot be locked. Office days are never open days.
+_Avoid_: incomplete day, missing checkout
 
 **Attendance lock** (قفل الحضور):
 HR's freeze of one group's period; nobody edits until HR reopens with a reason.
