@@ -754,6 +754,11 @@
       "title": "Missing attendance days as of {{date}}",
       "line": "Missing days, {{group}}: {{count}}",
       "period": "{{start}} – {{end}}"
+    },
+    "leaveAnniversary": {
+      "line": "One year since <name/> (<code/>) was hired",
+      "unknown": "One year since an employee was hired",
+      "hired": "Hired {{date}}"
     }
   },
   "time": {

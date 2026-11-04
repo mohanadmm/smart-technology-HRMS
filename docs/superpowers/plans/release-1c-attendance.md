@@ -1772,7 +1772,7 @@ Post the shots and wait for approval.
     - The data holds counts only, never names (§9).
   - `attendance:alert-missing {date?}`: the date defaults to Cairo today; a non-`Y-m-d` value fails with exit code 1; it dispatches the job.
   - `routes/console.php`: `Schedule::command('attendance:alert-missing')->dailyAt('21:00')->timezone('Africa/Cairo');`
-  - `GET notifications?per_page=` → rows `{id, type, date, data, read_at}`. `PATCH notifications/{notification}/read` → the row.
+  - `GET notifications?per_page=` → rows `{id, type, date, data, read_at}`; since Leave Slice 3 also `ref` (uuid or null) and `employee` (`{id, code, name_ar, name_en}` for a live employee named in `data.employee_id`, else null). `PATCH notifications/{notification}/read` → the row.
 
 - [ ] **Step 1: Write the failing tests** (`cairo('2026-10-20 21:00')`; `employee('engineer', '2026-09-26')`, which leaves 22 missing days: 09-26 → 10-20 is 25 days, less 3 Fridays)
 

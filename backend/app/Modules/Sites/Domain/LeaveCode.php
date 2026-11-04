@@ -16,4 +16,10 @@ enum LeaveCode: string
     case Annual = 'annual';
     case Casual = 'casual';
     case Unpaid = 'unpaid';
+
+    /** Leave an own-scope writer may not store: it goes through a leave request (leave spec, Manager rule). */
+    public function needsRequest(): bool
+    {
+        return in_array($this, [self::Annual, self::Casual, self::Unpaid], true);
+    }
 }

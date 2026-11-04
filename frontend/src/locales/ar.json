@@ -765,6 +765,11 @@
       "title": "أيام حضور غير مسجلة حتى {{date}}",
       "line": "أيام غير مسجلة — {{group}}: {{count}}",
       "period": "{{start}} – {{end}}"
+    },
+    "leaveAnniversary": {
+      "line": "مرّت سنة على تعيين <name/> (<code/>)",
+      "unknown": "مرّت سنة على تعيين أحد الموظفين",
+      "hired": "تاريخ التعيين {{date}}"
     }
   },
   "time": {

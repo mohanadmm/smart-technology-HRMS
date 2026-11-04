@@ -22,6 +22,10 @@ const unread = missing('n1', null, [
   { group: 'engineer', period_start: '2026-09-26', period_end: '2026-10-25', missing: 22 },
 ])
 const read = missing('n2', '2026-10-19T08:00:00Z', [{ group: 'day_laborer', period_start: '2026-10-16', period_end: '2026-10-31', missing: 4 }])
+const ahmed = { id: 'e1', code: 1042, name_ar: 'أحمد علي', name_en: 'Ahmed Ali' }
+const anniversary = (employee: { id: string; code: number; name_ar: string; name_en: string | null } | null, read_at: string | null = null) => ({
+  id: 'a1', type: 'leave_anniversary', date: '2026-11-04', ref: 'e1', read_at, data: { employee_id: 'e1', hire_date: '2025-11-04' }, employee,
+})
 const inbox = (rows: unknown[]) => () => json(200, { data: rows, meta: { pagination: { ...pagination, total: rows.length } } })
 
 function Where() {
@@ -142,4 +146,47 @@ test('while loading, the menu says so to screen readers', async () => {
   renderWithAuth(<NotificationBell />, [])
   await user.click(screen.getByRole('button', { name: /^فتح الإشعارات/ }))
   expect(await screen.findByText('جارٍ التحميل…')).toBeInTheDocument()
+})
+
+test('a one-year anniversary is listed with the name, code and hire date, and counted', async () => {
+  mockFetch({ 'GET /api/v1/notifications': inbox([anniversary(ahmed), unread]) })
+  renderWithAuth(<NotificationBell />, [])
+  await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (2 غير مقروء)' }))
+  const line = await screen.findByRole('menuitem', { name: /مرّت سنة على تعيين أحمد علي/ })
+  expect(line).toHaveAccessibleName(/^غير مقروء، مرّت سنة على تعيين أحمد علي \(1042\)،\s*تاريخ التعيين 2025-11-04$/)
+  // in RTL the code stays an LTR run beside the name, in its parentheses
+  expect(within(line).getByText('1042')).toHaveAttribute('dir', 'ltr')
+})
+
+test('choosing an anniversary marks it read and opens the employee on the Leave tab of the anniversary year', async () => {
+  const lateDecember = { ...anniversary(ahmed), date: '2025-12-29' } // opened in January, it still lands on 2025
+  const patch = vi.fn(() => json(200, { data: { ...lateDecember, read_at: '2026-01-04T09:00:00Z' } }))
+  mockFetch({ 'GET /api/v1/notifications': inbox([lateDecember]), 'PATCH /api/v1/notifications/a1/read': patch })
+  renderWithAuth(<><NotificationBell /><Where /></>, [])
+  await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (1 غير مقروء)' }))
+  await user.click(await screen.findByRole('menuitem', { name: /مرّت سنة على تعيين/ }))
+  expect(screen.getByRole('status')).toHaveTextContent('/employees/e1?tab=leave&year=2025')
+  await waitFor(() => expect(patch).toHaveBeenCalledTimes(1))
+})
+
+test('an anniversary whose employee is gone reads as a generic line, and choosing it only marks it read', async () => {
+  const patch = vi.fn(() => json(200, { data: { ...anniversary(null), read_at: '2026-11-04T09:00:00Z' } }))
+  mockFetch({ 'GET /api/v1/notifications': inbox([anniversary(null)]), 'PATCH /api/v1/notifications/a1/read': patch })
+  renderWithAuth(<><NotificationBell /><Where /></>, [], { path: '/employees' })
+  await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (1 غير مقروء)' }))
+  const line = await screen.findByRole('menuitem')
+  expect(line).toHaveAccessibleName(/^غير مقروء، مرّت سنة على تعيين أحد الموظفين،\s*تاريخ التعيين 2025-11-04$/)
+  await user.click(line)
+  await waitFor(() => expect(patch).toHaveBeenCalledTimes(1))
+  expect(screen.getByRole('status')).toHaveTextContent(/^\/employees$/) // the employee page would be a 404
+})
+
+test('in English an anniversary uses the English name, else the Arabic one', async () => {
+  await i18n.changeLanguage('en')
+  mockFetch({ 'GET /api/v1/notifications': inbox([anniversary(ahmed), { ...anniversary({ ...ahmed, name_en: null }), id: 'a2' }]) })
+  renderWithAuth(<NotificationBell />, [])
+  await user.click(await screen.findByRole('button', { name: 'Open notifications (2 unread)' }))
+  const [en, ar] = await screen.findAllByRole('menuitem')
+  expect(en).toHaveAccessibleName(/^unread, One year since Ahmed Ali \(1042\) was hired,\s*Hired 2025-11-04$/)
+  expect(ar).toHaveTextContent('One year since أحمد علي (1042) was hired')
 })

@@ -3,14 +3,17 @@
 namespace Tests\Feature;
 
 use App\Modules\Attendance\Application\SendMissingDaysAlert;
+use App\Modules\Employees\Application\EmployeeService;
 use App\Modules\Identity\Infrastructure\Eloquent\Permission;
 use App\Modules\Identity\Infrastructure\Eloquent\Role;
 use App\Modules\Notifications\Application\Notifier;
 use App\Modules\Notifications\Infrastructure\Eloquent\Notification;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Tests\AttendanceFixtures;
 use Tests\TestCase;
@@ -109,6 +112,51 @@ class NotificationsTest extends TestCase
         $this->assertSame(2, Notification::count());
     }
 
+    public function test_notify_once_keys_on_the_ref_too(): void
+    {
+        $id = $this->makeUser('hr')->id;
+        $notifier = app(Notifier::class);
+        [$a, $b] = [(string) Str::uuid7(), (string) Str::uuid7()];
+        $this->assertTrue($notifier->notifyOnce($id, 'leave_anniversary', '2026-10-20', [], $a));
+        $this->assertTrue($notifier->notifyOnce($id, 'leave_anniversary', '2026-10-20', [], $b));
+        $this->assertFalse($notifier->notifyOnce($id, 'leave_anniversary', '2026-10-20', [], $a));
+        $this->assertTrue($notifier->notifyOnce($id, 'attendance_missing_days', '2026-10-20', []));
+        $this->assertFalse($notifier->notifyOnce($id, 'attendance_missing_days', '2026-10-20', []));
+        $this->assertSame(3, Notification::count());
+    }
+
+    public function test_notify_once_losing_a_race_inside_a_transaction_leaves_the_transaction_usable(): void
+    {
+        $id = $this->makeUser('hr')->id;
+        $key = ['user_id' => $id, 'type' => 'attendance_missing_days', 'date' => '2026-10-20', 'ref' => null];
+        // A concurrent run inserts the same row between notifyOnce's check and its insert.
+        Notification::creating(function () use ($key) {
+            Notification::withoutEvents(fn () => Notification::create([...$key, 'data' => []]));
+        });
+
+        DB::transaction(function () use ($id) {
+            $this->assertFalse(app(Notifier::class)->notifyOnce($id, 'attendance_missing_days', '2026-10-20', []));
+            $this->assertSame(1, DB::table('users')->where('id', $id)->count());
+        });
+    }
+
+    public function test_the_inbox_names_the_live_employee_a_row_points_to(): void
+    {
+        $hr = $this->makeUser('hr');
+        $employee = $this->employee('office', '2025-10-20');
+        $gone = $this->employee('office', '2025-10-20');
+        app(EmployeeService::class)->delete($gone);
+        $notifier = app(Notifier::class);
+        $notifier->notifyOnce($hr->id, 'leave_anniversary', '2026-10-20', ['employee_id' => $employee, 'hire_date' => '2025-10-20'], $employee);
+        $notifier->notifyOnce($hr->id, 'leave_anniversary', '2026-10-20', ['employee_id' => $gone, 'hire_date' => '2025-10-20'], $gone);
+
+        $this->actingAs($hr, 'api');
+        $rows = collect($this->getJson('/api/v1/notifications')->assertOk()->json('data'))->keyBy('ref');
+        $this->assertSame(['id' => $employee, 'code' => (int) $rows[$employee]['employee']['code'], 'name_ar' => 'Office-1', 'name_en' => null], $rows[$employee]['employee']);
+        $this->assertNull($rows[$gone]['employee']);   // the employee page is a 404 for a deleted employee
+        $this->assertSame($employee, $this->patchJson('/api/v1/notifications/'.$rows[$employee]['id'].'/read')->assertOk()->json('data.employee.id'));
+    }
+
     public function test_users_read_and_mark_only_their_own_notifications(): void
     {
         $a = $this->makeUser('manager');
@@ -123,7 +171,8 @@ class NotificationsTest extends TestCase
         $this->actingAs($a, 'api');
         $list = $this->getJson('/api/v1/notifications?per_page=10')->assertOk();
         $this->assertSame(['2026-10-20', '2026-10-19'], array_column($list->json('data'), 'date'));
-        $this->assertSame(['id', 'type', 'date', 'data', 'read_at'], array_keys($list->json('data.0')));
+        $this->assertSame(['id', 'type', 'date', 'data', 'read_at', 'ref', 'employee'], array_keys($list->json('data.0')));
+        $this->assertNull($list->json('data.0.employee'));
         $this->assertSame(2, $list->json('meta.pagination.total'));
 
         $this->patchJson("/api/v1/notifications/{$theirs}/read")->assertNotFound();

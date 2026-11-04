@@ -16,6 +16,7 @@ use App\Modules\Employees\Application\EmployeeRoster;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Settings\Application\BusinessRules;
 use App\Modules\Sites\Application\SiteService;
+use App\Modules\Sites\Domain\LeaveCode;
 use App\Modules\Sites\Domain\SiteKind;
 use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use App\Support\Database\ConcurrencyConflict;
@@ -137,7 +138,7 @@ final class AttendanceDays
                     $conflicts[$i] = "rows.{$i}";
                 } catch (AttendanceRefused $e) {
                     // A locked period or a future date refuses the whole request, so it names no row.
-                    $named = in_array($e->reason, [AttendanceRefusal::EmployeeNotActive, AttendanceRefusal::SiteNotInReach], true);
+                    $named = in_array($e->reason, [AttendanceRefusal::EmployeeNotActive, AttendanceRefusal::SiteNotInReach, AttendanceRefusal::LeaveNeedsRequest], true);
                     $detail = ['field' => "rows.{$i}", 'code' => $e->reason->value, 'message' => __('attendance.refusal.'.$e->reason->value, $e->params)];
                     throw AttendanceRefused::because($e->reason, $e->params, $named ? [$detail] : []);
                 } catch (UniqueConstraintViolationException) {
@@ -184,7 +185,9 @@ final class AttendanceDays
      * One day's write; call inside a transaction. $keepUnsent (bulk) applies P28 to the fields absent from $input, else they are stored as null.
      * An unchanged row is not written (P29). $dryRun stops after the last check, before anything is saved. With $ownerId (own scope)
      * the employee must be in that user's reach on $date, and a work site must be one of their sites and, for a worker, the home site
-     * on $date (design Part 1). The import takes reach once per period, so this is what checks each cell's own date.
+     * on $date (design Part 1), and a change of the day's site must not be to a leave type that needs a leave request (a day already
+     * stored as one, by HR or the leave workflow, can be resubmitted). The import takes reach once per period, so
+     * this is what checks each cell's own date.
      *
      * @param  array<string, mixed>  $employee
      * @param  array<string, mixed>  $input  validated against FORMAT
@@ -201,6 +204,9 @@ final class AttendanceDays
         $site = $siteId === null ? null : Site::find((string) $siteId);
         if ($ownerId !== null) {
             $this->assertInReach($employee, $type, $date, $site?->kind === SiteKind::Work->value ? (string) $site->id : null, $ownerId);
+            if ($site?->id !== $live?->site_id && LeaveCode::tryFrom((string) $site?->leave_code)?->needsRequest() === true) {
+                throw AttendanceRefused::because(AttendanceRefusal::LeaveNeedsRequest);
+            }
         }
         $siteRule = $this->siteRule($site, $live);
         $isLeave = $site?->kind === 'leave';
