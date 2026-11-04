@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { HardHat, MapPinOff, MoreHorizontal, Search, UserMinus, UserPlus, Users } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { HardHat, MapPinOff, MoreHorizontal, Search, StickyNote, UserMinus, UserPlus, Users } from 'lucide-react'
+import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { Alert } from '@/components/common/Alert'
@@ -10,12 +10,12 @@ import { TableSkeleton } from '@/components/layout/PageSkeleton'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
+import { Input, Textarea } from '@/components/ui/input'
 import { ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { queryKey, useApi, useSave } from '@/lib/query'
 import {
-  changed, checkOutAll, checkOutCount, counts, current, arrivalDiff, departureDiff, type Draft, type Drafts, type LeaveSites, type Mark, markAllCount, markAllPresent,
+  changed, checkOutAll, likeYesterday, likeYesterdayCount, checkOutCount, counts, current, arrivalDiff, departureDiff, type Draft, type Drafts, type LeaveSites, type Mark, markAllCount, markAllPresent,
   MARKS, MORE, saveBody, type SiteDay, type SiteDayRow,
 } from '@/lib/site-day'
 import { cn } from '@/lib/utils'
@@ -178,6 +178,7 @@ export function SiteDayPage() {
   const engineers = shown.filter((r) => r.section === 'engineers')
   const markN = locked ? 0 : markAllCount(rows, drafts, siteId)
   const outN = locked ? 0 : checkOutCount(rows, drafts, siteId)
+  const likeN = locked || !day ? 0 : likeYesterdayCount(rows, drafts, siteId, day.leave_sites)
   const siteName = site ? localName(day?.site ?? site, lang) : ''
   const crewTools = isToday && (can('employee.crew') || can('employee.propose_laborer'))
   const person = (r: SiteDayRow, removable: boolean) => (
@@ -226,6 +227,9 @@ export function SiteDayPage() {
             <div className="flex flex-wrap gap-2" role="group" aria-label={t('siteDay.bulk', { site: siteName })}>
               <Button type="button" className="min-h-11" disabled={!markN} onClick={() => setDrafts(markAllPresent(rows, drafts, siteId))}>
                 {t('siteDay.markAll', { count: markN })}
+              </Button>
+              <Button type="button" variant="outline" className="min-h-11" disabled={!likeN} onClick={() => setDrafts(likeYesterday(rows, drafts, siteId, day.leave_sites))}>
+                {t('siteDay.likeYesterday', { count: likeN })}
               </Button>
               <Button type="button" variant="outline" className="min-h-11" disabled={!outN} onClick={() => setDrafts(checkOutAll(rows, drafts, siteId))}>
                 {t('siteDay.checkOutAll', { count: outN })}
@@ -362,6 +366,10 @@ function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved, 
   const arrival = draft?.in_time ?? null
   const late = present && isHhmm(arrival) ? arrivalDiff(arrival, r.shift.start) : null
   const missingOut = present && isHhmm(draft?.in_time ?? null) && !out
+  const [noteOpen, setNoteOpen] = useState(false)
+  const storedNote = r.day.state === 'stored' ? r.day.note : null
+  const noteText = draft?.note !== undefined ? (draft.note ?? '') : (storedNote ?? '')
+  const noteId = useId()
   const remove = async () => {
     setRemoveErr(undefined)
     try {
@@ -434,6 +442,17 @@ function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved, 
           </div>
         ) : <div className="hidden xl:col-span-2 xl:block" />}
       </div>
+      {draft !== null && (
+        <div className="mt-2">
+          <Button type="button" variant="ghost" className="h-auto min-h-11 gap-1.5 px-1 text-[13px] text-muted-foreground" aria-expanded={noteOpen} aria-controls={noteId} onClick={() => setNoteOpen((o) => !o)}>
+            <StickyNote aria-hidden />{noteText ? t('siteDay.noteShown', { note: noteText }) : t('siteDay.addNote')}
+          </Button>
+          {noteOpen && (
+            <Textarea id={noteId} aria-label={t('siteDay.noteOf', { name })} maxLength={500} rows={2} disabled={off} value={noteText}
+              onChange={(e) => set({ ...draft, note: e.target.value })} className="mt-1" />
+          )}
+        </div>
+      )}
       {removeErr !== undefined && <div className="mt-2"><ErrorBanner err={removeErr} shown={[]} /></div>}
     </li>
   )

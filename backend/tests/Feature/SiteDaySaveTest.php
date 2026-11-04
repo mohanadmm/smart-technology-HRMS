@@ -204,6 +204,21 @@ class SiteDaySaveTest extends TestCase
         $this->assertEquals(['date' => '2026-10-22', 'count' => 1], json_decode((string) $n?->data, true));
     }
 
+    public function test_previous_is_the_latest_day_in_the_week_before_skipping_fridays_and_holidays(): void
+    {
+        $this->actingAs($this->m, 'api');
+        $this->cairo('2026-10-22 09:00');
+        $this->save($this->s1, [$this->work($this->w1, '08:10', '16:00'), ['employee_id' => $this->l1, 'site_id' => $this->leave['sick']]])->assertOk();
+        $this->cairo('2026-10-24 09:00');
+        $this->actingAs($this->makeUser('hr'), 'api');
+        $this->putDay($this->w1, '2026-10-23', ['site_id' => $this->leave['friday']])->assertOk();      // a Friday leave is skipped
+        $this->actingAs($this->m, 'api');
+        $rows = collect($this->getJson("/api/v1/attendance/site-day?site_id={$this->s1}")->assertOk()->json('data.rows'))->keyBy('employee.id');
+        $this->assertSame(['date' => '2026-10-22', 'site_id' => $this->s1, 'leave_code' => null, 'in_time' => '08:10', 'out_time' => '16:00'], $rows[$this->w1]['previous']);
+        $this->assertSame('sick', $rows[$this->l1]['previous']['leave_code']);
+        $this->assertNull($rows[$this->e1]['previous']);
+    }
+
     public function test_an_unchanged_arrival_keeps_its_late_minutes_and_an_unsent_note_stays(): void
     {
         $this->actingAs($this->m, 'api');

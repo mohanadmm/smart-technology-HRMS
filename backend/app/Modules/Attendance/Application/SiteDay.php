@@ -20,6 +20,7 @@ use App\Modules\Sites\Domain\LeaveCode;
 use App\Modules\Sites\Domain\SiteKind;
 use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -60,7 +61,8 @@ final class SiteDay
      * Each row carries the person's scheduled shift (their pay-row override, else the field shift setting) for the bulk fills,
      * and whether the site manager may change the day now: `why_not` is locked, window, hr_day (HR recorded it, or it came from an
      * approved request: only HR changes it, owner 2026-11-04) or open_day (an earlier day has an arrival and no departure; `open_date`
-     * names it). `leave_sites` are the leave types the site manager may store (P11), by code.
+     * names it; `open_editable` says whether the site manager can still complete it). `previous` is the day «زي امبارح» copies (P10).
+     * `leave_sites` are the leave types the site manager may store (P11), by code.
      *
      * @return array{site: array{id: string, name_ar: string, name_en: ?string}, date: string, today: string, leave_sites: array<string, string>, rows: list<array<string, mixed>>}
      */
@@ -70,14 +72,16 @@ final class SiteDay
         $settings = $this->rules->all();
         $window = $this->windowAllows($date, $settings);
         $locked = [];
-        $open = $this->openDays(array_map(fn (array $l) => (string) $l[0]['id'], $listed), $date);
+        $ids = array_map(fn (array $l) => (string) $l[0]['id'], $listed);
+        $open = $this->openDays($ids, $date);
+        $previous = $this->previousDays($ids, $date);
 
         return [
             'site' => ['id' => (string) $site->getKey(), 'name_ar' => (string) $site->name_ar, 'name_en' => $site->name_en],
             'date' => $date,
             'today' => EffectiveDays::today(),
             'leave_sites' => $this->managerLeaveSites(),
-            'rows' => array_map(function (array $l) use ($days, $date, $settings, $window, $open, &$locked): array {
+            'rows' => array_map(function (array $l) use ($days, $date, $settings, $window, $open, $previous, &$locked): array {
                 [$e, $section] = $l;
                 $day = $days[$e['id']][$date];
                 $type = (string) $day['type'];
@@ -100,6 +104,7 @@ final class SiteDay
                     'open_date' => $open[$e['id']] ?? null,
                     // whether the site manager can still complete it, or only HR (after the yesterday window)
                     'open_editable' => isset($open[$e['id']]) && $this->windowAllows($open[$e['id']], $settings),
+                    'previous' => $previous[$e['id']] ?? null,
                 ];
             }, $listed),
         ];
@@ -196,6 +201,36 @@ final class SiteDay
     private static function hrDay(array $day): bool
     {
         return $day['state'] === 'stored' && $day['source'] !== 'manager';
+    }
+
+    /**
+     * «زي امبارح» (P10): per employee, the latest stored day in the 7 before $date, skipping Friday, Saturday and official holidays.
+     *
+     * @param  list<string>  $employeeIds
+     * @return array<string, array{date: string, site_id: ?string, leave_code: ?string, in_time: ?string, out_time: ?string}>
+     */
+    private function previousDays(array $employeeIds, string $date): array
+    {
+        if ($employeeIds === []) {
+            return [];
+        }
+        $from = (new \DateTimeImmutable($date))->modify('-7 days')->format('Y-m-d');
+        $off = [LeaveCode::Friday->value, LeaveCode::Saturday->value, LeaveCode::OfficialHoliday->value];
+        $rows = DB::table('attendance_days as d')->leftJoin('sites as s', 's.id', '=', 'd.site_id')
+            ->whereNull('d.deleted_at')->whereIn('d.employee_id', $employeeIds)->where('d.date', '>=', $from)->where('d.date', '<', $date)
+            ->where(fn ($q) => $q->whereNull('s.leave_code')->orWhereNotIn('s.leave_code', $off))
+            ->selectRaw('distinct on (d.employee_id) d.employee_id, d.date, d.site_id, s.leave_code, d.in_time, d.out_time')
+            ->orderBy('d.employee_id')->orderByDesc('d.date')->get();
+        $hhmm = fn (?string $t) => $t === null ? null : substr($t, 0, 5);
+        $out = [];
+        foreach ($rows as $r) {
+            $out[(string) $r->employee_id] = [
+                'date' => substr((string) $r->date, 0, 10), 'site_id' => $r->site_id === null ? null : (string) $r->site_id,
+                'leave_code' => $r->leave_code, 'in_time' => $hhmm($r->in_time), 'out_time' => $hhmm($r->out_time),
+            ];
+        }
+
+        return $out;
     }
 
     /**

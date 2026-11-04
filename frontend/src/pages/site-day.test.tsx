@@ -399,3 +399,40 @@ test('an earlier day without a departure locks the row, says why, and opens that
   expect(screen.getByTestId('url')).toHaveTextContent('date=2026-10-21')
   await waitFor(() => expect(siteDay.mock.calls.some(([u]) => String(u).includes('date=2026-10-21'))).toBe(true))
 })
+
+test('«زي امبارح» fills only the empty rows from yesterday, and one save sends them', async () => {
+  const prev = (p = {}) => ({ previous: { date: '2026-10-21', site_id: 's1', leave_code: null, in_time: '08:10', out_time: '16:00', ...p } })
+  const { post } = routes([S1], {
+    s1: [
+      row('a', 'Laborer-A', 'day_laborer', 'workers', {}, prev()),
+      row('b', 'Laborer-B', 'day_laborer', 'workers', {}, prev({ site_id: 'leave-sick', leave_code: 'sick', in_time: null, out_time: null })),
+      row('c', 'Laborer-C', 'day_laborer', 'workers', {}, prev({ site_id: 'leave-annual', leave_code: 'annual', in_time: null, out_time: null })),
+      row('d', 'Laborer-D', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 's1', in_time: '09:00' }, prev()),
+    ],
+  })
+  render()
+  await enter()
+  await user.click(await screen.findByRole('button', { name: 'زي امبارح (2)' }))
+  expect(within(group('Laborer-A')).getByRole('textbox', { name: 'حضور Laborer-A' })).toHaveValue('8:10')
+  expect(within(group('Laborer-A')).getByRole('textbox', { name: 'انصراف Laborer-A' })).toHaveValue('')
+  expect(within(group('Laborer-B')).getByRole('button', { name: 'مرضي' })).toHaveAttribute('aria-pressed', 'true')
+  expect(group('Laborer-C').querySelector('[aria-pressed="true"]')).toBeNull()
+  expect(post).not.toHaveBeenCalled()
+  await user.click(screen.getByRole('button', { name: 'حفظ اليوم' }))
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+  expect(bodyOf(post).rows).toEqual([
+    { employee_id: 'a', version: null, site_id: 's1', in_time: '08:10', out_time: null },
+    { employee_id: 'b', version: null, site_id: 'leave-sick', in_time: null, out_time: null },
+  ])
+})
+
+test('a note is typed on the row and saved with it', async () => {
+  const { post } = routes([S1], { s1: [row('a', 'Laborer-A', 'day_laborer', 'workers', { state: 'stored', version: 2, site_id: 's1', in_time: '09:00' })] })
+  render()
+  await enter()
+  await user.click(await screen.findByRole('button', { name: 'إضافة ملاحظة' }))
+  await user.type(screen.getByRole('textbox', { name: 'ملاحظة Laborer-A' }), 'وصل متأخر بسبب المواصلات')
+  await user.click(screen.getByRole('button', { name: 'حفظ اليوم' }))
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+  expect(bodyOf(post).rows).toEqual([{ employee_id: 'a', version: 2, site_id: 's1', in_time: '09:00', out_time: null, note: 'وصل متأخر بسبب المواصلات' }])
+})
