@@ -197,6 +197,36 @@ final class AttendanceDays
     }
 
     /**
+     * The leave workflow's cancel (leave spec, Workflow Cancel): soft-deletes the live day when it still holds one of $leaveTypeIds with
+     * source `leave`, as clear() does (version+1, audited), and says whether it did. A date outside employment is false; a locked period
+     * refuses even with nothing to clear; a day to clear that holds a note or an advance refuses (`leave_cancel_blocked`), so none is lost.
+     *
+     * @param  list<string>  $leaveTypeIds
+     */
+    public function clearLeaveDay(string $employeeId, string $date, array $leaveTypeIds): bool
+    {
+        $employee = $this->roster->find($employeeId) ?? throw new ModelNotFoundException;
+        if (Employment::typeOn($employee, $date) === null) {
+            return false;
+        }
+
+        return DB::transaction(function () use ($employee, $date, $leaveTypeIds): bool {
+            [, $row] = $this->guard($employee, $date, allowFuture: true);
+            if ($row === null || $row->trashed() || $row->source !== 'leave' || ! in_array($row->site_id, $leaveTypeIds, true)) {
+                return false;
+            }
+            if ($row->getAttribute('note') !== null || $row->getAttribute('advance_amount') !== null) {
+                throw AttendanceRefused::because(AttendanceRefusal::LeaveCancelBlocked);
+            }
+            $row->version = $row->version + 1;
+            $row->save();
+            $row->delete();
+
+            return true;
+        });
+    }
+
+    /**
      * Read only: the dates a leave approval may not write, those holding a work day or office present, or inside a locked period.
      *
      * @param  list<string>  $dates

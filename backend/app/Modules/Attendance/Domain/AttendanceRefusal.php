@@ -20,11 +20,12 @@ enum AttendanceRefusal: string
     case SiteNotInReach = 'site_not_in_reach';
     case LeaveNeedsRequest = 'leave_needs_request';
     case LeaveDaysBlocked = 'leave_days_blocked';
+    case LeaveCancelBlocked = 'leave_cancel_blocked';
 
     public function status(): int
     {
         return match ($this) {
-            self::PeriodAlreadyLocked, self::LeaveDaysBlocked => 409,
+            self::PeriodAlreadyLocked, self::LeaveDaysBlocked, self::LeaveCancelBlocked => 409,
             self::PeriodLocked => 423,
             self::FutureDate, self::EmployeeNotActive, self::MissingDaysUnconfirmed, self::PeriodNotLocked, self::LeaveTypeMissing,
             self::TemplateMismatch, self::UnreadableFile, self::TooManyRows, self::SiteNotInReach, self::LeaveNeedsRequest => 422,
