@@ -111,16 +111,17 @@ final class AttendanceDays
      * stops at its row. An unsent value is kept by the P28 rule. Rows are locked in employee_id order so two requests cannot deadlock.
      *
      * @param  list<array<string, mixed>>  $rows  validated against BULK_FORMAT
+     * @param  string  $source  `manager` for the site manager's save (P9)
      * @return list<array{employee_id: string, version: ?int}> in request order; version is null after a clear
      */
-    public function bulk(string $date, array $rows, ?string $ownerId): array
+    public function bulk(string $date, array $rows, ?string $ownerId, string $source = 'entered'): array
     {
         $employees = $this->roster->findMany(array_map(fn (array $r) => (string) $r['employee_id'], $rows));
         $order = array_keys($rows);
         usort($order, fn (int $a, int $b) => strcmp((string) $rows[$a]['employee_id'], (string) $rows[$b]['employee_id']));
         $settings = $this->rules->all();
         $versions = [];
-        DB::transaction(function () use ($date, $rows, $ownerId, $order, $employees, $settings, &$versions): void {
+        DB::transaction(function () use ($date, $rows, $ownerId, $source, $order, $employees, $settings, &$versions): void {
             $conflicts = [];
             $errors = [];
             // ponytail: ~6 queries per row; preload sites and locks if 500-row requests get slow
@@ -132,7 +133,7 @@ final class AttendanceDays
                         $this->clearRow($employee, $date, (int) $row['version']);
                         $versions[$i] = null;
                     } else {
-                        $versions[$i] = $this->write($employee, $date, $row, $ownerId, 'entered', true, $settings);
+                        $versions[$i] = $this->write($employee, $date, $row, $ownerId, $source, true, $settings);
                     }
                 } catch (ConcurrencyConflict) {
                     $conflicts[$i] = "rows.{$i}";
