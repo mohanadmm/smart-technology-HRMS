@@ -111,7 +111,7 @@ type Shown = LeaveRequest & {
   decision_reason: string | null
   decided_by: { id: string; name: string } | null
   decided_at: string | null
-  approval: { days: number; balance: { remaining: number | null; casual_remaining: number | null } | null; keep: number; unpaid: number; remaining_after: number | null; blocked: string[] } | null
+  approval: { days: number; balance: { remaining: number | null; casual_remaining: number | null } | null; keep: number; unpaid: number; remaining_after: number | null; blocked: string[]; replaced: { date: string; leave_code: string }[] } | null
 }
 type Action = 'approve' | 'refuse' | 'escalate' | 'cancel'
 
@@ -141,16 +141,20 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
   const { data: r, err: loadErr } = useApi<Shown>(path, { fresh: true })
   const [err, setErr] = useState<unknown>()
   const [asking, setAsking] = useState<Action>()
+  // the dates HR ticked to replace: a reload listing other dates leaves the tick off
+  const [ticked, setTicked] = useState<string>()
   if (!r) return <DialogBody>{loadErr ? <ErrorBanner err={loadErr} shown={[]} /> : <Skeleton className="h-40" />}</DialogBody>
 
   const a = r.approval
   const actions: Action[] = r.status === 'pending' && can('leave.decide') ? ['escalate', 'refuse', 'approve'] : r.status === 'escalated' && can('leave.decide_escalated') ? ['refuse', 'approve'] : []
   const undecided = r.status === 'pending' || r.status === 'escalated'
   const cancellable = undecided ? (!!me && r.requested_by?.id === me.id) || can('leave.request.all') : r.status === 'approved' && can('leave.decide.all')
+  const replaceDates = a?.replaced.map((d) => d.date) ?? []
+  const replace = !!replaceDates.length && ticked === replaceDates.join()
   const asks = (['cancel', 'refuse', 'escalate'] as const).filter((x) => (x === 'cancel' ? cancellable : actions.includes(x)))
   // a refusal (409 stale or blocked days) also marks the request stale, so it reloads with the server's current status and blocked dates
   const decide = (action: Action, reason?: string) =>
-    send(`${path}/${action}`, { body: { version: r.version, ...(reason && { reason }) } }, ['/leave', '/attendance', ...(r.employee ? [`/employees/${r.employee.id}/leave`] : [])])
+    send(`${path}/${action}`, { body: { version: r.version, ...(reason && { reason }), ...(action === 'approve' && replace && { replace_dates: replaceDates }) } }, ['/leave', '/attendance', ...(r.employee ? [`/employees/${r.employee.id}/leave`] : [])])
   // every decision lands here, so a refusal shows in the one banner above the request (the reason form has closed by then)
   const run = async (action: Action, reason?: string) => {
     setBusy(true)
@@ -204,6 +208,18 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
             <Dates dates={a.blocked} />
           </Alert>
         )}
+        {!!replaceDates.length && (
+          <Alert tone="warning">
+            <p>{t('leave.decide.replaced')}</p>
+            <ul className="flex flex-wrap gap-x-4">{a?.replaced.map((d) => <li key={d.date}><bdi dir="ltr">{d.date}</bdi> {t(`attendance.leaveName.${d.leave_code}`)}</li>)}</ul>
+          </Alert>
+        )}
+        {!!replaceDates.length && actions.includes('approve') && (
+          <label className="flex min-h-tap items-center gap-3 text-sm font-medium">
+            <input type="checkbox" className="size-4" checked={replace} onChange={(e) => setTicked(e.target.checked ? replaceDates.join() : undefined)} />
+            {t('leave.decide.replace')}
+          </label>
+        )}
       </DialogBody>
       {(!!actions.length || cancellable) && (
         <DialogFooter>
@@ -211,7 +227,7 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
           {cancellable && <Button type="button" variant="outline" className="text-destructive hover:text-destructive sm:me-auto" disabled={busy} onClick={() => setAsking('cancel')}>{t('leave.decide.cancel.action')}</Button>}
           {actions.map((action) =>
             action === 'approve' ? (
-              <Button key={action} type="button" disabled={busy} onClick={() => run('approve')}>{t('leave.decide.approve.action')}</Button>
+              <Button key={action} type="button" disabled={busy || (!!replaceDates.length && !replace)} onClick={() => run('approve')}>{t('leave.decide.approve.action')}</Button>
             ) : (
               <Button key={action} type="button" variant="outline" disabled={busy} onClick={() => setAsking(action)}>{t(`leave.decide.${action}.action`)}</Button>
             ),

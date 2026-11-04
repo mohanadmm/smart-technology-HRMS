@@ -100,7 +100,11 @@ Outside-Alex minutes are paid at ×1, with no multiplier, as in the Excel.
 - Official holidays come from the holiday list. When a weekly off day is also a holiday, the holiday wins.
 - A derived day is a leave day: no scheduled times, and a permanent worker's transport is none.
 - Derived on read while the period is open; stored at lock. HR can record the day instead (a site, if the person worked).
-- Reopening keeps the stored days. ⚠️ (owner) A later holiday or weekly-off change does not refresh them when the period is locked again; is that right?
+- Reopening keeps the stored days. A holiday can only be added, moved or deleted while every period on its date is open (decided 2026-11-04):
+  - deleting or moving a holiday removes the days stored as that official holiday by a lock (source `derived`) on the old date. The date then derives again (a weekly off) or is missing, which the lock's confirm-missing step lists;
+  - a new holiday date with no stored day derives and is stored at the next lock, as before;
+  - stored weekly-off days are never refreshed, because the weekly-off setting has no effective date; days HR or the leave workflow wrote (source `entered`, `imported`, `leave`) are never touched;
+  - a re-lock lists the holiday days removed and the holidays added or changed since the last lock, and separately the leave days (annual, casual, sick, unpaid) that now fall on a holiday. It does not change those leave days; HR reviews them.
 - A derived day is never an absence.
 
 ## 3. Permanent workers (عمال مثبتين): 26th → 25th
@@ -176,8 +180,10 @@ Spec: `docs/superpowers/specs/2026-11-03-leave-design.md`. Attendance is the led
 **Leave request days**
 - A request's days = its dates, minus days not employed as a monthly type, the type's weekly off and official holidays (§2a). Those are not counted and not written.
 - On approval the days are counted again (a holiday added since the request drops out). The earliest dates keep the kind; annual or casual days beyond the balance (for casual, beyond the smaller of the two balances) are written as unpaid leave (بدون أجر). ⚠️ (L2, client question 9)
-- The split (and the balance the request preview and the decide dialog show) reads the balance without the request's own dates: a leave day already stored on one of them is replaced on approval, so it is not counted twice. A day HR stored there with the same leave type keeps HR's source.
-- Cancelling an approved request clears the days it wrote that still hold its leave type (or unpaid) with source `leave`, so the balance goes back up by those days. A day changed since (moved to a site, or HR's own day of that type) stays and keeps counting. A day to clear that holds a note or an advance refuses the cancel and is listed; HR changes it first, so no advance is lost. A date in a locked period refuses the whole cancel.
+- The split (and the balance the request preview and the decide dialog show) reads the balance without the request's own dates: a leave day already stored on one of them is replaced on approval, so it is not counted twice. A day HR stored there with the same leave type (the same code) keeps HR's source.
+- A date that already holds another leave type than the one approval would write there (after the split, so HR's annual day on a date that becomes unpaid counts) is listed in the preview with its type. Approval refuses those dates unless HR ticks «استبدال هذه الأيام» for exactly the dates listed; replacing keeps the day's note and advance (decided 2026-11-04). A day stored by a lock (source `derived`) is replaced without asking.
+- Cancelling an approved request clears the days it wrote that still hold its leave type (or unpaid) with source `leave`, so the balance goes back up by those days. A day changed since (moved to a site, or HR's own day of that type) stays and keeps counting. A day to clear that holds a note or an advance refuses the cancel and is listed; HR changes the day's type first, so no advance is lost (kept by the owner on 2026-11-04). A date in a locked period refuses the whole cancel.
+- An employee with a pending or escalated request cannot be deleted; HR cancels or decides the requests first (decided 2026-11-04). Decided requests do not block the delete.
 
 **Leave pay (Release 2 payroll)**
 - Annual and casual leave are paid in full for monthly staff, like the weekly off.

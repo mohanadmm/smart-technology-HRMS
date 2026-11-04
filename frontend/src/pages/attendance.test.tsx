@@ -124,9 +124,10 @@ test('clicking a day opens its editor', async () => {
 
 const lockPerms = ['attendance.view.all', 'attendance.edit.all', 'attendance.lock.all']
 const lockedPeriod = { ...period, is_locked: true, missing: 0, lock: { locked_by: { id: 'u1', name: 'HR-1' }, locked_at: '2026-10-26T08:00:00Z', reopened_by: null, reopened_at: null, reopen_reason: null } }
+const lockReply = (p = {}) => ({ ...lockedPeriod, holidays_removed: [], holidays_added: [], leave_on_holidays: [], ...p })
 
 test('locking with missing days lists them and needs the confirm checkbox', async () => {
-  const lock = vi.fn((_url: string, _init?: RequestInit) => json(201, { data: lockedPeriod }))
+  const lock = vi.fn((_url: string, _init?: RequestInit) => json(201, { data: lockReply() }))
   mockFetch({
     ...routes,
     'GET /api/v1/attendance/missing': () => json(200, { data: [{ employee_id: 'e1', code: 1, name_ar: 'Engineer-1', name_en: 'Engineer-1', date: '2026-10-03' }], meta: { pagination } }),
@@ -147,6 +148,38 @@ test('locking with missing days lists them and needs the confirm checkbox', asyn
   await user.click(submit)
   await waitFor(() => expect(lock).toHaveBeenCalled())
   expect(JSON.parse(String(lock.mock.calls[0][1]?.body))).toEqual({ group: 'engineer', period_start: '2026-09-26', confirm_missing: true })
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+})
+
+test('a re-lock that changed holidays keeps the dialog open with the changes and only a Close button', async () => {
+  const reply = lockReply({ holidays_removed: ['2026-10-06'], holidays_added: ['2026-10-08'],
+    leave_on_holidays: [{ employee_id: 'e1', code: 1, name_ar: 'Engineer-1', name_en: 'Engineer-1', date: '2026-10-08', leave_code: 'annual' }] })
+  mockFetch({ ...routes, 'GET /api/v1/attendance/period': () => json(200, { data: { ...period, missing: 0 } }), 'POST /api/v1/attendance/locks': () => json(201, { data: reply }) })
+  renderWithAuth(<AttendancePage />, lockPerms, { path: '/attendance?group=engineer&tab=grid' })
+  await user.click(await screen.findByRole('button', { name: 'قفل الفترة' }))
+  const dialog = await screen.findByRole('dialog', { name: 'قفل حضور الفترة' })
+  await user.click(within(dialog).getByRole('button', { name: 'قفل الفترة' }))
+  expect(await within(dialog).findByText('تم قفل الفترة')).toBeInTheDocument()
+  expect(within(dialog).getByText('لم تعد عطلات رسمية (حُذفت أيامها المسجّلة):').nextElementSibling).toHaveTextContent('2026-10-06')
+  expect(within(dialog).getByText('2026-10-06')).toHaveAttribute('dir', 'ltr')
+  expect(within(dialog).getByText('عطلات رسمية أُضيفت أو عُدّلت منذ آخر قفل:').nextElementSibling).toHaveTextContent('2026-10-08')
+  const leave = within(dialog).getByText('أيام إجازة في يوم عطلة رسمية (لم تتغير، راجعها):').nextElementSibling!
+  expect(leave).toHaveTextContent('Engineer-1')
+  expect(leave).toHaveTextContent('2026-10-08')
+  expect(leave).toHaveTextContent('إجازة اعتيادية')
+  expect(within(dialog).queryByRole('button', { name: 'قفل الفترة' })).toBeNull()
+  expect(within(dialog).queryByText('ما زالت هذه الأيام غير مسجلة:')).toBeNull()
+  const closes = within(dialog).getAllByRole('button', { name: 'إغلاق' })
+  await user.click(closes[0])
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+})
+
+test('a lock with no holiday changes closes with a toast', async () => {
+  const reply = lockReply()
+  mockFetch({ ...routes, 'GET /api/v1/attendance/period': () => json(200, { data: { ...period, missing: 0 } }), 'POST /api/v1/attendance/locks': () => json(201, { data: reply }) })
+  renderWithAuth(<AttendancePage />, lockPerms, { path: '/attendance?group=engineer&tab=grid' })
+  await user.click(await screen.findByRole('button', { name: 'قفل الفترة' }))
+  await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'قفل الفترة' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 })
 

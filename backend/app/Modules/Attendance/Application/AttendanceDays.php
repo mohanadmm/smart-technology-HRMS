@@ -185,13 +185,14 @@ final class AttendanceDays
     /**
      * The leave workflow's write (leave spec, Workflow Approve): source `leave`, a future date allowed, the period lock and row lock kept,
      * no reach check (deciders hold `.all`). A stored leave day is replaced, keeping its note and advance (P28), and its source when it
-     * already holds this leave type; a work day or office present refuses (`leave_days_blocked`).
+     * already holds this leave code; a work day or office present refuses (`leave_days_blocked`). A day of another leave code (source not
+     * `derived`) is a conflict unless $replace: HR ticked it in the approval preview (A3).
      */
-    public function writeLeaveDay(string $employeeId, string $date, string $leaveTypeId): void
+    public function writeLeaveDay(string $employeeId, string $date, string $leaveTypeId, bool $replace = false): void
     {
         $employee = $this->roster->find($employeeId) ?? throw new ModelNotFoundException;
         try {
-            DB::transaction(fn () => $this->write($employee, $date, ['site_id' => $leaveTypeId], null, 'leave', true, leaveDay: true));
+            DB::transaction(fn () => $this->write($employee, $date, ['site_id' => $leaveTypeId], null, 'leave', true, leaveDay: true, replace: $replace));
         } catch (UniqueConstraintViolationException) {
             throw new ConcurrencyConflict;
         }
@@ -236,6 +237,20 @@ final class AttendanceDays
     }
 
     /**
+     * Read only: date => leave code of each live day on a leave type (deleted types too). A `derived` day is skipped: it holds no note
+     * or advance and is stale on a counted date, so overwriting it loses nothing.
+     *
+     * @param  list<string>  $dates
+     * @return array<string, string>
+     */
+    public function leaveCodesOn(string $employeeId, array $dates): array
+    {
+        return AttendanceDay::join('sites', 'sites.id', '=', 'attendance_days.site_id')->where('sites.kind', SiteKind::Leave->value)
+            ->where('attendance_days.employee_id', $employeeId)->whereIn('attendance_days.date', $dates)->where('attendance_days.source', '!=', 'derived')
+            ->get(['attendance_days.date', 'sites.leave_code'])->mapWithKeys(fn (AttendanceDay $r) => [substr((string) $r->date, 0, 10) => (string) $r->getAttribute('leave_code')])->all();
+    }
+
+    /**
      * Read only: the dates a leave approval may not write, those holding a work day or office present, or inside a locked period.
      *
      * @param  list<string>  $dates
@@ -267,18 +282,19 @@ final class AttendanceDays
      * on $date (design Part 1), and a change of the day's site must not be to a leave type that needs a leave request (a day already
      * stored as one, by HR or the leave workflow, can be resubmitted). The import takes reach once per period, so
      * this is what checks each cell's own date. $leaveDay is writeLeaveDay(): a future date passes, the version is the live row's,
-     * and a live row that is not a leave type refuses.
+     * a live row that is not a leave type refuses, and one of another leave code conflicts unless $replace.
      *
      * @param  array<string, mixed>  $employee
      * @param  array<string, mixed>  $input  validated against FORMAT
      * @param  array<string, string>|null  $settings  read here when null and needed
      * @return int the row's version after the write
      */
-    private function write(array $employee, string $date, array $input, ?string $ownerId, string $source, bool $keepUnsent, ?array $settings = null, bool $dryRun = false, bool $leaveDay = false): int
+    private function write(array $employee, string $date, array $input, ?string $ownerId, string $source, bool $keepUnsent, ?array $settings = null, bool $dryRun = false, bool $leaveDay = false, bool $replace = false): int
     {
         [$type, $row] = $this->guard($employee, $date, $leaveDay);
         $live = $row !== null && ! $row->trashed() ? $row : null;
-        $liveKind = $live?->site_id === null ? null : Site::withTrashed()->whereKey($live->site_id)->value('kind');
+        $liveSite = $live?->site_id === null ? null : Site::withTrashed()->find($live->site_id);
+        $liveKind = $liveSite?->kind;
         if ($leaveDay && $live !== null && $liveKind !== SiteKind::Leave->value) {
             throw AttendanceRefused::because(AttendanceRefusal::LeaveDaysBlocked);
         }
@@ -288,6 +304,11 @@ final class AttendanceDays
 
         $siteId = $input['site_id'] ?? null;
         $site = $siteId === null ? null : Site::find((string) $siteId);
+        $sameCode = $liveSite?->leave_code !== null && $liveSite->leave_code === $site?->leave_code;
+        if ($leaveDay && $live !== null && ! $sameCode && $live->source !== 'derived' && ! $replace) {
+            // The day changed to another leave type after HR read the approval preview.
+            throw new ConcurrencyConflict;
+        }
         if ($ownerId !== null) {
             $this->assertInReach($employee, $type, $date, $site?->kind === SiteKind::Work->value ? (string) $site->id : null, $ownerId);
             if ($site?->id !== $live?->site_id && LeaveCode::tryFrom((string) $site?->leave_code)?->needsRequest() === true) {
@@ -338,9 +359,9 @@ final class AttendanceDays
             $values[$m] = $values[$m] === null ? null : (int) $values[$m];
         }
 
-        // A leave-written day re-saved on the same leave type stays `leave`, so cancelling the request still clears it; a leave day written
-        // over HR's own day of the same leave type keeps HR's source, so that cancel never clears it.
-        if ($live !== null && $live->site_id === $siteId && ($live->source === 'leave' || $leaveDay)) {
+        // A leave-written day re-saved on the same leave code stays `leave`, so cancelling the request still clears it; a leave day written
+        // over HR's own day of the same leave code (a since-deactivated type too) keeps HR's source, so that cancel never clears it.
+        if ($live !== null && ($live->site_id === $siteId || $sameCode) && ($live->source === 'leave' || $leaveDay)) {
             $source = (string) $live->source;
         }
         $row ??= new AttendanceDay(['employee_id' => $employee['id'], 'date' => $date, 'version' => 0]);
