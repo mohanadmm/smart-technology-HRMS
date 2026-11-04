@@ -42,19 +42,21 @@ final class EmployeeRoster
     }
 
     /**
-     * Active employees today (no termination date, or one not passed yet) whose type in force today is one of $types, by code.
-     * $search matches either name, or the exact code when it is a number.
+     * Employees whose employment overlaps [from, to] and whose type on their own read date D is one of $types, by code (calculations §7):
+     * D = least(min($to, today), termination_date). $search matches either name, or the exact code when it is a number.
+     * $managedBy narrows to that user's reach today.
      *
      * @param  non-empty-list<EmployeeType>  $types
      * @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}}
      */
-    public function activeOfTypes(array $types, ?string $search, int $perPage, int $page, ?string $managedBy = null): array
+    public function ofTypesDuring(array $types, string $from, string $to, ?string $search, int $perPage, int $page, ?string $managedBy = null): array
     {
         $today = now('Africa/Cairo')->toDateString();
         $values = array_map(fn (EmployeeType $t) => $t->value, $types);
         $query = Employee::with(self::RELATIONS)
-            ->where(fn (Builder $q) => $q->whereNull('termination_date')->orWhere('termination_date', '>=', $today))
-            ->whereRaw(Employee::TYPE_ON.' in ('.implode(',', array_fill(0, count($values), '?')).')', [$today, ...$values])
+            ->where(fn (Builder $q) => $q->whereNull('hire_date')->orWhere('hire_date', '<=', $to))
+            ->where(fn (Builder $q) => $q->whereNull('termination_date')->orWhere('termination_date', '>=', $from))
+            ->whereRaw(Employee::TYPE_ON_OR_LEAVING.' in ('.implode(',', array_fill(0, count($values), '?')).')', [min($to, $today), ...$values])
             ->when($search !== null && $search !== '', fn (Builder $q) => $q->matching((string) $search))
             ->when($managedBy !== null, fn (Builder $q) => EmployeeReach::apply($q, (string) $managedBy, $today))
             ->orderBy('code');

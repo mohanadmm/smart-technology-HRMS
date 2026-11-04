@@ -143,6 +143,8 @@ Spec: `docs/superpowers/specs/2026-11-03-leave-design.md`. Attendance is the led
 - Balance = entitlement − used (may go negative); casual balance = casual cap − casual used
 - Sick days are counted apart and do not reduce the balance (L4). Unpaid days are counted apart too.
 - The year starts Jan 1. Nothing carries over.
+- Read date for year Y: D = the earliest of today, Dec 31 of Y and the termination date. The type on D decides balance or none (day laborer → none); a mid-year monthly ↔ daily change is not pro-rated.
+- The balances list for Y holds everyone employed at some point in Y (hired by Dec 31, not terminated before Jan 1) whose type on D is monthly. A manager sees those in their reach today.
 - Someone who passes 1 year of service mid-year: HR gets an alert on the anniversary and decides whether to change the year's entitlement.
 
 **Leave request days**

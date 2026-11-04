@@ -84,8 +84,9 @@ Leave used = stored attendance days with a leave code. A leave request is only t
 - **Setting** `sick_leave_pay_percent` = 100 (L1), added to `SettingController::RULES`. Read by Release 2 payroll only.
 
 ### Balance (pure `Leave\Domain\LeaveBalance`, settings passed in)
-For employee E and year Y, read on date D:
+For employee E and year Y, read on date D = min(today in Africa/Cairo, Y-12-31, E's termination date when set):
 - No balance when E's type on D is day laborer.
+- The Balances list for Y holds the employees whose employment overlaps Y (hire date null or ≤ Y-12-31, termination date null or ≥ Y-01-01) and whose type on their own D is monthly (or the `type` filter); a manager's list keeps their reach today. The list and the employee's Leave tab read the same D, so they agree.
 - `entitlement` = the adjustment's override, else:
   - hire_date null → null (UI: "set the hire date");
   - service on Jan 1 of Y ≥ 1 year → `leave_days_one_year_plus`;
@@ -97,7 +98,7 @@ For employee E and year Y, read on date D:
 - `sick_days` = count of sick days (information; not deducted, L4).
 - `unpaid_days` = count of unpaid days (information).
 - `remaining` = entitlement − used (may be negative); `casual_remaining` = casual_cap − casual_used.
-- ponytail: the type on the read date decides balance or none; a mid-year monthly ↔ daily change is not pro-rated. Revisit if a real case appears.
+- ponytail: the type on D decides balance or none, for the list, the Leave tab and the adjustment alike; a mid-year monthly ↔ daily change is not pro-rated. Revisit if a real case appears.
 
 ### Counting a request's days
 For each date from..to: skip dates outside employment as a monthly type, the type's weekly off and official holidays (`OffDays`). The rest are the request's days. `days` is stored on submit and recomputed at approval (a holiday added in between changes it).

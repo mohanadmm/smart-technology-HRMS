@@ -187,16 +187,16 @@ class LeaveBalancesTest extends TestCase
         $this->getJson('/api/v1/leave/balances?year=1999')->assertStatus(422)->assertJsonPath('error.details.0.field', 'year');
     }
 
-    public function test_the_list_holds_active_monthly_employees_only_and_filters_by_type(): void
+    public function test_the_list_holds_the_years_monthly_employees_only_and_filters_by_type(): void
     {
         $office = $this->employee('office', '2020-01-01');
         $engineer = $this->employee('engineer', '2020-01-01');
         $worker = $this->employee('permanent_worker', '2020-01-01');
         $this->employee('day_laborer', '2020-01-01');
-        $this->employee('office', '2020-01-01', ['termination_date' => '2026-10-19']);
+        $left = $this->employee('office', '2020-01-01', ['termination_date' => '2026-10-19']);
         $leaving = $this->employee('office', '2020-01-01', ['termination_date' => '2026-10-20']);
 
-        $this->assertSame([$office, $engineer, $worker, $leaving], $this->listed());
+        $this->assertSame([$office, $engineer, $worker, $left, $leaving], $this->listed());
         $this->assertSame([$engineer], $this->listed('?type=engineer'));
         $this->assertSame([$worker], $this->listed('?type=permanent_worker'));
         $this->getJson('/api/v1/leave/balances?type=day_laborer')->assertStatus(422);
@@ -340,6 +340,59 @@ class LeaveBalancesTest extends TestCase
         $this->assertSame([$e, 2026, 30, 1, 0, 'Reason-1', 1], [$created['employee_id'], $created['year'], $created['entitlement'], $created['opening_used'], $created['opening_casual_used'], $created['reason'], $created['version']]);
         $this->assertEquals(['entitlement' => 30, 'reason' => 'Reason-1', 'version' => 1], json_decode($rows[1]->old_values, true));
         $this->assertEquals(['entitlement' => 25, 'reason' => 'Reason-2', 'version' => 2], json_decode($rows[1]->new_values, true));
+    }
+
+    public function test_last_years_list_holds_an_employee_who_left_last_year(): void
+    {
+        $left = $this->employee('office', '2020-01-01', ['termination_date' => '2025-06-30']);
+        $this->save($left, '2025-03-02', 'annual');
+        app(EmployeeService::class)->addTypeChange($left, ['type' => 'day_laborer', 'effective_from' => '2025-09-01']);
+
+        $this->getJson('/api/v1/leave/balances?year=2025')->assertOk()->assertJsonPath('data.*.id', [$left])
+            ->assertJsonPath('data.0.type', 'office')->assertJsonPath('data.0.entitlement', 21)->assertJsonPath('data.0.used', 1)->assertJsonPath('data.0.remaining', 20);
+        $this->assertSame([], $this->listed());
+    }
+
+    public function test_the_type_in_force_at_the_end_of_the_year_decides_the_list_and_the_leave_tab(): void
+    {
+        $becameMonthly = $this->employee('day_laborer', '2020-01-01');
+        $service = app(EmployeeService::class);
+        $service->addTypeChange($becameMonthly, ['type' => 'engineer', 'effective_from' => '2025-07-01']);
+        $service->addTypeChange($becameMonthly, ['type' => 'day_laborer', 'effective_from' => '2026-03-01']);
+        $becameDaily = $this->employee('office', '2020-01-01');
+        $service->addTypeChange($becameDaily, ['type' => 'day_laborer', 'effective_from' => '2025-07-01']);
+        $service->addTypeChange($becameDaily, ['type' => 'office', 'effective_from' => '2026-03-01']);
+
+        $this->assertSame([$becameMonthly], $this->listed('?year=2025'));
+        $this->assertSame([$becameDaily], $this->listed());
+        $this->balance($becameMonthly, 2025)->assertJsonPath('data.type', 'engineer')->assertJsonPath('data.balance.entitlement', 21);
+        $this->balance($becameDaily, 2025)->assertJsonPath('data.type', 'day_laborer')->assertJsonPath('data.balance', null);
+        $this->adjust($becameDaily, ['entitlement' => 30, 'opening_used' => 0, 'opening_casual_used' => 0, 'reason' => 'Reason-1'], 2025)
+            ->assertStatus(422)->assertJsonPath('error.code', 'no_leave_balance');
+        $this->adjust($becameMonthly, ['entitlement' => 30, 'opening_used' => 0, 'opening_casual_used' => 0, 'reason' => 'Reason-1'], 2025)->assertOk();
+    }
+
+    public function test_the_list_leaves_out_employees_not_employed_during_the_year(): void
+    {
+        $this->employee('office', '2026-02-01');
+        $this->employee('office', '2020-01-01', ['termination_date' => '2024-12-31']);
+        $stayed = $this->employee('office', '2020-01-01', ['termination_date' => '2025-01-01']);
+
+        $this->assertSame([$stayed], $this->listed('?year=2025'));
+    }
+
+    public function test_a_managers_list_for_last_year_holds_only_employees_in_reach_today(): void
+    {
+        $mine = $this->employee('engineer', '2020-01-01');
+        $was = $this->employee('engineer', '2020-01-01');
+        $manager = $this->makeUser('manager');
+        $service = app(EmployeeService::class);
+        $service->assignManager($mine, ['manager_id' => $manager->id, 'effective_from' => '2026-01-01']);
+        $service->assignManager($was, ['manager_id' => $manager->id, 'effective_from' => '2025-01-01']);
+        $service->assignManager($was, ['manager_id' => $this->makeUser('manager')->id, 'effective_from' => '2026-01-01']);
+
+        $this->actingAs($manager, 'api');
+        $this->assertSame([$mine], $this->listed('?year=2025'));
     }
 
     public function test_the_list_runs_the_same_queries_for_one_or_twenty_employees(): void
