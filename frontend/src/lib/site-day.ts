@@ -80,6 +80,7 @@ export function counts(rows: SiteDayRow[], drafts: Drafts, siteId: string) {
   let away = 0
   let unrecorded = 0
   let noCheckout = 0
+  let late = 0
   for (const r of rows) {
     const d = current(r, drafts)
     if (!d) {
@@ -88,9 +89,10 @@ export function counts(rows: SiteDayRow[], drafts: Drafts, siteId: string) {
     } else if (isPresent(d, siteId)) {
       present++
       if (d.in_time && !d.out_time) noCheckout++
+      if (d.in_time && /^\d{2}:\d{2}$/.test(d.in_time) && minutes(d.in_time) > minutes(r.shift.start)) late++
     } else away++
   }
-  return { present, away, unrecorded, noCheckout }
+  return { present, away, unrecorded, noCheckout, late }
 }
 
 /** The save body: changed rows only, each with the version it was read at. A leave day sends no times. */
@@ -107,6 +109,9 @@ export function saveBody(siteId: string, date: string, rows: SiteDayRow[], draft
 }
 
 const minutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
+
+/** The arrival against the shift start: positive = late (raw minutes; payroll takes the daily grace off once, calculations §0a). */
+export const arrivalDiff = (arrival: string | null, shiftStart: string): number | null => (arrival ? minutes(arrival) - minutes(shiftStart) : null)
 
 /** The departure against the shift end: negative = left early, positive = stayed later (a time difference only; overtime needs HR's approval). */
 export const departureDiff = (out: string | null, shiftEnd: string): number | null => (out ? minutes(out) - minutes(shiftEnd) : null)

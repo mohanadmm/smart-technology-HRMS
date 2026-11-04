@@ -834,7 +834,7 @@
     "arrivalOf": "Check-in of {{name}}",
     "departureOf": "Check-out of {{name}}",
     "early": "Left {{count}} min early",
-    "later": "Stayed {{count}} min later (overtime needs HR approval)",
+    "later": "Stayed {{count}} min after hours (overtime needs HR approval)",
     "removeFromToday": "Remove {{name}} from today's crew",
     "addLaborer": "Add day laborer",
     "addLaborerHint": "Joins today's crew at {{site}}. Search first; they may already be on file.",
@@ -856,7 +856,9 @@
     "continue": "Continue",
     "changeSites": "Change sites",
     "leftOutUnsaved": "{{sites}} has unsaved changes. They are kept and come back if you choose the site again.",
-    "missingCheckout": "Missing check-out"
+    "missingCheckout": "Missing check-out",
+    "late": "{{count}} min late",
+    "lateCount": "Late: {{count}}"
   },
   "leave": {
     "balance": "Leave balance",

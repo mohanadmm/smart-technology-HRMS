@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { changed, checkOutAll, checkOutCount, counts, departureDiff, markAllCount, markAllPresent, saveBody, type SiteDayRow } from './site-day'
+import { arrivalDiff, changed, checkOutAll, checkOutCount, counts, departureDiff, markAllCount, markAllPresent, saveBody, type SiteDayRow } from './site-day'
 
 const S = 's1'
 const row = (id: string, day: Partial<SiteDayRow['day']> = {}, extra: Partial<SiteDayRow> = {}): SiteDayRow => ({
@@ -52,8 +52,8 @@ test('check out all fills the shift end only for present people with an arrival 
 
 test('counts what is still open', () => {
   const drafts = markAllPresent(rows, {}, S)
-  expect(counts(rows, {}, S)).toEqual({ present: 0, away: 3, unrecorded: 2, noCheckout: 0 })
-  expect(counts(rows, drafts, S)).toEqual({ present: 2, away: 3, unrecorded: 0, noCheckout: 2 })
+  expect(counts(rows, {}, S)).toEqual({ present: 0, away: 3, unrecorded: 2, noCheckout: 0, late: 0 })
+  expect(counts(rows, drafts, S)).toEqual({ present: 2, away: 3, unrecorded: 0, noCheckout: 2, late: 0 })
 })
 
 test('the save body sends changed rows only, with their versions, and no times on a leave day', () => {
@@ -78,4 +78,11 @@ test('the departure difference', () => {
   expect(departureDiff('15:00', '16:00')).toBe(-60)
   expect(departureDiff('17:30', '16:00')).toBe(90)
   expect(departureDiff(null, '16:00')).toBeNull()
+})
+
+test('the arrival difference and the late count', () => {
+  expect(arrivalDiff('09:20', '09:00')).toBe(20)
+  expect(arrivalDiff('08:50', '09:00')).toBe(-10)
+  const r = row('l', { state: 'stored', version: 1, site_id: S, in_time: '09:20' }, { shift: { start: '09:00', end: '16:00' } })
+  expect(counts([r], {}, S).late).toBe(1)
 })

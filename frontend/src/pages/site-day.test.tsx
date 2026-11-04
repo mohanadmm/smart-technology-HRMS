@@ -95,6 +95,7 @@ test('morning: «حضور الكل» fills the shift start, keeps a typed arriva
   const arrivalB = within(group('Laborer-B')).getByRole('textbox', { name: 'حضور Laborer-B' })
   await user.clear(arrivalB)
   await user.type(arrivalB, '9:15')
+  expect(within(group('Laborer-B')).getByText('تأخير 75 دقيقة')).toBeInTheDocument()
 
   await user.click(screen.getByRole('button', { name: 'حضور الكل (2)' }))
   expect(screen.getByRole('button', { name: 'حضور الكل (0)' })).toBeDisabled()
@@ -143,7 +144,7 @@ test('evening: «انصراف الكل» fills the shift end, keeps a typed depa
   expect(outC).toHaveValue('4:00')
   await user.clear(outC)
   await user.type(outC, '5:30')
-  expect(within(group('Laborer-C')).getByText(/بعد الموعد 90 دقيقة/)).toBeInTheDocument()
+  expect(within(group('Laborer-C')).getByText(/إضافي بعد الموعد 90 دقيقة/)).toBeInTheDocument()
   expect(screen.getByText('بلا انصراف: 0')).toBeInTheDocument()
 
   await user.click(screen.getByRole('button', { name: 'حفظ اليوم' }))

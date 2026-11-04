@@ -15,7 +15,7 @@ import { ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { queryKey, useApi, useSave } from '@/lib/query'
 import {
-  changed, checkOutAll, checkOutCount, counts, current, departureDiff, type Draft, type Drafts, type LeaveSites, type Mark, markAllCount, markAllPresent,
+  changed, checkOutAll, checkOutCount, counts, current, arrivalDiff, departureDiff, type Draft, type Drafts, type LeaveSites, type Mark, markAllCount, markAllPresent,
   MARKS, MORE, saveBody, type SiteDay, type SiteDayRow,
 } from '@/lib/site-day'
 import { cn } from '@/lib/utils'
@@ -249,6 +249,7 @@ export function SiteDayPage() {
             <span>{t('siteDay.count.present', { count: c.present })}</span>
             <span className={cn(c.unrecorded > 0 && 'font-semibold text-warning')}>{t('siteDay.count.unrecorded', { count: c.unrecorded })}</span>
             <span className={cn(c.noCheckout > 0 && 'font-semibold text-warning')}>{t('siteDay.count.noCheckout', { count: c.noCheckout })}</span>
+            {c.late > 0 && <span className="font-semibold text-warning">{t('siteDay.lateCount', { count: c.late })}</span>}
           </p>
           <p role="status" className="text-sm text-muted-foreground sm:ms-auto">{status}</p>
           <Button type="button" className="min-h-11 w-full sm:w-auto" disabled={!pending || locked} onClick={() => void onSave()}>{t('siteDay.save')}</Button>
@@ -352,6 +353,8 @@ function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved, 
   const time = (field: 'in_time' | 'out_time') => (v: string) => set({ ...(draft ?? { site_id: siteId, in_time: null, out_time: null }), [field]: v === '' ? null : v })
   const out = draft?.out_time ?? null
   const diff = present && isHhmm(out) ? departureDiff(out, r.shift.end) : null
+  const arrival = draft?.in_time ?? null
+  const late = present && isHhmm(arrival) ? arrivalDiff(arrival, r.shift.start) : null
   const missingOut = present && isHhmm(draft?.in_time ?? null) && !out
   const remove = async () => {
     setRemoveErr(undefined)
@@ -405,6 +408,7 @@ function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved, 
             <div className="grid content-start gap-1">
               <span aria-hidden className="text-[12px] text-muted-foreground">{t('siteDay.arrival')}</span>
               <TimeInput label={t('siteDay.arrival')} aria-label={t('siteDay.arrivalOf', { name })} value={draft?.in_time ?? ''} disabled={off} onChange={time('in_time')} quietHint />
+              {late !== null && late > 0 && <p className="text-[13px] text-warning">{t('siteDay.late', { count: late })}</p>}
             </div>
             <div className="grid content-start gap-1">
               <span aria-hidden className="text-[12px] text-muted-foreground">{t('siteDay.departure')}</span>
