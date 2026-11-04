@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Modules\Audit\Infrastructure\Eloquent;
 
 use App\Modules\Identity\Infrastructure\Eloquent\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -13,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class RequestLogEntry extends Model
 {
     use HasUuids;
+    use MassPrunable;
 
     protected $table = 'request_log';
 
@@ -24,5 +27,11 @@ class RequestLogEntry extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /** @return Builder<self> */
+    public function prunable(): Builder
+    {
+        return static::whereRaw("occurred_at < now() - interval '90 days'");
     }
 }

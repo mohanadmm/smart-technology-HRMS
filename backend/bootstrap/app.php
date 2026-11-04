@@ -7,6 +7,7 @@ use App\Http\Middleware\SetLocaleFromRequest;
 use App\Modules\Attendance\Domain\AttendanceRefused;
 use App\Modules\Attendance\Presentation\AlertMissingDaysCommand;
 use App\Modules\Audit\Infrastructure\SystemLog;
+use App\Modules\Audit\Presentation\PruneLogsCommand;
 use App\Modules\Employees\Domain\EmployeeCodeTaken;
 use App\Modules\Employees\Presentation\EnsureEmployeeInScope;
 use App\Modules\Employees\Presentation\ImportMasterDataCommand;
@@ -38,7 +39,7 @@ return Application::configure(basePath: dirname(__DIR__))
         apiPrefix: 'api/v1',
         commands: __DIR__.'/../routes/console.php',
     )
-    ->withCommands([CreateUserCommand::class, AlertMissingDaysCommand::class, ImportMasterDataCommand::class, AlertAnniversaryCommand::class])
+    ->withCommands([CreateUserCommand::class, AlertMissingDaysCommand::class, ImportMasterDataCommand::class, AlertAnniversaryCommand::class, PruneLogsCommand::class])
     ->withMiddleware(function (Middleware $middleware): void {
         // Global, not api-group: unmatched routes (404) never enter the api group.
         $middleware->prepend(AddRequestId::class);
