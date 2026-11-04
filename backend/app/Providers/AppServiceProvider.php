@@ -39,8 +39,8 @@ class AppServiceProvider extends ServiceProvider
             BusinessRules::forgetCache();
         });
 
-        // Leave reacts to an employee delete, so Employees never depends on Leave (Slice 6 D4).
-        Employee::deleted(fn (Employee $e) => app(LeaveRequests::class)->cancelOpenOf((string) $e->getKey(), Auth::id() === null ? null : (string) Auth::id()));
+        // Leave vetoes an employee delete, so Employees never depends on Leave (D4).
+        Employee::deleting(fn (Employee $e) => app(LeaveRequests::class)->assertNoOpenRequests((string) $e->getKey()));
 
         Auth::viaRequest('hrms-bearer-session', fn (Request $r) => app(BearerSessionResolver::class)->forRequest($r));
 

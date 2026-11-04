@@ -277,7 +277,7 @@ class AttendanceDaysTest extends TestCase
         $this->putDay($office, '2026-10-01', ['site_id' => null, 'in_time' => '09:00'])->assertOk();
         $days = app(AttendanceDays::class);
 
-        $days->writeLeaveDay($eng, '2026-10-01', $this->leave['annual']);
+        $days->writeLeaveDay($eng, '2026-10-01', $this->leave['annual'], true);   // HR ticked replace (A3)
         $this->getJson("/api/v1/attendance/days/{$eng}/2026-10-01")
             ->assertJsonPath('data.leave_code', 'annual')->assertJsonPath('data.source', 'leave')->assertJsonPath('data.note', 'n')
             ->assertJsonPath('data.advance_amount', '200.000000')->assertJsonPath('data.version', 2);

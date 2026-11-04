@@ -233,23 +233,32 @@ class LeaveCancelTest extends TestCase
         $this->assertSame(['2026-10-12', '2026-10-13'], $deleted);
     }
 
-    public function test_deleting_an_employee_cancels_their_undecided_requests_only(): void
+    public function test_deleting_an_employee_with_an_undecided_request_is_refused(): void
     {
         $e = $this->employee('engineer', '2020-01-01');
         $pending = $this->submit($e, '2026-11-02', '2026-11-03');
         $escalated = $this->submit($e, '2026-11-09', '2026-11-10');
         $this->act($escalated, 'escalate')->assertOk();
-        $approved = $this->submit($e, '2026-11-16', '2026-11-17');
+
+        $this->deleteJson("/api/v1/employees/{$e}")->assertStatus(409)->assertJsonPath('error.code', 'leave_employee_has_open_requests')
+            ->assertJsonPath('error.message', 'This employee has open leave requests: 2. Cancel or decide them first.');
+        $this->withHeader('Accept-Language', 'ar')->deleteJson("/api/v1/employees/{$e}")->assertStatus(409)
+            ->assertJsonPath('error.message', 'لدى هذا الموظف طلبات إجازة مفتوحة: 2. ألغِها أو قرّر فيها أولًا.');
+        $this->assertNull(DB::table('employees')->where('id', $e)->value('deleted_at'));
+        $this->assertSame([['pending', 1], ['escalated', 2]], [[$this->statusOf($pending), $this->version($pending)], [$this->statusOf($escalated), $this->version($escalated)]]);
+    }
+
+    public function test_an_employee_with_only_decided_requests_can_be_deleted(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $approved = $this->submit($e, '2026-11-02', '2026-11-03');
         $this->act($approved, 'approve')->assertOk();
-        Notification::query()->delete();
+        $refused = $this->submit($e, '2026-11-09', '2026-11-10');
+        $this->act($refused, 'refuse', ['reason' => 'R'])->assertOk();
 
         $this->deleteJson("/api/v1/employees/{$e}")->assertSuccessful();
-        $this->assertSame(['cancelled', 'cancelled', 'approved'], [$this->statusOf($pending), $this->statusOf($escalated), $this->statusOf($approved)]);
-        $this->assertSame($this->hr[0]->id, DB::table('leave_requests')->where('id', $pending)->value('decided_by'));
-        $this->assertSame(0, Notification::count());
-        $audited = DB::table('audit_log')->where(['entity_type' => 'leave_requests', 'event' => 'UPDATED'])->whereIn('entity_id', [$pending, $escalated])->pluck('new_values')
-            ->map(fn ($v) => json_decode((string) $v, true)['status'] ?? null)->filter(fn ($s) => $s === 'cancelled')->count();
-        $this->assertSame(2, $audited);
+        $this->assertNotNull(DB::table('employees')->where('id', $e)->value('deleted_at'));
+        $this->assertSame(['approved', 'refused'], [$this->statusOf($approved), $this->statusOf($refused)]);
     }
 
     public function test_a_locked_period_refuses_the_cancel_even_when_its_dates_hold_nothing_to_clear(): void
