@@ -53,6 +53,12 @@ Scope: Release 1, item 6 in `docs/hrms-module-plan.md`: "balances and rules abov
 - المدير **مايقدرش** يكتب «اعتيادية» أو «عارضة» أو «بدون أجر» في كشف اليوم بنفسه؛ لازم طلب والـHR توافق. «اجازة مرضي» تفضل متاحة له زي النهارده.
 - العارضة بتتخصم من الـ6 **ومن** الرصيد الكلي مع بعض.
 
+**قرارات المالك بعد الخطوة 6 (2026-11-04، موافق على الأربع توصيات):**
+- إلغاء إجازة فيها يوم عليه ملاحظة أو سلفة **يفضل مرفوض**؛ الـHR تغيّر نوع اليوم الأول عشان السلفة ماتضيعش.
+- حذف موظف عنده طلب إجازة معلّق أو محوّل للمدير العام **مرفوض**؛ الـHR تلغي الطلب أو تقرر فيه الأول.
+- لو يوم في الإجازة متسجل عليه نوع إجازة تاني (مرضي، غ، بدون أجر…) الموافقة **ترفض** وتعرض الأيام دي، إلا لو الـHR علّمت «استبدال هذه الأيام». الملاحظة والسلفة بيفضلوا.
+- حذف أو نقل عطلة رسمية بيشيل أيام العطلة المتسجلة في التاريخ القديم؛ أيام الراحة الأسبوعية ماتتغيرش. القفل التاني بيعرض العطلات اللي اتشالت واللي اتضافت، وأيام الإجازة اللي بقت في يوم عطلة **من غير ما يغيّرها**.
+
 ---
 
 ## Part 2 — Technical design
@@ -106,14 +112,14 @@ For each date from..to: skip dates outside employment as a monthly type, the typ
 ### Workflow (`Leave\Application\LeaveRequests`)
 - **Submit** (`leave.request.own` within reach today and on every counted date, or `.all`; reach today because the balance and the request list show a manager only the employees in reach today): refuse a range that crosses Dec 31 (`leave_crosses_year`; HR enters one request per year, so each year's balance and split stay simple) or is longer than 60 calendar days (`leave_too_long`), a manager when the employee is out of reach today or on any counted date (`site_not_in_reach`; with no counted date, reach on from_date decides), day laborers (`leave_day_laborer`), 0 counted days (`leave_no_days`), and an overlap with a pending, escalated or approved request of the same employee (`leave_overlap`, checked under a per-employee lock). The preview runs the same checks, so the dialog shows a refusal before submit. Manager submissions notify the holders of `leave.decide.all` instantly (`leave_requested`, ref = the request id); HR's notify nobody.
 - **Approve** (`leave.decide.all` on pending; `leave.decide_escalated.all` on escalated), in one transaction with a version check:
-  1. Recount the days (a holiday added since submit drops out and `days` shrinks; none left → 422 `leave_no_days`). Any date holding a stored work day or office present, or in a locked period, refuses with the list of dates (409 `leave_days_blocked`, `error.dates`), and nothing is written.
+  1. Recount the days (a holiday added since submit drops out and `days` shrinks; none left → 422 `leave_no_days`). Any date holding a stored work day or office present, or in a locked period, refuses with the list of dates (409 `leave_days_blocked`, `error.dates`), and nothing is written. A date holding another leave type than its target after the split (step 2) is listed in the preview's `replaced` with its code; approve refuses those dates (409 `leave_days_replaced`, `error.dates`) unless the body's `replace_dates` names every one of them (HR's «استبدال هذه الأيام» tick). Rows with source `derived` are not listed. The write rechecks each day under its row lock, so a day changed after the preview is a 409 `concurrency_conflict` (2026-11-04, A3).
   2. For annual/casual, split: the first `min(remaining, casual_remaining if casual)` days keep the kind, the rest become `unpaid` (L2). The response and the dialog preview show the split. Sick and unpaid never split.
-  3. Write each day through `AttendanceDays::writeLeaveDay` (future dates allowed) with that leave code and source `leave`; a stored leave day on the date is overwritten (keep rule). A later re-save of that day on the same leave type keeps source `leave`; a change of site makes it `entered`.
+  3. Write each day through `AttendanceDays::writeLeaveDay` (future dates allowed) with that leave code and source `leave`; a stored leave day on the date is overwritten only as step 1 allows (keep rule: its note and advance stay); a day of the same leave code keeps its source. A later re-save of that day on the same leave type keeps source `leave`; a change of site makes it `entered`.
   4. Notify `requested_by` (`leave_decided`, data `status` approved), unless the decider filed it.
 - **Refuse** (same permission as Approve): reason required (≤ 1000), stored in `decision_reason`; notifies `requested_by` (`leave_decided`, data `status` refused) unless the decider filed it.
 - **Escalate** (`leave.decide.all`, pending only): status `escalated`; HR's optional note goes in `decision_reason` for the CEO to read; notifies holders of `leave.decide_escalated.all` (`leave_escalated`).
 - A stale version, or a request no longer pending/escalated (pending for Escalate), is 409 `concurrency_conflict`. A caller without the permission the status needs is 403; on a decided request, holding either decide permission is enough to learn it is a conflict.
-- **Cancel:** the requester or HR while pending or escalated; HR only when approved. Cancelling an approved request clears the days it wrote that still hold its leave code and source `leave`; a date in a locked period refuses the whole cancel.
+- **Cancel:** the requester or HR while pending or escalated; HR only when approved. Cancelling an approved request clears the days it wrote that still hold its leave code and source `leave`; a date in a locked period refuses the whole cancel. A day to clear that holds a note or an advance refuses the cancel too (409 `leave_cancel_blocked`, the dates listed), so HR changes that day's type first and no advance is lost (Slice 6; kept by the owner on 2026-11-04, D2). The requester, HR and the CEO holders of an escalated request are notified (`leave_cancelled`). Deleting an employee who has a pending or escalated request is refused (409 `leave_employee_has_open_requests`, with the count); HR cancels or decides them first (2026-11-04, D4).
 - HR's own submission can be approved straight away from the same dialog (two calls, no special path).
 
 ### Anniversary alert
@@ -139,8 +145,8 @@ Job `leave:alert-anniversary`, daily 08:00 Cairo, `maintenance` queue, same retr
 | GET | `leave/requests?status=&employee_id=&year=&page=&per_page=` (pending and escalated first, then newest; the employee's Leave tab reads its year here) | `leave.view` |
 | GET | `leave/requests/preview?employee_id=&kind=&from_date=&to_date=` (`dates`, `days`, `balance`, `keep`, `unpaid`, `remaining_after`) | `leave.request` |
 | POST | `leave/requests` (`employee_id`, `kind`, `from_date`, `to_date`, `note`) → 201 | `leave.request` |
-| GET | `leave/requests/{id}` (the row plus `decision_reason`, `decided_by: {id, name}`, `decided_at`, and `approval`: while pending or escalated `{dates, days, balance, keep, unpaid, remaining_after, blocked}` computed now, else null; own scope out of reach today → 404) | `leave.view` |
-| POST | `leave/requests/{id}/approve` (`version`), `/refuse` (`version`, `reason`), `/escalate` (`version`, `reason?`) → 200 the `GET {id}` shape; `/cancel` (Slice 6) | as in Workflow |
+| GET | `leave/requests/{id}` (the row plus `decision_reason`, `decided_by: {id, name}`, `decided_at`, and `approval`: while pending or escalated `{dates, days, balance, keep, unpaid, remaining_after, blocked, replaced: [{date, leave_code}]}` computed now, else null; own scope out of reach today → 404) | `leave.view` |
+| POST | `leave/requests/{id}/approve` (`version`, `replace_dates?`: the `replaced` dates HR ticked), `/refuse` (`version`, `reason`), `/escalate` (`version`, `reason?`) → 200 the `GET {id}` shape; `/cancel` (`version`, `reason?`) → 200 the `GET {id}` shape; 403 without the permission for the status, 404 out of reach, 409 `concurrency_conflict` (stale, or already refused/cancelled), 409 `leave_days_blocked`, `leave_days_replaced` or `leave_cancel_blocked` with `error.dates`, 423 `period_locked` | as in Workflow (Cancel) |
 
 `.own` reads return only employees in the caller's reach today. A request row is `{id, employee: {id, code, name_ar, name_en}, kind, from_date, to_date, days, status, note, requested_by: {id, name}, created_at, version}`; refusals are 422 with the code named in Workflow. `remaining_after` is the remaining balance less the kept days for annual and casual, the remaining balance for sick and unpaid, and null with no entitlement.
 
@@ -159,6 +165,14 @@ Already updated with this spec: `docs/calculations.md` §7 (balance, request day
 - `LeaveBalanceTest` (unit): 10 / 21 / pro-rata at month edges, override, opening used, casual cap, missing hire date, day laborer.
 - Feature: balance counts days entered through the sheet; submit refusals (overlap, day laborer, out of reach, 0 days); approve writes days, skips Friday and holidays, splits into unpaid; blocked dates 409; escalation path; cancel clears only its own days; locked period refuses; every action audited; notifications sent once; the anniversary job is idempotent.
 - Frontend: dialogs, preview line, permission-gated buttons, locale parity.
+
+### Owner decisions of 2026-11-04 (after Slice 6)
+Researched against Odoo, SAP SuccessFactors, Oracle, Workday and Egypt Law 14/2025; the owner accepted all four recommendations.
+- **D2:** a cancel blocked by a day holding a note or an advance stays refused. No change.
+- **D4:** deleting an employee with pending or escalated requests is refused, instead of cancelling them.
+- **A3:** approval over a day of another leave type is listed and refused unless HR ticks «استبدال هذه الأيام» (Workflow, Approve).
+- **Holidays after a lock:** deleting or moving a holiday removes the days a lock stored as that holiday on the old date; weekly-off days are not refreshed; the re-lock lists the removed and the added or changed holidays, and the leave days now on a holiday, without changing them (`docs/calculations.md` §2a). The removal happens when HR changes the holiday, which needs every period on that date open, so the re-lock stores the current list.
+- Known follow-ups, not built: a holiday added after an approval still counts that day as leave (Art 124 says it should not); the weekly-off setting has no effective date.
 
 ### Builder check (2026-11-03) and the calls made
 A fresh reviewer read this spec against the code. Every point was settled from the owner's decisions; none needed a new owner answer:

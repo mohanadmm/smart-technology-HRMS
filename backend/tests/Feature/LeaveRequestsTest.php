@@ -7,6 +7,8 @@ use App\Modules\Employees\Application\EmployeeService;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
 use App\Modules\Notifications\Application\Notifier;
 use App\Modules\Notifications\Infrastructure\Eloquent\Notification;
+use App\Modules\Sites\Infrastructure\Eloquent\Site;
+use App\Support\Database\ConcurrencyConflict;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -658,7 +660,7 @@ class LeaveRequestsTest extends TestCase
 
         $data = $this->getJson("/api/v1/leave/requests/{$id}")->assertOk()->assertJsonPath('data.note', 'Note-1')
             ->assertJsonPath('data.decided_by', null)->assertJsonPath('data.decision_reason', null)->json('data');
-        $this->assertSame(['dates', 'days', 'balance', 'keep', 'unpaid', 'remaining_after', 'blocked'], array_keys($data['approval']));
+        $this->assertSame(['dates', 'days', 'balance', 'keep', 'unpaid', 'remaining_after', 'blocked', 'replaced'], array_keys($data['approval']));
         $this->assertSame([6, 5, 1, 0, []], [$data['approval']['days'], $data['approval']['keep'], $data['approval']['unpaid'], $data['approval']['remaining_after'], $data['approval']['blocked']]);
         $this->assertSame(5, $data['approval']['balance']['remaining']);
 
@@ -667,5 +669,126 @@ class LeaveRequestsTest extends TestCase
         $this->actingAs($this->makeUser('manager'), 'api');
         $this->getJson("/api/v1/leave/requests/{$id}")->assertNotFound();
         $this->getJson('/api/v1/leave/requests/'.Str::uuid7())->assertNotFound();
+    }
+
+    private function statusOf(string $id): string
+    {
+        return (string) DB::table('leave_requests')->where('id', $id)->value('status');
+    }
+
+    public function test_approval_lists_days_of_another_leave_type_and_refuses_them_by_default(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-10-12', '2026-10-14')->json('data.id');
+        app(AttendanceDays::class)->save($e, '2026-10-13', ['site_id' => $this->leaveTypes()['sick']]);
+
+        $this->getJson("/api/v1/leave/requests/{$id}")->assertOk()->assertJsonPath('data.approval.replaced', [['date' => '2026-10-13', 'leave_code' => 'sick']]);
+        $this->decide($id, 'approve')->assertStatus(409)->assertJsonPath('error.code', 'leave_days_replaced')->assertJsonPath('error.dates', ['2026-10-13'])
+            ->assertJsonPath('error.message', 'Requested days that already hold another leave type: 1. Tick "Replace these days", or change the day\'s type in attendance first.');
+        $this->withHeader('Accept-Language', 'ar')->decide($id, 'approve')->assertStatus(409)
+            ->assertJsonPath('error.message', 'عدد الأيام المسجّلة بنوع إجازة آخر: 1. اختر «استبدال هذه الأيام»، أو غيّر نوع اليوم في الحضور أولًا.');
+        $this->assertSame(['pending', 1], [$this->statusOf($id), (int) DB::table('leave_requests')->where('id', $id)->value('version')]);
+        $this->assertSame(['2026-10-13' => 'sick/entered'], $this->stored($e));
+    }
+
+    public function test_replace_overwrites_the_dates_hr_saw_keeping_note_and_advance(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-10-12', '2026-10-14')->json('data.id');
+        app(AttendanceDays::class)->save($e, '2026-10-13', ['site_id' => $this->leaveTypes()['sick'], 'note' => 'Note-1', 'advance_amount' => '100']);
+
+        $this->decide($id, 'approve', ['replace_dates' => ['2026-10-13']])->assertOk()->assertJsonPath('data.status', 'approved');
+        $this->assertSame(['2026-10-12' => 'annual/leave', '2026-10-13' => 'annual/leave', '2026-10-14' => 'annual/leave'], $this->stored($e));
+        $day = DB::table('attendance_days')->where(['employee_id' => $e, 'date' => '2026-10-13'])->first();
+        $this->assertSame(['Note-1', '100.000000'], [$day?->note, $day?->advance_amount]);
+    }
+
+    public function test_a_replaced_date_hr_did_not_see_refuses(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-10-12', '2026-10-14')->json('data.id');
+        $leave = $this->leaveTypes();
+        app(AttendanceDays::class)->save($e, '2026-10-12', ['site_id' => $leave['sick']]);
+        app(AttendanceDays::class)->save($e, '2026-10-13', ['site_id' => $leave['casual']]);
+
+        $this->decide($id, 'approve', ['replace_dates' => ['2026-10-12']])->assertStatus(409)
+            ->assertJsonPath('error.code', 'leave_days_replaced')->assertJsonPath('error.dates', ['2026-10-13']);
+        $this->assertSame(['2026-10-12' => 'sick/entered', '2026-10-13' => 'casual/entered'], $this->stored($e));
+        $this->assertSame('pending', $this->statusOf($id));
+    }
+
+    public function test_hrs_same_type_day_is_not_listed_and_keeps_its_source(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $annual = $this->leaveTypes()['annual'];
+        app(AttendanceDays::class)->save($e, '2026-10-13', ['site_id' => $annual]);
+        $id = $this->submit($e, '2026-10-12', '2026-10-14')->json('data.id');
+        $this->getJson("/api/v1/leave/requests/{$id}")->assertOk()->assertJsonPath('data.approval.replaced', []);
+        $this->decide($id, 'approve')->assertOk();
+        $this->assertSame(['2026-10-12' => 'annual/leave', '2026-10-13' => 'annual/entered', '2026-10-14' => 'annual/leave'], $this->stored($e));
+
+        // A day on a since-deactivated annual type (same code, another site id) is HR's too.
+        $f = $this->employee('engineer', '2020-01-01');
+        app(AttendanceDays::class)->save($f, '2026-10-13', ['site_id' => $annual]);
+        Site::findOrFail($annual)->update(['active' => false]);
+        Site::create(['name_ar' => 'Leave-annual-2', 'kind' => 'leave', 'leave_code' => 'annual']);
+        $other = $this->submit($f, '2026-10-12', '2026-10-14')->json('data.id');
+        $this->getJson("/api/v1/leave/requests/{$other}")->assertOk()->assertJsonPath('data.approval.replaced', []);
+        $this->decide($other, 'approve')->assertOk();
+        $this->assertSame(['2026-10-12' => 'annual/leave', '2026-10-13' => 'annual/entered', '2026-10-14' => 'annual/leave'], $this->stored($f));
+    }
+
+    public function test_an_annual_day_on_an_overflow_date_is_listed_against_unpaid(): void
+    {
+        $e = $this->employee('engineer', '2026-07-01');   // pro-rata entitlement 5
+        $annual = $this->leaveTypes()['annual'];
+        foreach (['2026-10-01', '2026-10-03', '2026-10-04', '2026-10-14'] as $date) {
+            app(AttendanceDays::class)->save($e, $date, ['site_id' => $annual]);
+        }
+        $id = $this->submit($e, '2026-10-12', '2026-10-14')->json('data.id');   // remaining 2: 10-14 is unpaid
+
+        $this->getJson("/api/v1/leave/requests/{$id}")->assertOk()->assertJsonPath('data.approval.keep', 2)
+            ->assertJsonPath('data.approval.replaced', [['date' => '2026-10-14', 'leave_code' => 'annual']]);
+        $this->decide($id, 'approve')->assertStatus(409)->assertJsonPath('error.code', 'leave_days_replaced')->assertJsonPath('error.dates', ['2026-10-14']);
+        $this->assertSame(['2026-10-01', '2026-10-03', '2026-10-04', '2026-10-14'], array_keys($this->stored($e)));
+        $this->assertSame('pending', $this->statusOf($id));
+    }
+
+    public function test_a_stored_derived_day_is_not_listed(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-10-12', '2026-10-14')->json('data.id');
+        app(AttendanceDays::class)->save($e, '2026-10-13', ['site_id' => $this->leaveTypes()['official_holiday']], null, 'derived');
+
+        $this->getJson("/api/v1/leave/requests/{$id}")->assertOk()->assertJsonPath('data.approval.replaced', []);
+        $this->decide($id, 'approve')->assertOk();
+        $this->assertSame(['2026-10-12' => 'annual/leave', '2026-10-13' => 'annual/leave', '2026-10-14' => 'annual/leave'], $this->stored($e));
+    }
+
+    public function test_the_leave_write_refuses_another_leave_type_it_was_not_told_to_replace(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $leave = $this->leaveTypes();
+        app(AttendanceDays::class)->save($e, '2026-10-13', ['site_id' => $leave['sick']]);
+
+        try {
+            app(AttendanceDays::class)->writeLeaveDay($e, '2026-10-13', $leave['annual']);
+            $this->fail('A day changed to another leave type since the preview must conflict.');
+        } catch (ConcurrencyConflict) {
+            $this->assertSame(['2026-10-13' => 'sick/entered'], $this->stored($e));
+        }
+        app(AttendanceDays::class)->writeLeaveDay($e, '2026-10-13', $leave['annual'], true);
+        $this->assertSame(['2026-10-13' => 'annual/leave'], $this->stored($e));
+    }
+
+    public function test_replace_dates_is_only_for_approve(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-10-12', '2026-10-14')->json('data.id');
+
+        $this->decide($id, 'refuse', ['reason' => 'R', 'replace_dates' => ['2026-10-12']])->assertStatus(422);
+        $this->decide($id, 'escalate', ['replace_dates' => ['2026-10-12']])->assertStatus(422);
+        $this->decide($id, 'approve', ['replace_dates' => ['12-10-2026']])->assertStatus(422);
+        $this->assertSame('pending', $this->statusOf($id));
     }
 }

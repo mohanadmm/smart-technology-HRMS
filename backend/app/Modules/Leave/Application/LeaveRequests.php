@@ -128,13 +128,15 @@ final class LeaveRequests
 
     /**
      * Recounts the dates (a holiday added since submit drops out), refuses when one is blocked, then writes each date as the request's kind,
-     * the dates past the balance as unpaid (L2), all in one transaction.
+     * the dates past the balance as unpaid (L2), all in one transaction. A date holding another leave type is replaced only when it is in
+     * $replaceDates, the dates HR saw in the preview (A3).
      *
+     * @param  list<string>  $replaceDates
      * @return array<string, mixed> the show shape
      */
-    public function approve(string $id, int $version, Authenticatable $by): array
+    public function approve(string $id, int $version, Authenticatable $by, array $replaceDates = []): array
     {
-        return $this->detail(DB::transaction(function () use ($id, $version, $by): LeaveRequest {
+        return $this->detail(DB::transaction(function () use ($id, $version, $by, $replaceDates): LeaveRequest {
             $request = $this->forDecision($id, $version, $by, false);
             $approval = $this->approval($request);
             if ($approval['dates'] === []) {
@@ -143,12 +145,16 @@ final class LeaveRequests
             if ($approval['blocked'] !== []) {
                 throw new LeaveRefused(LeaveRefusal::DaysBlocked, ['count' => (string) count($approval['blocked'])], $approval['blocked']);
             }
+            $unseen = array_values(array_diff(array_column($approval['replaced'], 'date'), $replaceDates));
+            if ($unseen !== []) {
+                throw new LeaveRefused(LeaveRefusal::DaysReplaced, ['count' => (string) count($unseen)], $unseen);
+            }
             $kind = (string) $request->kind;
             $sites = Site::where(['kind' => SiteKind::Leave->value, 'active' => true])->whereIn('leave_code', [$kind, LeaveKind::Unpaid->value])->pluck('id', 'leave_code');
             foreach ($approval['dates'] as $i => $date) {
                 $code = $i < $approval['keep'] ? $kind : LeaveKind::Unpaid->value;
                 $site = $sites[$code] ?? throw AttendanceRefused::because(AttendanceRefusal::LeaveTypeMissing, ['code' => $code]);
-                $this->attendance->writeLeaveDay((string) $request->employee_id, $date, (string) $site);
+                $this->attendance->writeLeaveDay((string) $request->employee_id, $date, (string) $site, in_array($date, $replaceDates, true));
             }
 
             return $this->conclude($request, LeaveStatus::Approved, $by, ['days' => $approval['days']]);
@@ -177,6 +183,72 @@ final class LeaveRequests
 
             return $request;
         }));
+    }
+
+    /**
+     * Withdraws a request. Pending or escalated: its requester or a holder of leave.request.all; approved: a holder of leave.decide.all, and
+     * every day it wrote that still holds its kind's or the unpaid leave type with source `leave` is cleared. A locked period, or a day to clear
+     * that holds a note or an advance (all such dates listed), refuses the whole cancel. Own scope: out of reach today is a 404, as show. A stale
+     * version is a conflict before the permission check: the caller can read the request, and its change since is the news.
+     *
+     * @return array<string, mixed> the show shape
+     */
+    public function cancel(string $id, int $version, ?string $reason, Authenticatable $by, ?string $ownerId): array
+    {
+        $read = LeaveRequest::whereKey($id)->first(['employee_id', 'status', 'requested_by', 'version']) ?? throw new ModelNotFoundException;
+        if ($ownerId !== null && ! EmployeeReach::reaches((string) $read->employee_id, $ownerId, now('Africa/Cairo')->toDateString())) {
+            throw new ModelNotFoundException;
+        }
+        if ($read->version !== $version) {
+            throw new ConcurrencyConflict;
+        }
+        $status = LeaveStatus::from((string) $read->status);
+        $byId = (string) $by->getAuthIdentifier();
+        $allowed = match ($status) {
+            LeaveStatus::Pending, LeaveStatus::Escalated => $read->requested_by === $byId || $this->authorize->decide($by, 'leave.request')->allows(Scope::All),
+            LeaveStatus::Approved => $this->authorize->decide($by, 'leave.decide')->allows(Scope::All),
+            LeaveStatus::Refused, LeaveStatus::Cancelled => throw new ConcurrencyConflict,
+        };
+        if (! $allowed) {
+            throw AuthorizationRefused::of($status === LeaveStatus::Approved ? 'leave.decide' : 'leave.request');
+        }
+
+        $employeeId = (string) $read->employee_id;
+
+        return $this->detail(DB::transaction(function () use ($id, $version, $reason, $byId, $status, $employeeId): LeaveRequest {
+            LeaveRequestLock::forEmployee($employeeId);
+            $request = LeaveRequest::whereKey($id)->lockForUpdate()->firstOrFail();
+            if ($request->status !== $status->value || $request->version !== $version) {
+                throw new ConcurrencyConflict;
+            }
+            if ($status === LeaveStatus::Approved) {
+                // Approval wrote the kind's or the unpaid leave type and did not store which; a type deleted or deactivated since still counts.
+                $types = array_values(Site::withTrashed()->where('kind', SiteKind::Leave->value)->whereIn('leave_code', [(string) $request->kind, LeaveKind::Unpaid->value])
+                    ->pluck('id')->map(fn ($id) => (string) $id)->all());
+                $blocked = $this->attendance->clearLeaveDays($employeeId, (string) $request->from_date, (string) $request->to_date, $types);
+                if ($blocked !== []) {
+                    throw new LeaveRefused(LeaveRefusal::CancelBlocked, ['count' => (string) count($blocked)], $blocked);
+                }
+            }
+            $decider = $request->decided_by;
+            $request->fill(['status' => LeaveStatus::Cancelled->value, 'decided_by' => $byId, 'decided_at' => now(), 'decision_reason' => $reason, 'version' => $request->version + 1])->save();
+            $recipients = [(string) $request->requested_by, ...($decider === null ? [] : [(string) $decider]), ...$this->holders->userIds('leave.decide.all'), ...($status === LeaveStatus::Escalated ? $this->holders->userIds('leave.decide_escalated.all') : [])];
+            foreach (array_diff(array_unique($recipients), [$byId]) as $userId) {
+                $this->notifier->notifyOnce($userId, 'leave_cancelled', now('Africa/Cairo')->toDateString(), $this->notice($request), (string) $request->id);
+            }
+
+            return $request;
+        }));
+    }
+
+    /** Deleting an employee with a pending or escalated request is refused (D4, 2026-11-04); call inside the delete's transaction. */
+    public function assertNoOpenRequests(string $employeeId): void
+    {
+        LeaveRequestLock::forEmployee($employeeId);
+        $open = LeaveRequest::where('employee_id', $employeeId)->whereIn('status', [LeaveStatus::Pending->value, LeaveStatus::Escalated->value])->count();
+        if ($open > 0) {
+            throw new LeaveRefused(LeaveRefusal::EmployeeHasOpenRequests, ['count' => (string) $open]);
+        }
     }
 
     /**
@@ -233,9 +305,10 @@ final class LeaveRequests
     }
 
     /**
-     * What approving now would do, recounted: the dates, the balance split, and the dates that block it.
+     * What approving now would do, recounted: the dates, the balance split, the dates that block it, and the dates whose stored leave code
+     * differs from the one approval would write (the request's kind, or unpaid past the balance).
      *
-     * @return array{dates: list<string>, days: int, balance: ?array<string, ?int>, keep: int, unpaid: int, remaining_after: ?int, blocked: list<string>}
+     * @return array{dates: list<string>, days: int, balance: ?array<string, ?int>, keep: int, unpaid: int, remaining_after: ?int, blocked: list<string>, replaced: list<array{date: string, leave_code: string}>}
      */
     private function approval(LeaveRequest $request): array
     {
@@ -247,10 +320,19 @@ final class LeaveRequests
         // ponytail: nothing serializes this read against a grid, sheet or import write of annual/casual days (only the employee's leave
         // request lock is held), so a racing write can overbook by its days; take an employee-wide attendance lock if HR reports one.
         $balance = $this->balances->forEmployee($employeeId, (int) substr($from, 0, 4), $dates)['balance'];
+        $split = LeaveBalance::split(LeaveKind::from((string) $request->kind), count($dates), $balance);
+        $codes = $this->attendance->leaveCodesOn($employeeId, $dates);
+        $replaced = [];
+        foreach ($dates as $i => $date) {
+            $target = $i < $split['keep'] ? (string) $request->kind : LeaveKind::Unpaid->value;
+            if (isset($codes[$date]) && $codes[$date] !== $target) {
+                $replaced[] = ['date' => $date, 'leave_code' => $codes[$date]];
+            }
+        }
 
         return [
-            'dates' => $dates, 'days' => count($dates), 'balance' => $balance, ...LeaveBalance::split(LeaveKind::from((string) $request->kind), count($dates), $balance),
-            'blocked' => $this->attendance->leaveBlockedDates($employeeId, $dates),
+            'dates' => $dates, 'days' => count($dates), 'balance' => $balance, ...$split,
+            'blocked' => $this->attendance->leaveBlockedDates($employeeId, $dates), 'replaced' => $replaced,
         ];
     }
 

@@ -57,7 +57,7 @@ class SitesApiTest extends TestCase
         $this->site();
     }
 
-    public function test_leave_site_requires_leave_code(): void
+    public function test_leave_type_requires_leave_code(): void
     {
         $this->postJson('/api/v1/sites', ['name_ar' => 'غ', 'kind' => 'leave'])->assertStatus(422);
         $this->postJson('/api/v1/sites', ['name_ar' => 'غ', 'kind' => 'leave', 'leave_code' => 'bogus'])->assertStatus(422);

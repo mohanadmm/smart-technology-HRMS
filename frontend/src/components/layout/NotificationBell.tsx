@@ -19,10 +19,11 @@ type RequestData = { employee_id: string; request_id: string; kind: string; from
 type LeaveRequested = Base & { type: 'leave_requested'; data: RequestData; employee: Named }
 type LeaveEscalated = Base & { type: 'leave_escalated'; data: RequestData; employee: Named }
 type LeaveDecided = Base & { type: 'leave_decided'; data: RequestData & { status: 'approved' | 'refused' }; employee: Named }
+type LeaveCancelled = Base & { type: 'leave_cancelled'; data: RequestData; employee: Named }
 type WageProposed = Base & { type: 'wage_proposed'; data: { employee_id: string; daily_wage: string; site_name_ar: string; site_name_en: string | null }; employee: Named }
 type OpenDays = Base & { type: 'attendance_open_days'; data: { date: string; count: number } }
 type CrewChanges = Base & { type: 'crew_changes'; data: { date: string; sites: { site_name_ar: string; added: number }[]; removed: number } }
-type Notification = MissingDays | LeaveAnniversary | LeaveRequested | LeaveEscalated | LeaveDecided | WageProposed | OpenDays | CrewChanges
+type Notification = MissingDays | LeaveAnniversary | LeaveRequested | LeaveEscalated | LeaveDecided | LeaveCancelled | WageProposed | OpenDays | CrewChanges
 
 /** One clickable line: what it says, the muted line under it, and where it opens (null: it only marks the notification read). */
 type Line = { key: string; text: ReactNode; detail: string; to: string | null }
@@ -31,7 +32,7 @@ type View = { title?: string; lines: Line[] }
 type Ctx = { t: TFunction; lang: string }
 
 /** A line about one leave request: `key` names the text, the detail is its kind and dates, and it opens the request. */
-const requestLine = (key: string, n: LeaveRequested | LeaveEscalated | LeaveDecided, ctx: Ctx): View => ({
+const requestLine = (key: string, n: LeaveRequested | LeaveEscalated | LeaveDecided | LeaveCancelled, ctx: Ctx): View => ({
   lines: [{
     key: n.id,
     text: named(key, n.employee, ctx),
@@ -66,6 +67,7 @@ const VIEWS: { [K in Notification['type']]: (n: Extract<Notification, { type: K 
   leave_requested: (n, ctx) => requestLine('notifications.leaveRequested', n, ctx),
   leave_escalated: (n, ctx) => requestLine('notifications.leaveEscalated', n, ctx),
   leave_decided: (n, ctx) => requestLine(`notifications.leaveDecided.${n.data.status}`, n, ctx),
+  leave_cancelled: (n, ctx) => requestLine('notifications.leaveCancelled', n, ctx),
   // a site manager's new day laborer: HR reviews the proposed wage on the employee's page (its approval screen is a follow-up)
   wage_proposed: (n, ctx) => ({
     lines: [{

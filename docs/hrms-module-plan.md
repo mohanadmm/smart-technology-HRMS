@@ -36,7 +36,7 @@ Smart Technology runs HR and payroll today on 6 hand-built Excel workbooks (anal
 | Attendance day | One record per employee per day: one site or one leave day-type (office staff: present, with no site, or a leave day-type). A second site goes in the note. Absent (غ) is a leave day-type, never a flag. A day with no record is missing, never absence |
 | Attendance dates | HR enters or edits any day of an open period up to today (Cairo time). No future dates |
 | Attendance periods | Per group: office the calendar month, engineers and permanent workers the 26th → 25th, day laborers 1–15 and 16–end. The attendance lock is per (group, period) |
-| Attendance lock | HR locks one group's period in one action, after confirming the missing days; nobody edits until HR reopens with a reason. Weekly off days and official holidays are derived on read while the period is open and stored at lock. ⚠️ (owner) HR may lock a period before it ends. ⚠️ (owner) Reopening keeps the stored derived days; a later holiday or weekly-off change does not refresh them on re-lock |
+| Attendance lock | HR locks one group's period in one action, after confirming the missing days; nobody edits until HR reopens with a reason. Weekly off days and official holidays are derived on read while the period is open and stored at lock. ⚠️ (owner) HR may lock a period before it ends. Reopening keeps the stored derived days. Deleting or moving a holiday removes its stored days on the old date; weekly-off days are not refreshed; the re-lock lists the holiday changes and the leave days on a holiday (owner, 2026-11-04) |
 | Attendance concurrency | Each day carries a `version`; a write with a stale version returns `409 concurrency_conflict`, never an overwrite. Days are never hard-deleted; clearing a day is an audited update |
 
 ## Modules by release
@@ -73,7 +73,7 @@ Smart Technology runs HR and payroll today on 6 hand-built Excel workbooks (anal
    - Later, separate items:
      - **Manager mobile screen**: the manager enters today, and yesterday until 12:00; older days are HR-only. «زي امبارح» quick fill; the manager's own sites only; the «تم التوقيع» sign-off per employee period, after which only HR edits; HR returns a period with a notification to the manager; an alert to HR when a manager skips a day.
      - **Paste site attendance messages**: HR pastes a site's attendance message in a fixed format, and the system parses it per person.
-6. **Leave**: balances and rules above, recorded by the manager, HR approves or escalates.
+6. **Leave**: balances and rules above, recorded by the manager, HR approves or escalates. Built in 6 slices per `docs/superpowers/plans/2026-11-03-leave.md`.
 7. **Notifications**: in-app, instant + daily digest.
 8. **Migration step 1**: step 1 (master data: employees, sites, rates, fares) is done by `hrms:import-master`; opening leave and advance balances follow their modules.
 

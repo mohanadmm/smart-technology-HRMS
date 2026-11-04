@@ -93,6 +93,14 @@ test('ErrorBanner draws a danger Alert with only the messages no field shows', (
   expect(alert).toHaveClass('bg-destructive-bg')
 })
 
+test('ErrorBanner lists the dates a refusal names, each left to right', () => {
+  render(<ErrorBanner err={new ApiError('leave_cancel_blocked', 'مرفوض', 409, [], ['2026-11-11', '2026-11-12'])} shown={[]} />)
+  const alert = screen.getByRole('alert')
+  expect(within(alert).getByText('مرفوض')).toBeInTheDocument()
+  expect(within(alert).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['2026-11-11', '2026-11-12'])
+  expect(within(alert).getByText('2026-11-11')).toHaveAttribute('dir', 'ltr')
+})
+
 test('SheetHeader leaves room for the close button and SheetFooter sits at the bottom', () => {
   render(
     <Sheet open>

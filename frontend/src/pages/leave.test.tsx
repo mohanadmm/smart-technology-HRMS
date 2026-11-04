@@ -184,7 +184,7 @@ test('the Balances tab keeps the balances list', async () => {
   expect(await screen.findByText('E-101')).toBeInTheDocument()
 })
 
-test('a manager with leave.request.own sees the request button', async () => {
+test('a site manager with leave.request.own sees the request button', async () => {
   mockFetch({ [REQUESTS]: requests([req('r1', 'pending')]) })
   at('/leave', ['leave.view.own', 'leave.request.own', 'employee.view.own'])
   await screen.findByText('سامي فؤاد')

@@ -24,7 +24,7 @@ class SaturdayLeaveCodeMigrationTest extends TestCase
         (require database_path('migrations/2026_10_19_000003_add_saturday_leave_code.php'))->up();
     }
 
-    private function leaveSite(string $name): string
+    private function leaveType(string $name): string
     {
         $id = (string) Str::uuid7();
         DB::table('sites')->insert(['id' => $id, 'name_ar' => $name, 'kind' => 'leave', 'leave_code' => 'friday', 'active' => true, 'created_at' => now(), 'updated_at' => now()]);
@@ -49,8 +49,8 @@ class SaturdayLeaveCodeMigrationTest extends TestCase
 
     public function test_a_saturday_row_coded_friday_is_recoded(): void
     {
-        $friday = $this->leaveSite('اجازة الجمعة');
-        $saturday = $this->leaveSite('اجازه السبت');
+        $friday = $this->leaveType('اجازة الجمعة');
+        $saturday = $this->leaveType('اجازه السبت');
 
         $this->up();
         $this->up();
@@ -68,7 +68,7 @@ class SaturdayLeaveCodeMigrationTest extends TestCase
 
     public function test_a_missing_saturday_leave_type_is_created(): void
     {
-        $friday = $this->leaveSite('اجازة الجمعة');
+        $friday = $this->leaveType('اجازة الجمعة');
 
         $this->up();
         $this->up();

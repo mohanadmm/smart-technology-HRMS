@@ -25,6 +25,8 @@ class AttendanceLockTest extends TestCase
 
     private string $site;
 
+    private string $holidayId;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -32,7 +34,7 @@ class AttendanceLockTest extends TestCase
         $this->signIn('hr');
         $this->leave = $this->leaveTypes();
         $this->eng = $this->employee('engineer');
-        $this->holiday('2026-10-06');
+        $this->holidayId = $this->holiday('2026-10-06');
         $this->site = $this->workSite();
     }
 
@@ -159,13 +161,124 @@ class AttendanceLockTest extends TestCase
         $locks = DB::table('audit_log')->where('event', 'ATTENDANCE_LOCKED');
         $first = (clone $locks)->whereNull('old_values')->sole();
         $again = (clone $locks)->whereNotNull('old_values')->sole();
-        $this->assertEquals(['employee_type' => 'engineer', 'period_start' => '2026-09-26', 'is_locked' => true, 'materialized' => 5], json_decode($first->new_values, true));
+        $this->assertEquals(['employee_type' => 'engineer', 'period_start' => '2026-09-26', 'is_locked' => true, 'materialized' => 5, 'holidays_removed' => 0, 'holidays_added' => 0], json_decode($first->new_values, true));
         $this->assertEquals(['is_locked' => false], json_decode($again->old_values, true));
-        $this->assertEquals(['employee_type' => 'engineer', 'period_start' => '2026-09-26', 'is_locked' => true, 'materialized' => 0], json_decode($again->new_values, true));
+        $this->assertEquals(['employee_type' => 'engineer', 'period_start' => '2026-09-26', 'is_locked' => true, 'materialized' => 0, 'holidays_removed' => 0, 'holidays_added' => 0], json_decode($again->new_values, true));
         $reopened = DB::table('audit_log')->where('event', 'ATTENDANCE_REOPENED')->first();
         $this->assertEquals(['is_locked' => true], json_decode($reopened->old_values, true));
         $this->assertEquals(['is_locked' => false, 'reason' => 'Correction'], json_decode($reopened->new_values, true));
         $this->assertSame(5, DB::table('audit_log')->where(['entity_type' => 'attendance_days', 'event' => 'CREATED'])->count());
         $this->assertTrue(DB::table('audit_log')->where(['entity_type' => 'official_holidays', 'event' => 'CREATED'])->exists());
+    }
+
+    private function reopen(): void
+    {
+        $this->postJson('/api/v1/attendance/locks/reopen', ['group' => 'engineer', 'period_start' => '2026-09-26', 'reason' => 'Correction'])->assertOk();
+    }
+
+    /** @return array<string, string> date => "leave_code/source" of the employee's live days on a leave type */
+    private function leaveDays(string $employeeId): array
+    {
+        return DB::table('attendance_days')->join('sites', 'sites.id', '=', 'attendance_days.site_id')->where('employee_id', $employeeId)
+            ->whereNull('attendance_days.deleted_at')->whereNotNull('leave_code')->orderBy('date')->get(['date', 'leave_code', 'source'])
+            ->mapWithKeys(fn (object $r) => [substr((string) $r->date, 0, 10) => "{$r->leave_code}/{$r->source}"])->all();
+    }
+
+    private function missing(): int
+    {
+        return (int) $this->getJson('/api/v1/attendance/missing?group=engineer&period_start=2026-09-26')->json('meta.pagination.total');
+    }
+
+    public function test_deleting_a_holiday_removes_its_stored_derived_days_only(): void
+    {
+        $other = $this->employee('engineer');
+        $this->lock(['confirm_missing' => true])->assertCreated();
+        $this->reopen();
+        $this->putDay($this->eng, '2026-10-06', ['version' => 1, 'site_id' => $this->site])->assertOk();
+        $row = AttendanceDay::where(['employee_id' => $other, 'date' => '2026-10-06'])->sole();
+        $missing = $this->missing();
+
+        $this->deleteJson("/api/v1/attendance/holidays/{$this->holidayId}")->assertSuccessful();
+        $this->assertSoftDeleted('attendance_days', ['id' => $row->id, 'version' => 2]);
+        $this->assertTrue(DB::table('audit_log')->where(['entity_type' => 'attendance_days', 'entity_id' => $row->id, 'event' => 'DELETED'])->exists());
+        $this->assertSame(1, DB::table('audit_log')->where(['entity_type' => 'attendance_days', 'entity_id' => $row->id, 'event' => 'UPDATED'])->count());
+        $this->getJson("/api/v1/attendance/days/{$this->eng}/2026-10-06")->assertJsonPath('data.source', 'entered')->assertJsonPath('data.site_id', $this->site);
+        $this->getJson("/api/v1/attendance/days/{$other}/2026-10-06")->assertJsonPath('data.state', 'missing');
+        $this->assertSame($missing + 1, $this->missing());
+        $this->assertSame(4, AttendanceDay::where(['employee_id' => $other, 'source' => 'derived'])->count());   // the Fridays stay
+    }
+
+    public function test_moving_a_holiday_clears_the_old_date(): void
+    {
+        $this->lock(['confirm_missing' => true])->assertCreated();
+        $this->reopen();
+
+        $this->patchJson("/api/v1/attendance/holidays/{$this->holidayId}", ['date' => '2026-10-07'])->assertOk();
+        $this->getJson("/api/v1/attendance/days/{$this->eng}/2026-10-06")->assertJsonPath('data.state', 'missing');
+        $this->getJson("/api/v1/attendance/days/{$this->eng}/2026-10-07")->assertJsonPath('data.state', 'derived')->assertJsonPath('data.leave_code', 'official_holiday');
+    }
+
+    public function test_relock_lists_removed_and_added_holidays(): void
+    {
+        $this->lock(['confirm_missing' => true])->assertCreated();
+        $this->reopen();
+        $this->cairo('2026-10-27 13:00');
+        $this->patchJson("/api/v1/attendance/holidays/{$this->holidayId}", ['date' => '2026-10-07'])->assertOk();
+
+        $this->lock()->assertStatus(422)->assertJsonPath('error.code', 'missing_days_unconfirmed');
+        $this->lock(['confirm_missing' => true])->assertCreated()->assertJsonPath('data.is_locked', true)
+            ->assertJsonPath('data.holidays_removed', ['2026-10-06'])->assertJsonPath('data.holidays_added', ['2026-10-07'])
+            ->assertJsonPath('data.leave_on_holidays', []);
+        $this->getJson("/api/v1/attendance/days/{$this->eng}/2026-10-07")->assertJsonPath('data.source', 'derived')->assertJsonPath('data.leave_code', 'official_holiday');
+        $audit = DB::table('audit_log')->where('event', 'ATTENDANCE_LOCKED')->whereNotNull('old_values')->sole();
+        $this->assertSame([1, 1], [json_decode($audit->new_values, true)['holidays_removed'], json_decode($audit->new_values, true)['holidays_added']]);
+    }
+
+    public function test_a_removed_holiday_on_a_weekly_off_becomes_the_weekly_off(): void
+    {
+        $friday = $this->holiday('2026-10-09', 'Holiday-2');
+        $this->lock(['confirm_missing' => true])->assertCreated();
+        $this->assertSame('official_holiday/derived', $this->leaveDays($this->eng)['2026-10-09']);
+        $this->reopen();
+        $this->cairo('2026-10-27 13:00');
+        $this->deleteJson("/api/v1/attendance/holidays/{$friday}")->assertSuccessful();
+
+        $this->lock(['confirm_missing' => true])->assertCreated()->assertJsonPath('data.holidays_removed', ['2026-10-09'])->assertJsonPath('data.holidays_added', []);
+        $this->assertSame('friday/derived', $this->leaveDays($this->eng)['2026-10-09']);
+    }
+
+    public function test_relock_never_touches_weekly_off_rows(): void
+    {
+        $this->lock(['confirm_missing' => true])->assertCreated();
+        $this->reopen();
+        $fridays = AttendanceDay::where('site_id', $this->leave['friday'])->orderBy('date')->get(['date', 'version'])->toArray();
+        app(BusinessRules::class)->update(['weekly_off_field' => 'saturday']);
+        $this->deleteJson("/api/v1/attendance/holidays/{$this->holidayId}")->assertSuccessful();
+
+        $this->lock(['confirm_missing' => true])->assertCreated();
+        $this->assertCount(4, $fridays);
+        $this->assertSame($fridays, AttendanceDay::where('site_id', $this->leave['friday'])->orderBy('date')->get(['date', 'version'])->toArray());
+    }
+
+    public function test_lock_lists_leave_on_a_holiday_without_changing_it(): void
+    {
+        $id = $this->postJson('/api/v1/leave/requests', ['employee_id' => $this->eng, 'kind' => 'annual', 'from_date' => '2026-10-12', 'to_date' => '2026-10-12'])->assertCreated()->json('data.id');
+        $this->postJson("/api/v1/leave/requests/{$id}/approve", ['version' => 1])->assertOk();
+        $this->putDay($this->eng, '2026-10-13', ['site_id' => $this->leave['casual']])->assertOk();
+        $this->holiday('2026-10-12', 'Holiday-2');
+        $this->holiday('2026-10-13', 'Holiday-3');
+
+        $this->lock(['confirm_missing' => true])->assertCreated()->assertJsonPath('data.leave_on_holidays', [
+            ['employee_id' => $this->eng, 'code' => DB::table('employees')->where('id', $this->eng)->value('code'), 'name_ar' => 'Engineer-1', 'name_en' => null, 'date' => '2026-10-12', 'leave_code' => 'annual'],
+            ['employee_id' => $this->eng, 'code' => DB::table('employees')->where('id', $this->eng)->value('code'), 'name_ar' => 'Engineer-1', 'name_en' => null, 'date' => '2026-10-13', 'leave_code' => 'casual'],
+        ]);
+        $days = $this->leaveDays($this->eng);
+        $this->assertSame(['annual/leave', 'casual/entered'], [$days['2026-10-12'], $days['2026-10-13']]);
+    }
+
+    public function test_a_first_lock_reports_no_holiday_changes(): void
+    {
+        $this->lock(['confirm_missing' => true])->assertCreated()
+            ->assertJsonPath('data.holidays_removed', [])->assertJsonPath('data.holidays_added', [])->assertJsonPath('data.leave_on_holidays', []);
     }
 }

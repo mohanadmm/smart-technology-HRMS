@@ -105,10 +105,10 @@ final class EmployeeRoster
         return $this->rows(EmployeeReach::apply($this->employedAs(EmployeeType::Engineer, $date, $date, null), $managerId, $date));
     }
 
-    /** @return array<string, mixed>|null */
-    public function find(string $id): ?array
+    /** @return array<string, mixed>|null with $withTrashed, a deleted employee too */
+    public function find(string $id, bool $withTrashed = false): ?array
     {
-        $e = Employee::with(self::RELATIONS)->find($id);
+        $e = Employee::with(self::RELATIONS)->when($withTrashed, fn (Builder $q) => $q->withTrashed())->find($id);
 
         return $e === null ? null : $this->row($e);
     }

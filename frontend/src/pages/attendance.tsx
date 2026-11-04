@@ -7,7 +7,7 @@ import { Alert } from '@/components/common/Alert'
 import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatusBadge } from '@/components/common/StatusBadge'
-import { cairoToday, ErrorBanner, Field, FormDialog, localName, ltrDates, type Row, SelectField, useCairoTime, weekdayOf } from '@/components/form'
+import { cairoToday, Dates, ErrorBanner, Field, FormDialog, localName, ltrDates, type Row, SelectField, useCairoTime, weekdayOf } from '@/components/form'
 import { TableSkeleton } from '@/components/layout/PageSkeleton'
 import { Pagination } from '@/components/tables/Pagination'
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,8 @@ const PER_PAGE = 50
 const TABS = ['sheet', 'grid', 'import'] // import only with attendance.edit
 
 type Period = { group: string; start: string; end: string; prev_start: string; next_start: string | null; is_locked: boolean; lock: { locked_by: { name: string } | null; locked_at: string | null } | null; missing: number }
+/** `POST /attendance/locks`: the period header plus what a re-lock changed and the leave days on a holiday. */
+type Locked = Period & { holidays_removed: string[]; holidays_added: string[]; leave_on_holidays: (Row & { date: string; leave_code: string })[] }
 type Day = { date: string; state: 'not_employed' | 'stored' | 'derived' | 'future' | 'missing'; source?: string | null; site_id: string | null; leave_code: string | null }
 type GridRow = { employee: Row; days: Day[] }
 
@@ -280,21 +282,64 @@ function Grid({ group, start, onOpenDay }: { group: string; start: string; onOpe
   )
 }
 
-/** Locks the period; with missing days it lists them and needs an explicit confirmation (HR may lock before the period ends). */
+/**
+ * Locks the period; with missing days it lists them and needs an explicit confirmation (HR may lock before the period ends).
+ * A lock that changed holidays, or found leave on one, stays open on those lists so HR reviews them.
+ */
 function LockDialog({ period, onClose }: { period: Period; onClose: () => void }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const send = useSave()
   const [confirmed, setConfirmed] = useState(false)
   const [err, setErr] = useState<unknown>()
   const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState<Locked>()
   const missing = period.missing > 0
   function lock() {
     setBusy(true)
     setErr(undefined)
-    send('/attendance/locks', { body: { group: period.group, period_start: period.start, confirm_missing: confirmed } })
-      .then(() => { toast.success(t('common.saved')); onClose() }, setErr)
+    send<Locked>('/attendance/locks', { body: { group: period.group, period_start: period.start, confirm_missing: confirmed } })
+      .then((r) => {
+        if (r.holidays_removed.length || r.holidays_added.length || r.leave_on_holidays.length) setDone(r)
+        else {
+          toast.success(t('common.saved'))
+          onClose()
+        }
+      }, setErr)
       .finally(() => setBusy(false))
   }
+  if (done)
+    return (
+      <Dialog open onOpenChange={(o) => !o && onClose()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('attendance.lockTitle')}</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="grid gap-4">
+            <DialogDescription role="status" className="text-sm font-medium text-foreground">{t('attendance.relock.done')}</DialogDescription>
+            {!!done.holidays_removed.length && <div><p className="text-sm">{t('attendance.relock.removed')}</p><Dates dates={done.holidays_removed} /></div>}
+            {!!done.holidays_added.length && <div><p className="text-sm">{t('attendance.relock.added')}</p><Dates dates={done.holidays_added} /></div>}
+            {!!done.leave_on_holidays.length && (
+              <div>
+                <p className="text-sm">{t('attendance.relock.leaveOnHoliday')}</p>
+                <ul className="divide-y text-sm">
+                  {done.leave_on_holidays.map((d) => (
+                    <li key={`${d.employee_id}/${d.date}`} className="flex flex-wrap gap-x-3 py-2">
+                      <span className="text-muted-foreground">{d.code}</span>
+                      <span className="flex-1">{localName(d, i18n.language)}</span>
+                      <span>{ltrDates(d.date)}</span>
+                      <span>{t(`attendance.leaveName.${d.leave_code}`)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" onClick={onClose}>{t('common.close')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>

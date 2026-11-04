@@ -68,6 +68,8 @@ final class LeaveRequestController
                 'escalate' => ['nullable', 'string', 'max:1000'],
                 default => ['prohibited'],
             },
+            'replace_dates' => $action === 'approve' ? ['sometimes', 'array', 'max:'.LeaveRequests::MAX_RANGE_DAYS] : ['prohibited'],
+            'replace_dates.*' => ['date_format:Y-m-d'],
         ]);
         $user = $request->user() ?? throw new AuthenticationException;
         $version = (int) $v['version'];
@@ -75,8 +77,16 @@ final class LeaveRequestController
         return ApiEnvelope::single($request, match ($action) {
             'refuse' => $this->requests->refuse($id, $version, (string) $v['reason'], $user),
             'escalate' => $this->requests->escalate($id, $version, $v['reason'] ?? null, $user),
-            default => $this->requests->approve($id, $version, $user),
+            default => $this->requests->approve($id, $version, $user, array_values(array_map('strval', $v['replace_dates'] ?? []))),
         });
+    }
+
+    public function cancel(Request $request, string $id): JsonResponse
+    {
+        $v = $request->validate(['version' => ['required', 'integer', 'min:1'], 'reason' => ['nullable', 'string', 'max:1000']]);
+        $user = $request->user() ?? throw new AuthenticationException;
+
+        return ApiEnvelope::single($request, $this->requests->cancel($id, (int) $v['version'], $v['reason'] ?? null, $user, RequestScope::ownerId($request)));
     }
 
     /** @return array<string, list<mixed>> */

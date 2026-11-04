@@ -47,6 +47,21 @@ _Avoid_: current site, assigned site
 A non-work value recorded instead of a site for a day: Friday, Saturday, official holiday, sick, rest, absent (غ). It gets its own row in site costing. Stored as a `sites` row with `kind=leave` and a `leave_code`; the UI calls them أنواع الإجازات / Leave types and never "leave site".
 _Avoid_: leave site
 
+**Leave request** (طلب إجازة):
+A request for annual, casual, sick or unpaid leave over a date range, filed by a site manager or HR, approved, refused or escalated to the CEO by HR, and cancellable; approval writes its days into attendance and cancelling an approved one clears them.
+
+**Leave balance** (رصيد الإجازات):
+A monthly employee's annual entitlement for the year minus the annual and casual days stored in attendance and the days HR records as used before the system; it may go negative.
+
+**Annual leave** (اعتيادية):
+A paid leave day-type that counts against the leave balance.
+
+**Casual leave** (عارضة):
+A paid leave day-type that counts against both the leave balance and its own yearly casual cap (a setting, never above the entitlement).
+
+**Unpaid leave** (بدون أجر):
+A leave day-type that deducts a day's pay and leaves the balance alone; approval writes it for days beyond the balance.
+
 **Residence** (محل الإقامة):
 The town an employee travels from. Together with the site it sets the fare.
 _Avoid_: السكن; address, home

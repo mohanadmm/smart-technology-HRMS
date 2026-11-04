@@ -36,7 +36,7 @@ const TOTALS = [['worked', 'text-success', 'attendance.sheet.kpi.worked'], ['lea
  * One page of the day sheet: a table from xl up, cards below it (below xl the table is wider than its card, in both groups). Below 2xl
  * the table's actions are icons, and its totals always sit in two columns, so the table fits its card. Writes go back through `onApply` (the sheet's `apply()`).
  */
-export function SheetRows({ rows, office, editable, date, sites, selected, pending, leaveSite, onToggle, onApply, onOpenDay }: {
+export function SheetRows({ rows, office, editable, date, sites, selected, pending, leaveTypeId, onToggle, onApply, onOpenDay }: {
   rows: SheetRow[]
   office: boolean
   editable: boolean
@@ -44,7 +44,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
   sites: Row[]
   selected: ReadonlySet<string>
   pending: ReadonlySet<string>
-  leaveSite: (code: string) => string | undefined
+  leaveTypeId: (code: string) => string | undefined
   onToggle: (ids: string[], on: boolean) => void
   /** Resolves truthy once the row is written. */
   onApply: (action: SheetAction, row: SheetRow, label: string) => Promise<unknown>
@@ -67,7 +67,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
   const pageIds = rows.map((r) => r.employee.id)
   const pageAll = pageIds.every((id) => selected.has(id))
   const pageSome = pageIds.some((id) => selected.has(id))
-  const noLeave = (a: SheetAction) => a.kind === 'leave' && !leaveSite(a.code)
+  const noLeave = (a: SheetAction) => a.kind === 'leave' && !leaveTypeId(a.code)
   // a field row is present at its last site; without one there is nowhere to put it (bulk paths skip such rows with a toast)
   const noSite = (a: SheetAction, r: SheetRow) => a.kind === 'present' && !office && !r.last_site_id
   const noSiteId = useId()
