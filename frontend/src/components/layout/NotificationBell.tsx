@@ -68,13 +68,13 @@ const VIEWS: { [K in Notification['type']]: (n: Extract<Notification, { type: K 
   leave_escalated: (n, ctx) => requestLine('notifications.leaveEscalated', n, ctx),
   leave_decided: (n, ctx) => requestLine(`notifications.leaveDecided.${n.data.status}`, n, ctx),
   leave_cancelled: (n, ctx) => requestLine('notifications.leaveCancelled', n, ctx),
-  // a site manager's new day laborer: HR reviews the proposed wage on the employee's page (its approval screen is a follow-up)
+  // a site manager's new day laborer: the ref is the proposal, which HR approves or refuses on /wage-proposals
   wage_proposed: (n, ctx) => ({
     lines: [{
       key: n.id,
       text: named('notifications.wageProposed', n.employee, ctx),
       detail: ctx.t('notifications.wageProposed.detail', { amount: n.data.daily_wage, site: ctx.lang === 'en' ? n.data.site_name_en || n.data.site_name_ar : n.data.site_name_ar }),
-      to: n.employee && `/employees/${n.employee.id}`,
+      to: n.ref ? `/wage-proposals?proposal=${n.ref}` : '/wage-proposals',
     }],
   }),
   attendance_open_days: (n, { t }) => ({

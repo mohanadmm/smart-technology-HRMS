@@ -10,6 +10,8 @@ use App\Modules\Employees\Infrastructure\Eloquent\DayCrewChange;
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeWageProposal;
+use App\Modules\Identity\Infrastructure\Eloquent\User;
+use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use App\Support\Database\ConcurrencyConflict;
 use App\Support\Http\Paginates;
 use Illuminate\Database\Eloquent\Builder;
@@ -139,20 +141,39 @@ final class DayCrew
      */
     public function pending(int $perPage, int $page): array
     {
-        return $this->page(EmployeeWageProposal::with('employee')->where('status', 'pending')->orderBy('id'), $perPage, $page);
+        $list = $this->page(EmployeeWageProposal::with('employee.crewChanges')->where('status', 'pending')->orderBy('id'), $perPage, $page);
+        // Named in one query each, not per row: the site the laborer was added to, and the site manager who proposed the wage.
+        $sites = Site::withTrashed()->whereKey(array_filter(array_column($list['data'], 'site_id')))->get(['id', 'name_ar', 'name_en'])->keyBy('id');
+        $users = User::withTrashed()->whereKey(array_filter(array_column($list['data'], 'proposed_by')))->pluck('name', 'id');
+        $list['data'] = array_map(function (array $r) use ($sites, $users): array {
+            $site = $r['site_id'] === null ? null : $sites[$r['site_id']] ?? null;
+
+            return [
+                ...array_diff_key($r, ['site_id' => true]),
+                'site' => $site === null ? null : ['id' => (string) $site->id, 'name_ar' => (string) $site->name_ar, 'name_en' => $site->name_en],
+                'proposed_by' => $r['proposed_by'] === null ? null : ['id' => $r['proposed_by'], 'name' => $users[$r['proposed_by']] ?? null],
+            ];
+        }, $list['data']);
+
+        return $list;
     }
 
-    /** @return array<string, mixed> a pending proposal as HR's list shows it */
+    /** @return array<string, mixed> a pending proposal as HR's list shows it; pending() names its site and proposer */
     private function row(Model $m): array
     {
         /** @var EmployeeWageProposal $m */
+        $e = $m->employee;
+        // the crew the site manager added them to: the change on their first day
+        $first = $e?->crewChanges->sortBy('date')->first();
+
         return [
             'id' => $m->id,
             'version' => $m->version,
             'daily_wage' => $m->daily_wage,
             'proposed_by' => $m->created_by,
             'created_at' => $m->created_at?->toIso8601String(),
-            'employee' => ['id' => $m->employee_id, 'code' => (int) $m->employee?->code, 'name_ar' => (string) $m->employee?->name_ar, 'gender' => $m->employee?->gender],
+            'site_id' => $first?->site_id === null ? null : (string) $first->site_id,
+            'employee' => ['id' => $m->employee_id, 'code' => (int) $e?->code, 'name_ar' => (string) $e?->name_ar, 'name_en' => $e?->name_en, 'gender' => $e?->gender, 'phone' => $e?->phone, 'hire_date' => $e?->hire_date],
         ];
     }
 

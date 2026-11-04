@@ -301,3 +301,15 @@ test('a proposed wage, open days and the crew digest each have a line', async ()
   expect(items[2]).toContain('أُضيف إلى Site-1: 1')
   expect(items[3]).toContain('أُخرج من طاقم اليوم: 1')
 })
+
+test('a proposed wage opens that proposal on the proposed-wages page', async () => {
+  const patch = vi.fn(() => json(200, { data: {} }))
+  mockFetch({
+    'GET /api/v1/notifications': inbox([{ id: 'w1', type: 'wage_proposed', date: '2026-11-04', ref: 'p1', read_at: null, data: { employee_id: 'e1', daily_wage: '350', site_name_ar: 'Site-1', site_name_en: null }, employee: ahmed }]),
+    'PATCH /api/v1/notifications/w1/read': patch,
+  })
+  renderWithAuth(<><NotificationBell /><Where /></>, [])
+  await user.click(await screen.findByRole('button', { name: /فتح الإشعارات/ }))
+  await user.click(await screen.findByRole('menuitem', { name: /أجر يومي مقترح/ }))
+  expect(screen.getByRole('status')).toHaveTextContent('/wage-proposals?proposal=p1')
+})
