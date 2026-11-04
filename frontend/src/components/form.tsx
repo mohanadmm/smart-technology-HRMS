@@ -237,16 +237,24 @@ export type Controlled = { open?: boolean; onOpenChange?: (open: boolean) => voi
 
 export type FormApi = { values: Row; set: (k: string, v: string) => void; errs: Record<string, string> }
 
-/** Dialog whose form state lives in the body, so it is fresh on every open (Radix unmounts closed content). Passing `open` makes it controlled; `clearErrOnEdit` drops the last error once a value changes; `description` opens the body as small muted text and is what screen readers announce after the title. */
-export function FormDialog({ title, description, trigger, open: openProp, onOpenChange, init, submit, onDone, shown, children, footer = 'common.save', clearErrOnEdit, destructive }: {
+/**
+ * Dialog whose form state lives in the body, so it is fresh on every open (Radix unmounts closed content). Passing `open` makes it controlled;
+ * `clearErrOnEdit` drops the last error once a value changes; `description` opens the body as small muted text and is what screen readers
+ * announce after the title. `validate` returns field → message for what must be fixed before anything is sent (empty: send).
+ * `reloadKey` names the record version `init` came from: when it changes while the dialog is open, the form restarts from the new `init`
+ * and says so, so a Save after a conflict sends what the user now sees. `onDone` gets what `submit` resolved to.
+ */
+export function FormDialog<R>({ title, description, trigger, open: openProp, onOpenChange, init, submit, validate, reloadKey, onDone, shown, children, footer = 'common.save', clearErrOnEdit, destructive }: {
   title: string
   description?: React.ReactNode
   trigger?: React.ReactNode
   open?: boolean
   onOpenChange?: (open: boolean) => void
   init: Row
-  submit: (form: Row) => Promise<unknown>
-  onDone: () => void
+  submit: (form: Row) => Promise<R>
+  validate?: (form: Row) => Errs
+  reloadKey?: React.Key
+  onDone?: (result: R) => void
   shown: string[]
   children: (f: FormApi) => React.ReactNode
   footer?: string
@@ -254,9 +262,13 @@ export function FormDialog({ title, description, trigger, open: openProp, onOpen
   /** The footer button is red: the dialog confirms a delete. */
   destructive?: boolean
 }) {
+  const { t } = useTranslation()
   const [own, setOwn] = useState(false)
   const open = openProp ?? own
   const setOpen = (o: boolean) => (openProp === undefined ? setOwn(o) : onOpenChange?.(o))
+  // the key the open dialog started from; while closed it follows the latest
+  const [openedWith, setOpenedWith] = useState(reloadKey)
+  if (!open && openedWith !== reloadKey) setOpenedWith(reloadKey)
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {trigger && <span onClick={() => setOpen(true)}>{trigger}</span>}
@@ -264,7 +276,9 @@ export function FormDialog({ title, description, trigger, open: openProp, onOpen
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <FormBody init={init} submit={submit} shown={shown} footer={footer} clearErrOnEdit={clearErrOnEdit} destructive={destructive} description={description} onDone={() => { setOpen(false); onDone() }}>
+        <FormBody key={reloadKey} init={init} submit={submit} validate={validate} shown={shown} footer={footer} clearErrOnEdit={clearErrOnEdit} destructive={destructive} description={description}
+          notice={open && openedWith !== reloadKey ? t('common.reloaded') : undefined}
+          onDone={(r) => { setOpen(false); onDone?.(r) }}>
           {children}
         </FormBody>
       </DialogContent>
@@ -272,20 +286,23 @@ export function FormDialog({ title, description, trigger, open: openProp, onOpen
   )
 }
 
-function FormBody({ init, submit, onDone, shown, footer, clearErrOnEdit, destructive, description, children }: { init: Row; submit: (form: Row) => Promise<unknown>; onDone: () => void; shown: string[]; footer: string; clearErrOnEdit?: boolean; destructive?: boolean; description?: React.ReactNode; children: (f: FormApi) => React.ReactNode }) {
+function FormBody<R>({ init, submit, validate, onDone, shown, footer, clearErrOnEdit, destructive, description, notice, children }: { init: Row; submit: (form: Row) => Promise<R>; validate?: (form: Row) => Errs; onDone: (result: R) => void; shown: string[]; footer: string; clearErrOnEdit?: boolean; destructive?: boolean; description?: React.ReactNode; notice?: string; children: (f: FormApi) => React.ReactNode }) {
   const { t } = useTranslation()
   const { form, set } = useForm(init)
   const [err, setErr] = useState<unknown>()
+  const [invalid, setInvalid] = useState<Errs>({})
   const busy = useRef(false)
   const [, rerender] = useState(0)
   async function go() {
     if (busy.current) return
+    const bad = validate?.(form) ?? {}
+    setInvalid(bad)
+    if (Object.keys(bad).length) return
     busy.current = true
     rerender((n) => n + 1)
     setErr(undefined)
     try {
-      await submit(form)
-      onDone()
+      onDone(await submit(form))
     } catch (e) {
       setErr(e)
     } finally {
@@ -296,9 +313,11 @@ function FormBody({ init, submit, onDone, shown, footer, clearErrOnEdit, destruc
   return (
     <>
       <DialogBody className="grid gap-4">
+        {/* status: it replaces the error the user was reading, so a screen reader must hear it */}
+        {notice && <div role="status"><Alert tone="warning">{notice}</Alert></div>}
         <ErrorBanner err={err} shown={shown} />
         {description && <DialogDescription className="text-sm">{description}</DialogDescription>}
-        {children({ values: form, set: clearErrOnEdit ? (k, v) => { setErr(undefined); set(k, v) } : set, errs: toErrs(err) })}
+        {children({ values: form, set: clearErrOnEdit ? (k, v) => { setErr(undefined); set(k, v) } : set, errs: { ...toErrs(err), ...invalid } })}
       </DialogBody>
       <DialogFooter>
         <Button type="button" variant={destructive ? 'destructive' : undefined} disabled={busy.current} onClick={go}>

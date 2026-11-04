@@ -153,4 +153,7 @@ Route::middleware('auth')->group(function (): void {
     });
 
     Route::get('employees/{employee}/leave', [LeaveBalanceController::class, 'show'])->middleware(['permission:leave.view', 'employee.scope'])->whereUuid('employee');
+    Route::put('employees/{employee}/leave/{year}', [LeaveBalanceController::class, 'adjust'])->middleware(['permission:leave.adjust', 'employee.scope'])
+        ->whereUuid('employee')->where('year', '[0-9]{4}');
+    Route::get('leave/balances', [LeaveBalanceController::class, 'index'])->middleware('permission:leave.view');
 });

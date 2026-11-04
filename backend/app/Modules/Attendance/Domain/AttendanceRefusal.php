@@ -7,7 +7,6 @@ namespace App\Modules\Attendance\Domain;
 /** Why an attendance write was refused; the value is the API error code and the lang key suffix. */
 enum AttendanceRefusal: string
 {
-    case ConcurrencyConflict = 'concurrency_conflict';
     case PeriodLocked = 'period_locked';
     case FutureDate = 'future_date';
     case EmployeeNotActive = 'employee_not_active';
@@ -23,7 +22,7 @@ enum AttendanceRefusal: string
     public function status(): int
     {
         return match ($this) {
-            self::ConcurrencyConflict, self::PeriodAlreadyLocked => 409,
+            self::PeriodAlreadyLocked => 409,
             self::PeriodLocked => 423,
             self::FutureDate, self::EmployeeNotActive, self::MissingDaysUnconfirmed, self::PeriodNotLocked, self::LeaveTypeMissing,
             self::TemplateMismatch, self::UnreadableFile, self::TooManyRows, self::SiteNotInReach => 422,

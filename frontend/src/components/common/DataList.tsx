@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 import { EmptyState } from '@/components/common/EmptyState'
 import { ErrorBanner } from '@/components/form'
 import { TableSkeleton } from '@/components/layout/PageSkeleton'
@@ -23,9 +24,11 @@ export type DataColumns<T> = {
   /** Label/value lines on the card; the middle columns of the table. */
   fields?: Field<T>[]
   /** One pill: the last data column in the table, at the top of the card under the heading. */
-  status?: { header: string; cell: (row: T) => ReactNode }
+  status?: { header: string; cell: (row: T) => ReactNode; tableFrom?: Field<T>['tableFrom'] }
   /** The trailing cell (sr-only header `common.actions`); top-end of the card. */
   actions?: (row: T) => ReactNode
+  /** The figure the row is about: the last data column under a visible end-aligned header; top-end of the card, labelled. Takes the card spot of `actions`, so pass one or the other. */
+  hero?: { header: string; cell: (row: T) => ReactNode }
 }
 export type DataListProps<T> = DataColumns<T> & {
   /** The table's accessible name. */
@@ -38,6 +41,8 @@ export type DataListProps<T> = DataColumns<T> & {
   error?: unknown
   /** Rule 7: pass `action` only when the page header has no main action. */
   empty?: { icon: LucideIcon; title: string; description?: string; action?: ReactNode }
+  /** Each title becomes a link there, stretched over its row or card, so the whole row opens it and it can open in a new tab. */
+  to?: (row: T) => string
   /** Pagination shows only when total > pageSize. */
   page?: { page: number; pageSize: number; total: number; onPageChange: (p: number) => void }
 }
@@ -53,9 +58,9 @@ const CARD = 'max-sm:grid max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:items-cen
  * separated by hairlines inside the page's Card (not a card in a card). Each field cell carries its header as an
  * aria-hidden visible label; explicit roles keep the table semantics Safari drops when display changes.
  * States in order: loading → skeleton, error → Alert, no rows → EmptyState, else rows + Pagination.
- * No selection, sorting or row click; matrices and the day sheet use ui/table directly.
+ * No selection or sorting; `to` is the only row click. Matrices and the day sheet use ui/table directly.
  */
-export function DataList<T>({ label, rows, rowKey, title, fields = [], status, actions, loading, error, empty, page }: DataListProps<T>) {
+export function DataList<T>({ label, rows, rowKey, title, fields = [], status, actions, hero, to, loading, error, empty, page }: DataListProps<T>) {
   const { t } = useTranslation()
   if (loading) return <TableSkeleton rows={8} />
   return (
@@ -75,7 +80,8 @@ export function DataList<T>({ label, rows, rowKey, title, fields = [], status, a
                   {f.header}
                 </TableHead>
               ))}
-              {status && <TableHead role="columnheader">{status.header}</TableHead>}
+              {status && <TableHead role="columnheader" className={cn(status.tableFrom && FROM[status.tableFrom])}>{status.header}</TableHead>}
+              {hero && <TableHead role="columnheader" className="text-end text-foreground">{hero.header}</TableHead>}
               {actions && (
                 <TableHead role="columnheader">
                   <span className="sr-only">{t('common.actions')}</span>
@@ -85,9 +91,15 @@ export function DataList<T>({ label, rows, rowKey, title, fields = [], status, a
           </TableHeader>
           <TableBody role="rowgroup" className="max-sm:block">
             {rows.map((r) => (
-              <TableRow role="row" key={rowKey(r)} className={CARD}>
-                <td role="cell" className={cn(CELL, 'max-sm:col-start-1 max-sm:row-start-1 max-sm:font-medium')}>
-                  {title.cell(r)}
+              <TableRow role="row" key={rowKey(r)} className={cn(CARD, to && 'relative')}>
+                <td role="cell" className={cn(CELL, 'sm:whitespace-normal max-sm:col-start-1 max-sm:row-start-1 max-sm:font-medium')}>
+                  {to ? (
+                    <Link to={to(r)} className="outline-none after:absolute after:inset-0 hover:underline focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring">
+                      {title.cell(r)}
+                    </Link>
+                  ) : (
+                    title.cell(r)
+                  )}
                 </td>
                 {fields.map((f) => (
                   <td
@@ -107,12 +119,20 @@ export function DataList<T>({ label, rows, rowKey, title, fields = [], status, a
                   </td>
                 ))}
                 {status && (
-                  <td role="cell" className={cn(CELL, 'max-sm:col-span-2 max-sm:row-start-2')}>
+                  <td role="cell" className={cn(CELL, 'max-sm:col-span-2 max-sm:row-start-2', status.tableFrom && FROM[status.tableFrom])}>
                     {status.cell(r)}
                   </td>
                 )}
+                {hero && (
+                  <td role="cell" className={cn(CELL, 'text-end whitespace-nowrap max-sm:col-start-2 max-sm:row-start-1')}>
+                    <span aria-hidden="true" className="block text-xs text-muted-foreground sm:hidden">
+                      {hero.header}
+                    </span>
+                    <div className="font-semibold max-sm:text-2xl">{hero.cell(r)}</div>
+                  </td>
+                )}
                 {actions && (
-                  <td role="cell" className={cn(CELL, 'text-end max-sm:col-start-2 max-sm:row-start-1')}>
+                  <td role="cell" className={cn(CELL, 'text-end max-sm:col-start-2 max-sm:row-start-1', to && 'relative')}>
                     {actions(r)}
                   </td>
                 )}

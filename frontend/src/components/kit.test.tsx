@@ -203,6 +203,27 @@ test('StatRow draws exactly one hero figure, untoned, and tones only the seconda
   for (const tile of within(row).getAllByRole('group')) expect(tile).not.toHaveAttribute('aria-label')
 })
 
+test('StatRow strip: one hero with its detail over one hairline-divided strip of every secondary', () => {
+  render(
+    <StatRow
+      layout="strip"
+      label="الرصيد"
+      hero={{ label: 'المتبقي', value: 11, detail: 'السبب' }}
+      stats={[{ label: 'السنوي', value: 21 }, { label: 'المستخدم', value: 10 }, { label: 'مرضي', value: 4 }]}
+    />,
+  )
+  const row = screen.getByRole('group', { name: 'الرصيد' })
+  expect(row.querySelectorAll('.text-kpi')).toHaveLength(1)
+  expect(row.querySelector('.text-kpi')).toHaveTextContent('11')
+  expect(within(row).getByText('السبب')).toBeInTheDocument()
+  const strip = within(row).getByText('السنوي').closest('[role="group"]')!.parentElement!
+  // one strip for all of them, so no tile sits alone on its row
+  expect(strip).toHaveClass('divide-y', 'md:grid-flow-col', 'md:auto-cols-fr')
+  expect(within(strip).getAllByRole('group')).toHaveLength(3)
+  expect(within(strip).getByText('21')).toHaveClass('whitespace-nowrap')
+  for (const tile of within(row).getAllByRole('group')) expect(tile).not.toHaveAttribute('aria-label')
+})
+
 test('StatRow tiles with select are pressed toggles', async () => {
   const pick = vi.fn()
   render(
@@ -283,6 +304,26 @@ test('DataList shows a skeleton while loading, an error instead of the empty sta
   expect(screen.getByText('لا يوجد موظفون')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'إضافة موظف' })).toBeInTheDocument()
   expect(screen.queryByRole('table')).toBeNull()
+})
+
+test('DataList with `to` makes each title a link to its row', async () => {
+  render(<MemoryRouter>{list({ to: (p) => `/employees/${p.id}`, actions: undefined })}</MemoryRouter>)
+  expect(screen.getByRole('link', { name: 'أحمد علي' })).toHaveAttribute('href', '/employees/1')
+  expect(screen.getByRole('link', { name: 'منى سعيد' })).toHaveAttribute('href', '/employees/2')
+})
+
+test('DataList hero is the last column under a visible header, end-aligned like the numbers', () => {
+  render(list({ actions: undefined, hero: { header: 'الرصيد', cell: (p) => p.pay } }))
+  const [head, first] = screen.getAllByRole('row')
+  const headers = within(head).getAllByRole('columnheader')
+  expect(headers.at(-1)).toHaveTextContent('الرصيد')
+  expect(headers.at(-1)).toHaveClass('text-end')
+  expect(headers.at(-1)).not.toHaveClass('text-start')
+  expect(within(head).getByText('الأجر')).not.toHaveClass('text-start')
+  const hero = within(first).getAllByRole('cell').at(-1)!
+  expect(hero).toHaveTextContent('الرصيد1,250.00')
+  expect(hero).toHaveClass('text-end', 'whitespace-nowrap')
+  expect(within(hero).getByText('الرصيد')).toHaveAttribute('aria-hidden', 'true')
 })
 
 test('DataList paginates only when there is more than one page', () => {

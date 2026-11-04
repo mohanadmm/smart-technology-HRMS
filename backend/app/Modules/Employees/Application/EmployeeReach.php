@@ -14,8 +14,6 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final class EmployeeReach
 {
-    private const TYPE = '(select t.type from employee_type_changes t where t.employee_id = employees.id and t.deleted_at is null and t.effective_from <= ?::date order by t.effective_from desc limit 1)';
-
     private const ENGINEER = '(select m.manager_id from employee_manager_assignments m where m.employee_id = employees.id and m.deleted_at is null and m.effective_from <= ?::date order by m.effective_from desc limit 1) = ?';
 
     private const WORKER = 'exists (select 1 from manager_sites ms where ms.manager_id = ? and ms.site_id = (select s.site_id from employee_site_assignments s where s.employee_id = employees.id and s.deleted_at is null and s.effective_from <= ?::date order by s.effective_from desc limit 1))';
@@ -28,7 +26,7 @@ final class EmployeeReach
     {
         // ponytail: correlated subqueries; a reach view if manager lists pass ~1,000
         return $employees->whereRaw(
-            'case '.self::TYPE.' when ? then '.self::ENGINEER.' when ? then '.self::WORKER.' when ? then '.self::WORKER.' else false end',
+            'case '.Employee::TYPE_ON.' when ? then '.self::ENGINEER.' when ? then '.self::WORKER.' when ? then '.self::WORKER.' else false end',
             [
                 $date,
                 EmployeeType::Engineer->value, $date, $managerId,

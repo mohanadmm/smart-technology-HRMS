@@ -12,6 +12,7 @@ const AccountsPage = page(() => import('@/pages/console'), 'AccountsPage')
 const RolesPage = page(() => import('@/pages/console'), 'RolesPage')
 const EmployeesPage = page(() => import('@/pages/employees'), 'EmployeesPage')
 const EmployeeRoute = page(() => import('@/pages/employees'), 'EmployeeRoute')
+const LeavePage = page(() => import('@/pages/leave'), 'LeavePage')
 const SettingsPage = page(() => import('@/pages/settings'), 'SettingsPage')
 const SiteDayPage = page(() => import('@/pages/site-day'), 'SiteDayPage')
 const NotFoundPage = page(() => import('@/pages/pages'), 'NotFoundPage')
@@ -31,6 +32,7 @@ export function AppRoutes() {
         <Route path="employees/new" element={<EmployeeRoute />} />
         <Route path="employees/:id" element={<EmployeeRoute />} />
         <Route path="attendance" element={<AttendancePage />} />
+        <Route path="leave" element={<LeavePage />} />
         <Route path="site-day" element={<SiteDayPage />} />
         <Route path="settings" element={<SettingsPage />} />
         {/* old links, kept for one release */}

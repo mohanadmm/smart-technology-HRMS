@@ -16,6 +16,12 @@ use Illuminate\Testing\TestResponse;
 /** Attendance test data, labelled (no personal data). Use in a TestCase with RefreshDatabase. */
 trait AttendanceFixtures
 {
+    /** The 409 concurrency_conflict text per locale, spelled out so a moved or renamed lang key cannot change it unnoticed. */
+    protected const CONFLICT_MESSAGE = [
+        'ar' => 'عدّل مستخدم آخر هذا السجل. حمّل آخر نسخة ثم أعد المحاولة.',
+        'en' => 'Someone else changed this record. Load the latest version and try again.',
+    ];
+
     /** @var array<string, int> */
     private array $employeesMade = [];
 

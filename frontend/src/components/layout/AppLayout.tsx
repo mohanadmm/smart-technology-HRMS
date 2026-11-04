@@ -1,5 +1,6 @@
 import {
   CalendarCheck,
+  CalendarDays,
   ChevronDown,
   ClipboardCheck,
   Languages,
@@ -40,6 +41,7 @@ export const NAV: { group: string; items: { path: string; key: string; icon: Luc
       { path: '/site-day', key: 'nav.siteDay', icon: ClipboardCheck, abilities: ['attendance.record'] },
       { path: '/employees', key: 'nav.employees', icon: Users, abilities: ['employee.view'] },
       { path: '/attendance', key: 'nav.attendance', icon: CalendarCheck, abilities: ['attendance.view'] },
+      { path: '/leave', key: 'nav.leave', icon: CalendarDays, abilities: ['leave.view'] },
     ],
   },
   { group: 'nav.group.settings', items: [{ path: '/settings', key: 'nav.settings', icon: Settings, abilities: ['site.view', 'setting.view', 'attendance.view'] }] },
