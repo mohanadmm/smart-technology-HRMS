@@ -10,6 +10,7 @@ use App\Modules\Notifications\Infrastructure\Eloquent\Notification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\AttendanceFixtures;
 use Tests\TestCase;
 
@@ -92,15 +93,47 @@ class LeaveRequestsTest extends TestCase
             ->assertJsonPath('error.message', 'Day laborers have no leave balance and cannot request leave.');
     }
 
-    public function test_an_overlap_with_a_live_request_is_refused(): void
+    /** @return array<string, array{string, bool}> status of the first request => whether it still holds its dates */
+    public static function statuses(): array
+    {
+        return ['pending' => ['pending', true], 'escalated' => ['escalated', true], 'approved' => ['approved', true], 'refused' => ['refused', false], 'cancelled' => ['cancelled', false]];
+    }
+
+    #[DataProvider('statuses')]
+    public function test_an_overlap_is_refused_only_while_the_other_request_is_live(string $status, bool $blocks): void
     {
         $e = $this->employee('engineer', '2020-01-01');
         $first = $this->submit($e, '2026-11-02', '2026-11-04')->assertCreated()->json('data.id');
-        $this->preview($e, '2026-11-04', '2026-11-05')->assertStatus(422)->assertJsonPath('error.code', 'leave_overlap');
-        $this->submit($e, '2026-11-04', '2026-11-05')->assertStatus(422)->assertJsonPath('error.code', 'leave_overlap');
+        DB::table('leave_requests')->where('id', $first)->update(['status' => $status]);
 
-        DB::table('leave_requests')->where('id', $first)->update(['status' => 'refused']);
-        $this->submit($e, '2026-11-04', '2026-11-05')->assertCreated();
+        if ($blocks) {
+            $this->preview($e, '2026-11-04', '2026-11-05')->assertStatus(422)->assertJsonPath('error.code', 'leave_overlap');
+            $this->submit($e, '2026-11-04', '2026-11-05')->assertStatus(422)->assertJsonPath('error.code', 'leave_overlap');
+        } else {
+            $this->preview($e, '2026-11-04', '2026-11-05')->assertOk();
+            $this->submit($e, '2026-11-04', '2026-11-05')->assertCreated();
+        }
+    }
+
+    public function test_a_permanent_worker_skips_only_friday_and_their_sites_manager_files_it(): void
+    {
+        $site = $this->workSite();
+        $w = $this->employee('permanent_worker', '2020-01-01');
+        $this->homeSite($w, $site, '2026-01-01');
+
+        $this->actingAs($this->managerOf($site), 'api');
+        $this->assertSame(['2026-11-05', '2026-11-07', '2026-11-08'], $this->dates($w, '2026-11-05', '2026-11-08'));
+        $this->submit($w, '2026-11-05', '2026-11-08')->assertCreated()->assertJsonPath('data.days', 3);
+    }
+
+    public function test_saturday_stops_counting_from_a_change_to_office(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        app(EmployeeService::class)->addTypeChange($e, ['type' => 'office', 'effective_from' => '2026-11-01']);
+        $this->assertSame(
+            ['2026-10-29', '2026-10-31', '2026-11-01', '2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-08'],
+            $this->dates($e, '2026-10-29', '2026-11-08'),
+        );
     }
 
     public function test_a_range_crossing_dec_31_is_refused(): void
@@ -186,10 +219,36 @@ class LeaveRequestsTest extends TestCase
 
         $this->actingAs($manager, 'api');
         $this->preview($e, '2026-11-03', '2026-11-05')->assertStatus(422)->assertJsonPath('error.code', 'site_not_in_reach')
-            ->assertJsonPath('error.message', 'This site is not one of your sites, or it is not the worker\'s home site on this date.');
+            ->assertJsonPath('error.message', 'This employee is not in your reach on some of these dates.');
         $this->submit($e, '2026-11-03', '2026-11-05')->assertStatus(422)->assertJsonPath('error.code', 'site_not_in_reach');
         $this->submit($e, '2026-11-03', '2026-11-04')->assertCreated();
         $this->assertSame(1, DB::table('leave_requests')->count());
+    }
+
+    public function test_a_manager_is_refused_until_the_employee_is_in_reach_today(): void
+    {
+        $site = $this->workSite();
+        $manager = $this->managerOf($site);
+        $engineer = $this->employee('engineer', '2020-01-01');
+        $this->assign($engineer, $manager, '2026-11-01');
+        $worker = $this->employee('permanent_worker', '2020-01-01');
+        $this->homeSite($worker, $site, '2026-11-01');
+
+        $this->actingAs($manager, 'api');
+        foreach ([$engineer, $worker] as $e) {
+            $this->preview($e, '2026-11-02', '2026-11-03')->assertStatus(422)->assertJsonPath('error.code', 'site_not_in_reach')
+                ->assertJsonMissingPath('data.balance');
+            $this->submit($e, '2026-11-02', '2026-11-03')->assertStatus(422)->assertJsonPath('error.code', 'site_not_in_reach');
+        }
+        $this->assertSame(0, DB::table('leave_requests')->count());
+    }
+
+    public function test_the_reach_refusal_has_its_own_arabic_text(): void
+    {
+        $office = $this->employee('office', '2020-01-01');
+        $this->actingAs($this->makeUser('manager'), 'api');
+        $this->withHeader('Accept-Language', 'ar')->submit($office, '2026-11-02', '2026-11-03')->assertStatus(422)
+            ->assertJsonPath('error.message', 'هذا الموظف خارج نطاقك في بعض هذه الأيام.');
     }
 
     public function test_a_manager_cannot_file_for_office_staff_or_learn_about_an_employee_out_of_reach(): void

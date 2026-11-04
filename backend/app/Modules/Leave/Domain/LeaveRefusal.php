@@ -12,4 +12,5 @@ enum LeaveRefusal: string
     case NoDays = 'leave_no_days';
     case CrossesYear = 'leave_crosses_year';
     case TooLong = 'leave_too_long';
+    case NotInReach = 'site_not_in_reach';
 }

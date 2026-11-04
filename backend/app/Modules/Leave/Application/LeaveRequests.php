@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Modules\Leave\Application;
 
-use App\Modules\Attendance\Domain\AttendanceRefusal;
-use App\Modules\Attendance\Domain\AttendanceRefused;
 use App\Modules\Employees\Application\EmployeeReach;
 use App\Modules\Employees\Application\EmployeeRoster;
 use App\Modules\Employees\Domain\EmployeeType;
@@ -21,7 +19,6 @@ use App\Modules\Notifications\Application\Notifier;
 use App\Support\Http\Paginates;
 use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 
@@ -33,8 +30,6 @@ final class LeaveRequests
     /** Calendar days from from_date to to_date inclusive (plan, Global Constraints: a code limit, not a setting). */
     public const MAX_RANGE_DAYS = 60;
 
-    private const ROW = ['id', 'employee_id', 'kind', 'from_date', 'to_date', 'days', 'status', 'note', 'requested_by', 'created_at', 'version'];
-
     public function __construct(
         private readonly EmployeeRoster $roster,
         private readonly LeaveDays $days,
@@ -44,7 +39,7 @@ final class LeaveRequests
     ) {}
 
     /**
-     * The counted dates and what they do to the year's balance. $ownerId (own scope) must reach the employee on every counted date.
+     * The counted dates and what they do to the year's balance. $ownerId (own scope) must reach the employee today and on every counted date.
      *
      * @return array{dates: list<string>, days: int, balance: ?array<string, ?int>, keep: int, unpaid: int, remaining_after: ?int}
      */
@@ -88,7 +83,7 @@ final class LeaveRequests
             return $request;
         });
 
-        return $this->named([$this->row($request)])[0];
+        return $this->named([$request->toArray()])[0];
     }
 
     /**
@@ -111,7 +106,9 @@ final class LeaveRequests
     }
 
     /**
-     * The request's counted dates, or a refusal. Input first, then reach, so a manager learns nothing about an employee out of reach.
+     * The request's counted dates, or a refusal. Input first, then an unknown id is a 404 (ids are UUIDs, so probing is impractical), then reach,
+     * so the later refusals never describe an employee out of reach. Own scope also needs reach today: the balance and the request list show a
+     * manager only the employees in reach today.
      *
      * @return non-empty-list<string>
      */
@@ -126,11 +123,11 @@ final class LeaveRequests
         $employee = $this->roster->find($employeeId) ?? throw new ModelNotFoundException;
         $dates = $this->days->dates($employee, $from, $to);
         if ($ownerId !== null) {
-            // With no counted date, reach on from_date decides, so the refusals below never describe an employee out of reach.
-            // ponytail: one reach query per counted date (at most 60); a dated reach range if this shows up in a profile.
-            foreach ($dates === [] ? [$from] : $dates as $date) {
+            // With no counted date, reach on from_date decides.
+            // ponytail: one reach query per date (at most 61); a dated reach range if this shows up in a profile.
+            foreach ([now('Africa/Cairo')->toDateString(), ...($dates === [] ? [$from] : $dates)] as $date) {
                 if (! EmployeeReach::reaches($employeeId, $ownerId, $date)) {
-                    throw AttendanceRefused::because(AttendanceRefusal::SiteNotInReach);
+                    throw new LeaveRefused(LeaveRefusal::NotInReach);
                 }
             }
         }
@@ -149,14 +146,8 @@ final class LeaveRequests
         return $dates;
     }
 
-    /** @return array<string, mixed> */
-    private function row(Model $m): array
-    {
-        return array_intersect_key($m->toArray(), array_flip(self::ROW));
-    }
-
     /**
-     * @param  list<array<string, mixed>>  $rows  row() results
+     * @param  list<array<string, mixed>>  $rows  LeaveRequest attributes
      * @return list<array<string, mixed>> in the API row shape, employee and requester named
      */
     private function named(array $rows): array
