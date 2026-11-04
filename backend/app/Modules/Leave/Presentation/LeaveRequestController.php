@@ -9,6 +9,7 @@ use App\Modules\Leave\Application\LeaveRequests;
 use App\Modules\Leave\Domain\LeaveKind;
 use App\Modules\Leave\Domain\LeaveStatus;
 use App\Support\Http\ApiEnvelope;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -47,8 +48,9 @@ final class LeaveRequestController
     {
         /** @var array{employee_id: string, kind: string, from_date: string, to_date: string, note?: ?string} $v */
         $v = $request->validate([...self::range(), 'note' => ['nullable', 'string', 'max:1000']]);
+        $user = $request->user() ?? throw new AuthenticationException;
 
-        return ApiEnvelope::single($request, $this->requests->submit($v, (string) $request->user()?->getAuthIdentifier(), RequestScope::ownerId($request)), 201);
+        return ApiEnvelope::single($request, $this->requests->submit($v, (string) $user->getAuthIdentifier(), RequestScope::ownerId($request)), 201);
     }
 
     /** @return array<string, list<mixed>> */

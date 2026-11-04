@@ -15,6 +15,7 @@ use App\Modules\Leave\Domain\LeaveRefusal;
 use App\Modules\Leave\Domain\LeaveRefused;
 use App\Modules\Leave\Domain\LeaveStatus;
 use App\Modules\Leave\Infrastructure\Eloquent\LeaveRequest;
+use App\Modules\Leave\Infrastructure\LeaveRequestLock;
 use App\Modules\Notifications\Application\Notifier;
 use App\Support\Http\Paginates;
 use DateTimeImmutable;
@@ -47,14 +48,8 @@ final class LeaveRequests
     {
         $dates = $this->check($employeeId, $from, $to, $ownerId);
         $balance = $this->balances->forEmployee($employeeId, (int) substr($from, 0, 4))['balance'];
-        $split = LeaveBalance::split($kind, count($dates), $balance);
-        $remaining = $balance['remaining'] ?? null;
-        $deducted = in_array($kind, [LeaveKind::Annual, LeaveKind::Casual], true) ? $split['keep'] : 0;
 
-        return [
-            'dates' => $dates, 'days' => count($dates), 'balance' => $balance, ...$split,
-            'remaining_after' => $remaining === null ? null : $remaining - $deducted,
-        ];
+        return ['dates' => $dates, 'days' => count($dates), 'balance' => $balance, ...LeaveBalance::split($kind, count($dates), $balance)];
     }
 
     /**
@@ -66,8 +61,7 @@ final class LeaveRequests
     public function submit(array $input, string $by, ?string $ownerId): array
     {
         $request = DB::transaction(function () use ($input, $by, $ownerId): LeaveRequest {
-            // Serializes one employee's submissions, so two racing requests cannot both pass the overlap check.
-            DB::select('select pg_advisory_xact_lock(hashtextextended(?, 0))', ['leave_request:'.$input['employee_id']]);
+            LeaveRequestLock::forEmployee($input['employee_id']);
             $dates = $this->check($input['employee_id'], $input['from_date'], $input['to_date'], $ownerId);
             $request = LeaveRequest::create([
                 'employee_id' => $input['employee_id'], 'kind' => $input['kind'], 'from_date' => $input['from_date'], 'to_date' => $input['to_date'],

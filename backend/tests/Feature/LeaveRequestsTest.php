@@ -89,6 +89,7 @@ class LeaveRequestsTest extends TestCase
     public function test_a_day_laborer_cannot_request_leave(): void
     {
         $e = $this->employee('day_laborer', '2020-01-01');
+        $this->preview($e, '2026-11-02', '2026-11-03')->assertStatus(422)->assertJsonPath('error.code', 'leave_day_laborer');
         $this->submit($e, '2026-11-02', '2026-11-03')->assertStatus(422)->assertJsonPath('error.code', 'leave_day_laborer')
             ->assertJsonPath('error.message', 'Day laborers have no leave balance and cannot request leave.');
     }
