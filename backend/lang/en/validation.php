@@ -52,7 +52,7 @@ return [
         'slug' => 'Identifier',
         'permission_ids' => 'Permissions',
         'manager_id' => 'Manager',
-        'manager_ids' => 'Managers',
+        'manager_ids' => 'Site managers',
         'user_id' => 'User',
         'entity_type' => 'Record type',
         'entity_id' => 'Record ID',

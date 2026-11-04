@@ -207,7 +207,7 @@ return [
         'slug' => 'المعرّف',
         'permission_ids' => 'الصلاحيات',
         'manager_id' => 'المدير',
-        'manager_ids' => 'المديرون',
+        'manager_ids' => 'مديرو الموقع',
         'user_id' => 'المنفِّذ',
         'entity_type' => 'نوع السجل',
         'entity_id' => 'معرّف السجل',

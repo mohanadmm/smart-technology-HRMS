@@ -234,6 +234,7 @@ function ProfileMenu() {
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold">{me.name}</div>
             <div className="truncate text-xs text-muted-foreground">{me.email}</div>
+            <div className="truncate text-xs text-muted-foreground">{ar ? me.role.name_ar : me.role.name}</div>
           </div>
         </div>
         <DropdownMenuSeparator />
