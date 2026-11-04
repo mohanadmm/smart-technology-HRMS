@@ -21,8 +21,8 @@ const tone = (status: number): BadgeVariant => (status >= 500 ? 'danger' : statu
 function Details({ entry, onClose }: { entry: Row; onClose: () => void }) {
   const { t } = useTranslation()
   const time = useCairoTime()
-  // IP and browser reuse the sessions list's labels
-  const meta = [['logs.requestId', entry.request_id], ['console.ip', entry.ip_address], ['logs.route', entry.route], ['console.userAgent', entry.user_agent]] as const
+  // IP reuses the sessions list's label
+  const meta = [['logs.requestId', entry.request_id], ['console.ip', entry.ip_address], ['logs.route', entry.route], ['logs.userAgent', entry.user_agent]] as const
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="sm:max-w-[720px]">
@@ -38,7 +38,7 @@ function Details({ entry, onClose }: { entry: Row; onClose: () => void }) {
         <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain p-5">
           <dl className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2">
             {meta.map(([k, v]) => (
-              <div key={k} className={k === 'logs.route' || k === 'console.userAgent' ? 'min-w-0 sm:col-span-2' : 'min-w-0'}>
+              <div key={k} className={k === 'logs.route' || k === 'logs.userAgent' ? 'min-w-0 sm:col-span-2' : 'min-w-0'}>
                 <dt className="text-xs text-muted-foreground">{t(k)}</dt>
                 <dd dir="ltr" className="text-start font-mono text-xs [overflow-wrap:anywhere]">{show(v)}</dd>
               </div>
@@ -56,20 +56,25 @@ function Details({ entry, onClose }: { entry: Row; onClose: () => void }) {
   )
 }
 
-/** The Requests tab. `request_id` lives in the URL so other pages can link to one request. */
-// ponytail: no tab bar while Requests is the only tab; the Errors tab adds it, synced to `?tab=`.
-export function LogsPage() {
+/** `request_id` lives in the URL so other pages can link to one request. */
+function RequestsTab() {
   const { t } = useTranslation()
   const { can } = useAuth()
   const time = useCairoTime()
   const [params, setParams] = useSearchParams()
   const { form, setForm, set } = useForm()
   const [page, setPage] = useState(1)
+  const requestId = params.get('request_id') ?? ''
+  const [seenId, setSeenId] = useState(requestId)
+  if (seenId !== requestId) { // a new link starts on page 1, as a filter change does
+    setSeenId(requestId)
+    setPage(1)
+  }
   const [open, setOpen] = useState<Row>()
   const canUsers = can('user.view')
   const { data: users = [], err: usersErr } = useApi<Row[]>(canUsers ? USERS : null) // shared with the accounts list
   const path = useDebounced(form.path ?? '', 250) // the box stays instant; the request waits for a pause in typing
-  const filters = { ...form, path, request_id: params.get('request_id') ?? '' }
+  const filters = { ...form, path, request_id: requestId }
   const qs = new URLSearchParams({ ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)), page: String(page), per_page: String(PER_PAGE) })
   const { rows, total, err, loading } = useList(`/request-log?${qs}`)
   const f = { values: form, set: (k: string, v: string) => { set(k, v); setPage(1) }, errs: toErrs(err) }
@@ -79,8 +84,7 @@ export function LogsPage() {
     setParams((p) => { p.delete('request_id'); return p }, { replace: true })
   }
   return (
-    <div className="space-y-6">
-      <PageHeader title={t('page.logs')} description={t('logs.subtitle')} />
+    <>
       <Card className="overflow-hidden">
         <div className="space-y-3 border-b p-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -89,7 +93,7 @@ export function LogsPage() {
             <SelectField name="status" label={t('logs.status')} blank={t('common.all')} options={[['failed', t('logs.statusFilter.failed')], ['server', t('logs.statusFilter.server')]]} {...f} />
             <SelectField name="method" label={t('logs.method')} blank={t('common.all')} options={METHODS.map((m) => [m, m])} {...f} />
             {canUsers && <SelectField name="user_id" label={t('logs.account')} blank={t('common.all')} options={users.map((u) => [u.id, u.name])} {...f} />}
-            <TextField name="path" label={t('logs.path')} type="search" dir="ltr" {...f} />
+            <TextField name="path" label={t('logs.path')} type="search" dir="ltr" className="font-mono" {...f} />
           </div>
           {(Object.values(form).some(Boolean) || params.has('request_id')) && (
             <Button variant="ghost" size="sm" onClick={clear}>
@@ -128,6 +132,23 @@ export function LogsPage() {
         />
       </Card>
       {open && <Details entry={open} onClose={() => setOpen(undefined)} />}
+    </>
+  )
+}
+
+const TABS = { requests: RequestsTab }
+
+/** The tab lives in `?tab=`; a missing or unknown tab shows Requests. */
+// ponytail: no tab bar while Requests is the only tab; the Errors tab adds `errors` here and the bar, as settings.tsx does.
+export function LogsPage() {
+  const { t } = useTranslation()
+  const [params] = useSearchParams()
+  const tab = params.get('tab') ?? 'requests'
+  const Body = TABS[tab as keyof typeof TABS] ?? RequestsTab
+  return (
+    <div className="space-y-6">
+      <PageHeader title={t('page.logs')} description={t('logs.subtitle')} />
+      <Body />
     </div>
   )
 }

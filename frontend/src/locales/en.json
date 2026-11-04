@@ -958,6 +958,7 @@
     "route": "Route",
     "query": "Query parameters",
     "request_body": "Request body",
-    "response_body": "Response body"
+    "response_body": "Response body",
+    "userAgent": "User agent"
   }
 }

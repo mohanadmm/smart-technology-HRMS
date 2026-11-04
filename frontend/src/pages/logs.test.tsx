@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useSearchParams } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import i18n from '@/i18n'
 import { json, mockFetch, pagination, renderWithAuth } from '@/test-utils'
@@ -30,6 +31,17 @@ test('renders in Arabic by default, with the request line left-to-right', async 
   expect(within(table).getByText('developer')).toBeInTheDocument()
 })
 
+test('?tab=requests renders the request list, and an unknown tab falls back to it', async () => {
+  for (const tab of ['requests', 'nope']) {
+    const fn = list([row()])
+    mockFetch({ 'GET /api/v1/request-log': fn })
+    const { unmount } = renderWithAuth(<LogsPage />, ['system_log.view.all'], { path: `/console/logs?tab=${tab}` })
+    expect(await within(await screen.findByRole('table', { name: 'سجلات النظام' })).findByText('api/v1/sites/s1/allowance-rules')).toBeInTheDocument()
+    unmount()
+    vi.unstubAllGlobals()
+  }
+})
+
 test('filters become the query string', async () => {
   const fn = list([row()])
   mockFetch({ 'GET /api/v1/request-log': fn })
@@ -55,6 +67,21 @@ test('a request_id in the URL filters the list and clear filters drops it', asyn
   await waitFor(() => expect(lastUrl(fn)).not.toContain('request_id'))
 })
 
+test('a new request_id in the URL goes back to page 1', async () => {
+  const fn = vi.fn<(url: string) => Response>(() => json(200, { data: [row()], meta: { pagination: { ...pagination, total: 45, total_pages: 3, has_next_page: true } } }))
+  mockFetch({ 'GET /api/v1/request-log': fn })
+  function Link() {
+    const [, setParams] = useSearchParams()
+    return <button type="button" onClick={() => setParams({ request_id: 'req-2' })}>link</button>
+  }
+  renderWithAuth(<><LogsPage /><Link /></>, ['system_log.view.all'])
+  await user.click(await screen.findByRole('button', { name: 'التالي' }))
+  await waitFor(() => expect(lastUrl(fn)).toContain('page=2'))
+  await user.click(screen.getByRole('button', { name: 'link' }))
+  await waitFor(() => expect(lastUrl(fn)).toContain('request_id=req-2'))
+  expect(lastUrl(fn)).toContain('page=1')
+})
+
 test('the status badge tone follows the code', async () => {
   mockFetch({ 'GET /api/v1/request-log': list([row(), row({ id: 'l2', status: 422 }), row({ id: 'l3', status: 500 })]) })
   renderWithAuth(<LogsPage />, ['system_log.view.all'])
@@ -71,7 +98,7 @@ test('a 422 details sheet shows the request metadata and its masked body as it i
   expect(within(sheet).getByText('req-1')).toBeInTheDocument()
   expect(within(sheet).getByText('api/v1/sites/{site}/allowance-rules')).toBeInTheDocument()
   expect(within(sheet).getByText('172.18.0.1')).toBeInTheDocument()
-  expect(within(sheet).getByText('Mozilla/5.0')).toBeInTheDocument()
+  expect(within(sheet).getByText('بيانات المتصفح').nextSibling).toHaveTextContent('Mozilla/5.0')
   const body = within(sheet).getByRole('region', { name: 'محتوى الطلب' })
   expect(within(body).getByText(/"value": "\[masked\]"/)).toHaveAttribute('dir', 'ltr')
   expect(within(sheet).getByRole('region', { name: 'معاملات الاستعلام' })).toHaveTextContent('"search": "[masked]"')
