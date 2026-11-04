@@ -6,11 +6,14 @@ export class ApiError extends Error {
   code: string
   status: number
   details: ApiErrorDetail[]
-  constructor(code: string, message: string, status: number, details: ApiErrorDetail[] = []) {
+  /** The dates a refusal names (leave_days_blocked, leave_cancel_blocked). */
+  dates: string[]
+  constructor(code: string, message: string, status: number, details: ApiErrorDetail[] = [], dates: string[] = []) {
     super(message)
     this.code = code
     this.status = status
     this.details = details
+    this.dates = dates
   }
 }
 
@@ -67,7 +70,7 @@ async function send(path: string, { method = 'GET', body, signal }: Options = {}
       onUnauthorized()
     }
     const e = json?.error
-    throw new ApiError(e?.code ?? 'unknown_error', e?.message ?? res.statusText, res.status, e?.details ?? [])
+    throw new ApiError(e?.code ?? 'unknown_error', e?.message ?? res.statusText, res.status, e?.details ?? [], e?.dates ?? [])
   }
   return res
 }

@@ -11,6 +11,7 @@ import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTi
 import { Textarea } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/misc'
 import { useDebounced } from '@/hooks/useDebounced'
+import { ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { useApi, useList, useSave } from '@/lib/query'
 import { cn } from '@/lib/utils'
@@ -85,7 +86,7 @@ function PreviewLine({ values: v }: { values: Row }) {
   )
 }
 
-/** A search box over `GET /employees` (the server keeps a manager to the employees in reach) and a select of the matches. */
+/** A search box over `GET /employees` (the server keeps a site manager to the employees in reach) and a select of the matches. */
 function EmployeePicker({ values, set, errs }: FormApi) {
   const { t, i18n } = useTranslation()
   const [q, setQ] = useState('')
@@ -113,9 +114,9 @@ type Shown = LeaveRequest & {
   decided_at: string | null
   approval: { days: number; balance: { remaining: number | null; casual_remaining: number | null } | null; keep: number; unpaid: number; remaining_after: number | null; blocked: string[] } | null
 }
-type Action = 'approve' | 'refuse' | 'escalate'
+type Action = 'approve' | 'refuse' | 'escalate' | 'cancel'
 
-/** One request by id (a link may point past the loaded list page): its details, and the decisions the reader may take on it now. */
+/** One request by id (a link may point past the loaded list page): its details, and the decisions (cancelling included) the reader may take on it now. */
 export function DecideDialog({ id, open, onOpenChange }: { id: string } & Required<Controlled>) {
   const { t } = useTranslation()
   // a decision in flight keeps the dialog open, so its outcome (or its refusal) is seen
@@ -134,7 +135,7 @@ export function DecideDialog({ id, open, onOpenChange }: { id: string } & Requir
 
 function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => void; busy: boolean; setBusy: (b: boolean) => void }) {
   const { t, i18n } = useTranslation()
-  const { can } = useAuth()
+  const { me, can } = useAuth()
   const time = useCairoTime()
   const send = useSave()
   const path = `/leave/requests/${id}`
@@ -145,6 +146,9 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
 
   const a = r.approval
   const actions: Action[] = r.status === 'pending' && can('leave.decide') ? ['escalate', 'refuse', 'approve'] : r.status === 'escalated' && can('leave.decide_escalated') ? ['refuse', 'approve'] : []
+  const undecided = r.status === 'pending' || r.status === 'escalated'
+  const cancellable = undecided ? (!!me && r.requested_by?.id === me.id) || can('leave.request.all') : r.status === 'approved' && can('leave.decide.all')
+  const asks = (['cancel', 'refuse', 'escalate'] as const).filter((x) => (x === 'cancel' ? cancellable : actions.includes(x)))
   // a refusal (409 stale or blocked days) also marks the request stale, so it reloads with the server's current status and blocked dates
   const decide = (action: Action, reason?: string) =>
     send(`${path}/${action}`, { body: { version: r.version, ...(reason && { reason }) } }, ['/leave', '/attendance', ...(r.employee ? [`/employees/${r.employee.id}/leave`] : [])])
@@ -167,7 +171,14 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
   return (
     <>
       <DialogBody className="grid gap-4">
-        <ErrorBanner err={err} shown={[]} />
+        {err instanceof ApiError && err.code === 'leave_cancel_blocked' ? (
+          <Alert tone="danger">
+            <p>{err.message}</p>
+            <Dates dates={err.dates} />
+          </Alert>
+        ) : (
+          <ErrorBanner err={err} shown={[]} />
+        )}
         <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
           <Item label={t('employee.employee')}>{r.employee ? <>{localName(r.employee, i18n.language)} (<bdi dir="ltr">{r.employee.code}</bdi>)</> : '—'}</Item>
           <Item label={t('leave.requests.kind')}>{kind}</Item>
@@ -185,7 +196,7 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
           {r.decided_by && <Item label={t('leave.decide.decidedBy')}>{r.decided_by.name}</Item>}
           {r.decided_at && <Item label={t('leave.decide.decidedAt')}>{time(r.decided_at)}</Item>}
           {r.note && <Item label={t('leave.request.note')} wide>{r.note}</Item>}
-          {r.decision_reason && <Item label={t(r.status === 'refused' ? 'leave.decide.refuse.reason' : 'leave.decide.escalationNote')} wide>{r.decision_reason}</Item>}
+          {r.decision_reason && <Item label={t(REASON[r.status] ?? 'leave.decide.escalationNote')} wide>{r.decision_reason}</Item>}
         </dl>
         {a && a.unpaid > 0 && (
           <Alert tone="warning">
@@ -197,12 +208,14 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
         {!!a?.blocked.length && (
           <Alert tone="danger">
             <p>{t('leave.decide.blocked')}</p>
-            <ul className="flex flex-wrap gap-x-4">{a.blocked.map((d) => <li key={d}><bdi dir="ltr">{d}</bdi></li>)}</ul>
+            <Dates dates={a.blocked} />
           </Alert>
         )}
       </DialogBody>
-      {!!actions.length && (
+      {(!!actions.length || cancellable) && (
         <DialogFooter>
+          {/* cancelling is not a decision: set apart at the start, and red so it is not taken for the dialog's own close */}
+          {cancellable && <Button type="button" variant="outline" className="text-destructive sm:me-auto" disabled={busy} onClick={() => setAsking('cancel')}>{t('leave.decide.cancel.action')}</Button>}
           {actions.map((action) =>
             action === 'approve' ? (
               <Button key={action} type="button" disabled={busy} onClick={() => run('approve')}>{t('leave.decide.approve.action')}</Button>
@@ -212,10 +225,11 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
           )}
         </DialogFooter>
       )}
-      {(['refuse', 'escalate'] as const).filter((x) => actions.includes(x)).map((action) => (
+      {asks.map((action) => (
         <FormDialog
           key={action}
           title={t(`leave.decide.${action}.title`)}
+          description={action === 'cancel' && t(`leave.decide.cancel.${undecided ? 'withdraw' : 'clear'}`)}
           open={asking === action}
           onOpenChange={(o) => setAsking(o ? action : undefined)}
           init={{ reason: '' }}
@@ -225,7 +239,7 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
           onDone={(reason) => run(action, reason)}
           shown={['reason']}
           footer={`leave.decide.${action}.submit`}
-          destructive={action === 'refuse'}
+          destructive={action !== 'escalate'}
           clearErrOnEdit
         >
           {(f) => (
@@ -238,6 +252,10 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
     </>
   )
 }
+
+const REASON: Record<string, string> = { refused: 'leave.decide.refuse.reason', cancelled: 'leave.decide.cancelReason' }
+
+const Dates = ({ dates }: { dates: string[] }) => <ul className="flex flex-wrap gap-x-4">{dates.map((d) => <li key={d}><bdi dir="ltr">{d}</bdi></li>)}</ul>
 
 function Item({ label, wide, children }: { label: string; wide?: boolean; children: React.ReactNode }) {
   return (
