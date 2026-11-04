@@ -1,10 +1,10 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
-vi.mock('sonner', () => ({ toast: { success: vi.fn() }, Toaster: () => null }))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() }, Toaster: () => null }))
 import { toast } from 'sonner'
 import { json, mockFetch, pagination, renderWithAuth } from '@/test-utils'
-import { RequestDialog } from './leave-dialogs'
+import { DecideDialog, RequestDialog } from './leave-dialogs'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -152,4 +152,175 @@ test('nothing is previewed until employee, from and to are all set', async () =>
   dates('2026-11-10', '2026-11-15')
   await new Promise((r) => setTimeout(r, 400))
   expect(vi.mocked(fetch).mock.calls.some(([u]) => String(u).includes('/preview'))).toBe(false)
+})
+
+const SHOW = 'GET /api/v1/leave/requests/r1'
+const shown = (p: object = {}, approval: object | null = {}) => ({
+  id: 'r1', employee: { id: 'e1', code: 101, name_ar: 'سامي فؤاد', name_en: 'Sami Fouad' }, kind: 'annual', from_date: '2026-11-10', to_date: '2026-11-15', days: 4,
+  status: 'pending', note: 'سفر عائلي', requested_by: { id: 'u2', name: 'مدير الموقع' }, created_at: '2026-11-04T08:00:00Z', version: 3,
+  decision_reason: null, decided_by: null, decided_at: null,
+  approval: approval && { dates: ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-15'], days: 4, balance, keep: 4, unpaid: 0, remaining_after: -2, blocked: [], ...approval },
+  ...p,
+})
+const decide = (perms: string[], onOpenChange = vi.fn()) => renderWithAuth(<DecideDialog id="r1" open onOpenChange={onOpenChange} />, perms)
+const HR = ['leave.view.all', 'leave.decide.all']
+const CEO = ['leave.view.all', 'leave.decide_escalated.all']
+const term = (label: string) => screen.getByText(label, { selector: 'dt' }).parentElement!
+const buttons = () => within(screen.getByRole('dialog')).queryAllByRole('button').map((b) => b.textContent).filter((n) => n !== 'إغلاق')
+const bodyOf = (m: ReturnType<typeof vi.fn>) => JSON.parse(String((m.mock.calls[0] as unknown as [string, RequestInit])[1].body))
+
+test('the decide dialog shows the request, the requester, and the balance before and after', async () => {
+  mockFetch({ [SHOW]: () => json(200, { data: shown() }) })
+  decide(HR)
+  expect(await screen.findByText('سامي فؤاد', { exact: false })).toBeInTheDocument()
+  expect(term('الموظف')).toHaveTextContent('سامي فؤاد (101)')
+  expect(term('نوع الإجازة')).toHaveTextContent('إجازة اعتيادية')
+  expect(term('الفترة')).toHaveTextContent('2026-11-10 – 2026-11-15')
+  expect(term('الأيام المحسوبة')).toHaveTextContent('4')
+  expect(term('ملاحظة')).toHaveTextContent('سفر عائلي')
+  expect(term('مقدّم الطلب')).toHaveTextContent('مدير الموقع')
+  expect(term('الرصيد قبل الموافقة')).toHaveTextContent(/2$/)
+  expect(within(term('الرصيد بعد الموافقة')).getByText('-2')).toHaveClass('text-destructive')
+  expect(screen.queryByText('العارضة المتبقية قبل الموافقة')).toBeNull()
+})
+
+test('a pending request offers HR approve, refuse and escalate', async () => {
+  mockFetch({ [SHOW]: () => json(200, { data: shown() }) })
+  decide(HR)
+  await screen.findByText('مدير الموقع')
+  expect(buttons()).toEqual(['إحالة إلى الرئيس التنفيذي', 'رفض', 'موافقة'])
+})
+
+test('an escalated request offers the CEO approve and refuse, and shows the escalation note', async () => {
+  mockFetch({ [SHOW]: () => json(200, { data: shown({ status: 'escalated', decision_reason: 'الرصيد سالب' }) }) })
+  decide(CEO)
+  await screen.findByText('مدير الموقع')
+  expect(buttons()).toEqual(['رفض', 'موافقة'])
+  expect(term('ملاحظة الإحالة')).toHaveTextContent('الرصيد سالب')
+})
+
+test('HR sees an escalated request read-only', async () => {
+  mockFetch({ [SHOW]: () => json(200, { data: shown({ status: 'escalated' }) }) })
+  decide(HR)
+  await screen.findByText('مدير الموقع')
+  expect(buttons()).toEqual([])
+  expect(term('الحالة')).toHaveTextContent('محال إلى الرئيس التنفيذي')
+})
+
+test('the CEO cannot decide a pending request, nor can a reader without a decide permission', async () => {
+  mockFetch({ [SHOW]: () => json(200, { data: shown() }) })
+  const ceo = decide(CEO)
+  await screen.findByText('مدير الموقع')
+  expect(buttons()).toEqual([])
+  ceo.unmount()
+  decide(['leave.view.own'])
+  await screen.findByText('مدير الموقع')
+  expect(buttons()).toEqual([])
+})
+
+test('a decided request is read-only with its status, decider, date and reason', async () => {
+  mockFetch({ [SHOW]: () => json(200, { data: shown({ status: 'refused', decision_reason: 'ضغط العمل', decided_by: { id: 'u1', name: 'منى' }, decided_at: '2026-11-05T08:00:00Z' }, null) }) })
+  decide(HR)
+  await screen.findByText('مدير الموقع')
+  expect(buttons()).toEqual([])
+  expect(term('الحالة')).toHaveTextContent('مرفوض')
+  expect(term('صاحب القرار')).toHaveTextContent('منى')
+  expect(term('تاريخ القرار')).toHaveTextContent('2026')
+  expect(term('سبب الرفض')).toHaveTextContent('ضغط العمل')
+  expect(screen.queryByText('الرصيد بعد الموافقة')).toBeNull()
+})
+
+test('days beyond the balance show the split and an amber warning', async () => {
+  mockFetch({ [SHOW]: () => json(200, { data: shown({}, { keep: 2, unpaid: 2, remaining_after: 0 }) }) })
+  decide(HR)
+  expect(await screen.findByText('2 إجازة اعتيادية + 2 بدون أجر')).toBeInTheDocument()
+  expect(screen.getByText(/الرصيد لا يكفي/)).toHaveTextContent('يومان بدون أجر')
+})
+
+test('casual leave shows the casual days remaining before', async () => {
+  mockFetch({ [SHOW]: () => json(200, { data: shown({ kind: 'casual' }, { remaining_after: 0 }) }) })
+  decide(HR)
+  await screen.findByText('مدير الموقع')
+  expect(term('العارضة المتبقية قبل الموافقة')).toHaveTextContent(/3$/)
+})
+
+test('blocked dates are listed before the click, and approve stays available', async () => {
+  mockFetch({ [SHOW]: () => json(200, { data: shown({}, { blocked: ['2026-11-11'] }) }) })
+  decide(HR)
+  expect(await screen.findByText('2026-11-11')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'موافقة' })).toBeEnabled()
+})
+
+test('approve posts the version, says so, and closes', async () => {
+  const post = vi.fn(() => json(200, { data: shown({ status: 'approved' }, null) }))
+  const onOpenChange = vi.fn()
+  mockFetch({ [SHOW]: () => json(200, { data: shown() }), 'POST /api/v1/leave/requests/r1/approve': post })
+  decide(HR, onOpenChange)
+  await user.click(await screen.findByRole('button', { name: 'موافقة' }))
+  await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+  expect(bodyOf(post)).toEqual({ version: 3 })
+  expect(toast.success).toHaveBeenCalledWith('تمت الموافقة على الطلب.')
+})
+
+test('an approval refused for blocked days shows the reason and lists the dates', async () => {
+  let blocked: string[] = []
+  mockFetch({
+    [SHOW]: () => json(200, { data: shown({}, { blocked }) }),
+    'POST /api/v1/leave/requests/r1/approve': () => {
+      blocked = ['2026-11-12']
+      return json(409, { error: { code: 'leave_days_blocked', message: 'يوم واحد من أيام الإجازة مسجّل بالفعل في الحضور.' } })
+    },
+  })
+  const onOpenChange = vi.fn()
+  decide(HR, onOpenChange)
+  await user.click(await screen.findByRole('button', { name: 'موافقة' }))
+  expect(await screen.findByText('يوم واحد من أيام الإجازة مسجّل بالفعل في الحضور.')).toBeInTheDocument()
+  expect(await screen.findByText('2026-11-12')).toBeInTheDocument()
+  expect(onOpenChange).not.toHaveBeenCalled()
+})
+
+test('a stale version shows the conflict and reloads the request', async () => {
+  let status = 'pending'
+  mockFetch({
+    [SHOW]: () => json(200, { data: shown({ status, version: status === 'pending' ? 3 : 4 }, status === 'pending' ? {} : null) }),
+    'POST /api/v1/leave/requests/r1/approve': () => {
+      status = 'approved'
+      return json(409, { error: { code: 'concurrency_conflict', message: 'عُدِّل هذا السجل في أثناء ذلك.' } })
+    },
+  })
+  decide(HR)
+  await user.click(await screen.findByRole('button', { name: 'موافقة' }))
+  expect(await screen.findByText('عُدِّل هذا السجل في أثناء ذلك.')).toBeInTheDocument()
+  await waitFor(() => expect(term('الحالة')).toHaveTextContent('موافق عليه'))
+  expect(buttons()).toEqual([])
+})
+
+test('refuse needs a reason, then posts it with the version', async () => {
+  const post = vi.fn(() => json(200, { data: shown({ status: 'refused' }, null) }))
+  const onOpenChange = vi.fn()
+  mockFetch({ [SHOW]: () => json(200, { data: shown() }), 'POST /api/v1/leave/requests/r1/refuse': post })
+  decide(HR, onOpenChange)
+  await user.click(await screen.findByRole('button', { name: 'رفض' }))
+  const ask = await screen.findByRole('dialog', { name: 'رفض طلب الإجازة' })
+  await user.type(within(ask).getByLabelText('سبب الرفض'), '   ')
+  await user.click(within(ask).getByRole('button', { name: 'رفض الطلب' }))
+  expect(await within(ask).findByText('اكتب سبب الرفض.')).toBeInTheDocument()
+  expect(post).not.toHaveBeenCalled()
+  await user.type(within(ask).getByLabelText('سبب الرفض'), 'ضغط العمل')
+  await user.click(within(ask).getByRole('button', { name: 'رفض الطلب' }))
+  await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+  expect(bodyOf(post)).toEqual({ version: 3, reason: 'ضغط العمل' })
+  expect(toast.success).toHaveBeenCalledWith('رُفض الطلب.')
+})
+
+test('escalate sends the note only when one is written', async () => {
+  const post = vi.fn(() => json(200, { data: shown({ status: 'escalated' }) }))
+  mockFetch({ [SHOW]: () => json(200, { data: shown() }), 'POST /api/v1/leave/requests/r1/escalate': post })
+  decide(HR)
+  await user.click(await screen.findByRole('button', { name: 'إحالة إلى الرئيس التنفيذي' }))
+  const ask = await screen.findByRole('dialog', { name: 'إحالة الطلب إلى الرئيس التنفيذي' })
+  await user.click(within(ask).getByRole('button', { name: 'إحالة الطلب' }))
+  await waitFor(() => expect(post).toHaveBeenCalled())
+  expect(bodyOf(post)).toEqual({ version: 3 })
+  expect(toast.success).toHaveBeenCalledWith('أُحيل الطلب إلى الرئيس التنفيذي.')
 })

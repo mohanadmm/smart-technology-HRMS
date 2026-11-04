@@ -15,14 +15,27 @@ type Named = { id: string; code: number; name_ar: string; name_en: string | null
 type Base = { id: string; date: string; ref: string | null; read_at: string | null }
 type MissingDays = Base & { type: 'attendance_missing_days'; data: { date: string; groups: { group: string; period_start: string; period_end: string; missing: number }[] } }
 type LeaveAnniversary = Base & { type: 'leave_anniversary'; data: { employee_id: string; hire_date: string }; employee: Named }
-type LeaveRequested = Base & { type: 'leave_requested'; data: { employee_id: string; request_id: string; kind: string; from_date: string; to_date: string; days: number }; employee: Named }
-type Notification = MissingDays | LeaveAnniversary | LeaveRequested
+type RequestData = { employee_id: string; request_id: string; kind: string; from_date: string; to_date: string; days: number }
+type LeaveRequested = Base & { type: 'leave_requested'; data: RequestData; employee: Named }
+type LeaveEscalated = Base & { type: 'leave_escalated'; data: RequestData; employee: Named }
+type LeaveDecided = Base & { type: 'leave_decided'; data: RequestData & { status: 'approved' | 'refused' }; employee: Named }
+type Notification = MissingDays | LeaveAnniversary | LeaveRequested | LeaveEscalated | LeaveDecided
 
 /** One clickable line: what it says, the muted line under it, and where it opens (null: it only marks the notification read). */
 type Line = { key: string; text: ReactNode; detail: string; to: string | null }
 /** A notification with a `title` is a group of lines under that title; without one it is a single line. */
 type View = { title?: string; lines: Line[] }
 type Ctx = { t: TFunction; lang: string }
+
+/** A line about one leave request: `key` names the text, the detail is its kind and dates, and it opens the request. */
+const requestLine = (key: string, n: LeaveRequested | LeaveEscalated | LeaveDecided, ctx: Ctx): View => ({
+  lines: [{
+    key: n.id,
+    text: named(key, n.employee, ctx),
+    detail: ctx.t('notifications.leaveRequested.detail', { kind: ctx.t(`attendance.leaveName.${n.data.kind}`), from: n.data.from_date, to: n.data.to_date }),
+    to: `/leave?request=${n.data.request_id}`,
+  }],
+})
 
 const named = (key: string, employee: Named, { t, lang }: Ctx) =>
   employee ? <Trans i18nKey={`${key}.line`} components={{ name: <bdi>{localName(employee, lang)}</bdi>, code: <bdi dir="ltr">{employee.code}</bdi> }} /> : t(`${key}.unknown`)
@@ -47,14 +60,9 @@ const VIEWS: { [K in Notification['type']]: (n: Extract<Notification, { type: K 
       to: n.employee && `/employees/${n.employee.id}?tab=leave&year=${n.date.slice(0, 4)}`,
     }],
   }),
-  leave_requested: (n, ctx) => ({
-    lines: [{
-      key: n.id,
-      text: named('notifications.leaveRequested', n.employee, ctx),
-      detail: ctx.t('notifications.leaveRequested.detail', { kind: ctx.t(`attendance.leaveName.${n.data.kind}`), from: n.data.from_date, to: n.data.to_date }),
-      to: `/leave?request=${n.data.request_id}`,
-    }],
-  }),
+  leave_requested: (n, ctx) => requestLine('notifications.leaveRequested', n, ctx),
+  leave_escalated: (n, ctx) => requestLine('notifications.leaveEscalated', n, ctx),
+  leave_decided: (n, ctx) => requestLine(`notifications.leaveDecided.${n.data.status}`, n, ctx),
 }
 const view = (n: Notification, ctx: Ctx) => (VIEWS[n.type] as (n: Notification, ctx: Ctx) => View)(n, ctx)
 

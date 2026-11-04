@@ -166,10 +166,11 @@ test('the status and year filters reach the request', async () => {
   expect(requestsCall().get('status')).toBe('pending')
 })
 
-test('a link to one request opens the Requests tab with that row highlighted', async () => {
+test('a link to one request opens the Requests tab with that row highlighted behind its dialog', async () => {
   mockFetch({ [REQUESTS]: requests([req('r1', 'pending'), req('r2', 'pending', { from_date: '2026-12-01', to_date: '2026-12-01', days: 1 })]) })
   at('/leave?tab=balances&request=r2')
-  expect(await screen.findByRole('tab', { name: 'الطلبات' })).toHaveAttribute('aria-selected', 'true')
+  expect(await screen.findByRole('dialog', { name: 'تفاصيل طلب الإجازة' })).toBeInTheDocument()
+  expect(screen.getByRole('tab', { name: 'الطلبات', hidden: true })).toHaveAttribute('aria-selected', 'true')
   const rows = (await screen.findAllByText('سامي فؤاد')).map((n) => n.closest('tr')!)
   expect(rows[1]).toHaveAttribute('aria-current', 'true')
   expect(rows[0]).not.toHaveAttribute('aria-current')
@@ -208,9 +209,9 @@ test('a link to one request clears the status, year and page the list was left o
   await user.click(screen.getByRole('button', { name: 'التالي' }))
   await waitFor(() => expect(requestsCall().get('page')).toBe('2'))
   await user.click(screen.getByRole('link', { name: 'go' }))
-  await waitFor(() => expect(screen.getByRole('combobox', { name: 'الحالة' })).toHaveValue(''))
-  expect(screen.getByRole('combobox', { name: 'السنة' })).toHaveValue('')
-  expect(await screen.findByRole('button', { name: 'السابق' })).toBeDisabled()
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'الحالة', hidden: true })).toHaveValue(''))
+  expect(screen.getByRole('combobox', { name: 'السنة', hidden: true })).toHaveValue('')
+  expect(await screen.findByRole('button', { name: 'السابق', hidden: true })).toBeDisabled()
 })
 
 test('without leave.request there is no request button', async () => {
@@ -232,4 +233,30 @@ test('no requests shows the empty state', async () => {
   mockFetch({ [REQUESTS]: requests([]) })
   at('/leave')
   expect(await screen.findByText('لا توجد طلبات إجازة.')).toBeInTheDocument()
+})
+
+const shownReq = (id: string, p: object = {}) => ({ ...req(id, 'pending'), decision_reason: null, decided_by: null, decided_at: null, approval: null, ...p })
+
+test('a link to a request not on the loaded page loads it by id and opens it', async () => {
+  mockFetch({ [REQUESTS]: requests([req('r1', 'pending')]), 'GET /api/v1/leave/requests/r9': () => json(200, { data: shownReq('r9', { requested_by: { id: 'u3', name: 'مدير قديم' } }) }) })
+  at('/leave?request=r9')
+  const dialog = await screen.findByRole('dialog', { name: 'تفاصيل طلب الإجازة' })
+  expect(await within(dialog).findByText('مدير قديم')).toBeInTheDocument()
+})
+
+test('a row opens its request, keeps the list filters, and closing keeps the row highlighted', async () => {
+  mockFetch({ [REQUESTS]: requests([req('r1', 'pending'), req('r2', 'pending')]), 'GET /api/v1/leave/requests/r2': () => json(200, { data: shownReq('r2', { requested_by: { id: 'u3', name: 'مدير الموقع' } }) }) })
+  const user = userEvent.setup()
+  at('/leave')
+  await screen.findAllByText('سامي فؤاد')
+  await user.selectOptions(screen.getByRole('combobox', { name: 'الحالة' }), 'pending')
+  await user.click(screen.getAllByRole('link', { name: 'سامي فؤاد' })[1])
+  const dialog = await screen.findByRole('dialog', { name: 'تفاصيل طلب الإجازة' })
+  expect(await within(dialog).findByText('مدير الموقع')).toBeInTheDocument()
+  await user.click(within(dialog).getByRole('button', { name: 'إغلاق' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(screen.getByRole('combobox', { name: 'الحالة' })).toHaveValue('pending')
+  expect(screen.getAllByRole('row')[2]).toHaveAttribute('aria-current', 'true')
+  await user.click(screen.getAllByRole('link', { name: 'سامي فؤاد' })[1])
+  expect(await screen.findByRole('dialog', { name: 'تفاصيل طلب الإجازة' })).toBeInTheDocument()
 })
