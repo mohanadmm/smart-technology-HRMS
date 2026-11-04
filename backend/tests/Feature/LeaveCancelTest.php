@@ -7,6 +7,7 @@ use App\Modules\Employees\Application\EmployeeService;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
 use App\Modules\Leave\Application\LeaveBalances;
 use App\Modules\Notifications\Infrastructure\Eloquent\Notification;
+use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -61,10 +62,10 @@ class LeaveCancelTest extends TestCase
     }
 
     /** @param  array<string, mixed>  $values */
-    private function resave(string $employeeId, string $date, array $values): void
+    private function resave(string $employeeId, string $date, array $values, string $source = 'entered'): void
     {
         $version = DB::table('attendance_days')->where(['employee_id' => $employeeId, 'date' => $date])->whereNull('deleted_at')->value('version');
-        app(AttendanceDays::class)->save($employeeId, $date, ['version' => $version, ...$values]);
+        app(AttendanceDays::class)->save($employeeId, $date, ['version' => $version, ...$values], null, $source);
     }
 
     /** @return array<string, string> date => "leave_code or work/source" of the employee's live days */
@@ -110,7 +111,7 @@ class LeaveCancelTest extends TestCase
 
         $this->act($id, 'cancel')->assertStatus(409)->assertJsonPath('error.code', 'leave_cancel_blocked')
             ->assertJsonPath('error.dates', ['2026-10-12', '2026-10-14'])
-            ->assertJsonPath('error.message', 'Leave days to clear hold a note or an advance; change them in attendance first: 2.');
+            ->assertJsonPath('error.message', 'Leave days holding a note or an advance: 2. Change them in attendance first.');
         $this->withHeader('Accept-Language', 'ar')->act($id, 'cancel')->assertStatus(409)
             ->assertJsonPath('error.message', 'عدد أيام الإجازة التي تحمل ملاحظة أو سلفة: 2. عدّلها في الحضور أولًا.');
         $this->assertSame(['2026-10-12' => 'annual/leave', '2026-10-13' => 'annual/leave', '2026-10-14' => 'annual/leave'], $this->stored($e));
@@ -249,5 +250,99 @@ class LeaveCancelTest extends TestCase
         $audited = DB::table('audit_log')->where(['entity_type' => 'leave_requests', 'event' => 'UPDATED'])->whereIn('entity_id', [$pending, $escalated])->pluck('new_values')
             ->map(fn ($v) => json_decode((string) $v, true)['status'] ?? null)->filter(fn ($s) => $s === 'cancelled')->count();
         $this->assertSame(2, $audited);
+    }
+
+    public function test_a_locked_period_refuses_the_cancel_even_when_its_dates_hold_nothing_to_clear(): void
+    {
+        $e = $this->employee('engineer', '2026-09-26');
+        $id = $this->submit($e, '2026-10-24', '2026-10-27');   // 10-26 starts the next, open period
+        $this->act($id, 'approve')->assertOk();
+        $this->cairo('2026-10-30 12:00');
+        $this->resave($e, '2026-10-24', ['site_id' => $this->workSite()]);   // HR moved them to a work site before the lock
+        $this->resave($e, '2026-10-25', ['site_id' => $this->workSite('Site-2')]);
+        $this->leaveTypes();
+        $this->postJson('/api/v1/attendance/locks', ['group' => 'engineer', 'period_start' => '2026-09-26', 'confirm_missing' => true])->assertCreated();
+
+        $this->act($id, 'cancel')->assertStatus(423)->assertJsonPath('error.code', 'period_locked');
+        $this->assertCount(2, array_filter($this->stored($e), fn (string $day) => in_array($day, ['annual/leave', 'unpaid/leave'], true)));
+        $this->assertSame('approved', $this->statusOf($id));
+    }
+
+    public function test_the_days_past_a_termination_set_after_approval_are_cleared_too(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-10-12', '2026-10-15');
+        $this->act($id, 'approve')->assertOk();
+        $this->patchJson("/api/v1/employees/{$e}", ['termination_date' => '2026-10-13'])->assertOk();
+
+        $this->act($id, 'cancel')->assertOk();
+        $this->assertSame([], $this->stored($e));
+    }
+
+    public function test_an_approved_request_of_a_deleted_employee_still_cancels_and_clears_its_days(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-10-12', '2026-10-13');
+        $this->act($id, 'approve')->assertOk();
+        $this->deleteJson("/api/v1/employees/{$e}")->assertSuccessful();
+
+        $this->act($id, 'cancel')->assertOk()->assertJsonPath('data.status', 'cancelled');
+        $this->assertSame([], $this->stored($e));
+    }
+
+    public function test_days_of_a_leave_type_deactivated_or_deleted_since_approval_are_still_cleared(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $annual = $this->submit($e, '2026-10-12', '2026-10-13');
+        $casual = $this->submit($e, '2026-10-14', '2026-10-15', 'casual');
+        $this->act($annual, 'approve')->assertOk();
+        $this->act($casual, 'approve')->assertOk();
+        $types = $this->leaveTypes();
+        Site::findOrFail($types['annual'])->update(['active' => false]);
+        Site::findOrFail($types['casual'])->delete();
+
+        $this->act($annual, 'cancel')->assertOk();
+        $this->act($casual, 'cancel')->assertOk();
+        $this->assertSame([], $this->stored($e));
+    }
+
+    public function test_a_leave_day_of_another_leave_type_is_not_cleared(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-10-12', '2026-10-13');
+        $this->act($id, 'approve')->assertOk();
+        $this->resave($e, '2026-10-12', ['site_id' => $this->leaveTypes()['sick']], 'leave');
+
+        $this->act($id, 'cancel')->assertOk();
+        $this->assertSame(['2026-10-12' => 'sick/leave'], $this->stored($e));
+    }
+
+    public function test_a_stale_version_is_a_conflict_before_the_permission_check(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $manager = $this->makeUser('manager');
+        $this->assign($e, $manager);
+        $this->actingAs($manager, 'api');
+        $id = $this->submit($e, '2026-11-02', '2026-11-03');
+        $this->actingAs($this->hr[0], 'api');
+        $this->act($id, 'approve')->assertOk();
+
+        $this->actingAs($manager, 'api');
+        $this->act($id, 'cancel', ['version' => 1])->assertStatus(409)->assertJsonPath('error.code', 'concurrency_conflict');
+        $this->act($id, 'cancel')->assertForbidden();
+    }
+
+    public function test_the_previous_decider_hears_of_the_cancel(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-11-02', '2026-11-03');
+        $this->act($id, 'escalate')->assertOk();
+        $this->actingAs($this->ceo, 'api');
+        $this->act($id, 'approve')->assertOk();
+        Notification::query()->delete();
+
+        $this->actingAs($this->hr[1], 'api');
+        $this->act($id, 'cancel')->assertOk();
+        $this->assertEqualsCanonicalizing([$this->hr[0]->id, $this->ceo->id], Notification::where('type', 'leave_cancelled')->pluck('user_id')->all());
     }
 }

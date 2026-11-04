@@ -246,10 +246,9 @@ final class EmployeeService
         return (int) DB::scalar('SELECT greatest(last_issued, (SELECT coalesce(max(code), 0) FROM employees)) FROM employee_code_counter');
     }
 
-    /** In a transaction: listeners on the delete (the Leave module's, AppServiceProvider) write in it. */
     public function delete(string $id): void
     {
-        DB::transaction(fn () => Employee::findOrFail($id)->delete());
+        Employee::findOrFail($id)->delete();
     }
 
     /**

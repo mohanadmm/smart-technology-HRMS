@@ -49,9 +49,9 @@ final class EffectiveDays
         }
         $holidays = $locked ? [] : array_flip(OfficialHoliday::whereBetween('date', [$p->start, $p->end])->pluck('date')->all());
         // A stored day may point at a since-deactivated or deleted leave type; a derived day only at the active one.
-        $leaveSites = Site::withTrashed()->where('kind', 'leave')->get(['id', 'leave_code', 'active', 'deleted_at']);
-        $codeOf = $leaveSites->pluck('leave_code', 'id')->all();
-        $activeSite = $leaveSites->filter(fn (Site $s) => $s->active && ! $s->trashed())->pluck('id', 'leave_code')->all();
+        $leaveTypes = Site::withTrashed()->where('kind', 'leave')->get(['id', 'leave_code', 'active', 'deleted_at']);
+        $codeOf = $leaveTypes->pluck('leave_code', 'id')->all();
+        $activeSite = $leaveTypes->filter(fn (Site $s) => $s->active && ! $s->trashed())->pluck('id', 'leave_code')->all();
         $settings = $this->rules->all();   // once per period: it is a cache round trip, and this loop runs per cell
         $weeklyOff = $this->weeklyOff($p->group, $settings);
         $today = self::today();

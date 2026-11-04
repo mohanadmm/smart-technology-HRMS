@@ -167,7 +167,7 @@ class ImportMasterDataTest extends TestCase
     #[Test]
     public function repeated_names_and_dates_are_row_errors(): void
     {
-        $this->seed(SitesSeeder::class);   // brings the leave site «غ»
+        $this->seed(SitesSeeder::class);   // brings the leave type «غ»
         $before = $this->counts();
         $sheets = $this->valid();
         $sheets['residences'][] = ['name_ar' => 'سكن  أ'];                                      // row 4, repeats row 2

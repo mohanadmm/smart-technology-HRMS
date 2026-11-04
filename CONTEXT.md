@@ -48,7 +48,7 @@ A non-work value recorded instead of a site for a day: Friday, Saturday, officia
 _Avoid_: leave site
 
 **Leave request** (طلب إجازة):
-A request for annual, casual, sick or unpaid leave over a date range, filed by a site manager or HR and approved, refused or escalated by HR; approval writes its days into attendance.
+A request for annual, casual, sick or unpaid leave over a date range, filed by a site manager or HR, approved, refused or escalated to the CEO by HR, and cancellable; approval writes its days into attendance and cancelling an approved one clears them.
 
 **Leave balance** (رصيد الإجازات):
 A monthly employee's annual entitlement for the year minus the annual and casual days stored in attendance; it may go negative.
