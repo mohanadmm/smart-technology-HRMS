@@ -37,7 +37,7 @@ export function LeavePage() {
     <div className="space-y-6">
       <PageHeader title={t('leave.page')} description={t('leave.period', { year })} />
       <Card className="overflow-hidden">
-        <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center">
+        <div className="flex flex-wrap items-center gap-3 border-b p-4">
           <SearchInput value={q} onChange={filter(setQ)} placeholder={t('leave.search')} className="sm:w-full sm:max-w-md" />
           <FilterSelect value={type} onChange={filter(setType)} label={t('employee.type')} allLabel={t('employee.allTypes')} options={MONTHLY_TYPES.map((v) => [v, t(`enum.type.${v}`)])} />
           <SegmentedControl
@@ -64,14 +64,14 @@ export function LeavePage() {
           page={{ page, pageSize: PAGE, total, onPageChange: setPage }}
           title={{ header: t('employee.employee'), cell: (r) => localName(r, i18n.language) }}
           fields={[
-            { header: t('employee.code'), tableFrom: 'lg', cell: (r) => <bdi dir="ltr" className="font-mono text-xs text-muted-foreground">{r.code ?? '—'}</bdi> },
-            { header: t('employee.type'), tableFrom: 'md', cell: (r) => <Badge variant="info">{t(`enum.type.${r.type}`)}</Badge> },
-            { header: t('leave.entitlement'), numeric: true, cell: (r) => r.entitlement ?? '—' },
+            { header: t('employee.code'), tableFrom: 'xl', cell: (r) => <bdi dir="ltr" className="font-mono text-xs text-muted-foreground">{r.code ?? '—'}</bdi> },
+            { header: t('leave.entitlementShort'), numeric: true, cell: (r) => r.entitlement ?? '—' },
             { header: t('leave.used'), numeric: true, cell: (r) => r.used },
             { header: t('leave.casualUsed'), numeric: true, cell: (r) => (r.casual_cap === null ? r.casual_used : <span className={cn(r.casual_used > r.casual_cap && 'text-destructive')}>{t('leave.ofCap', { used: r.casual_used, cap: r.casual_cap })}</span>) },
             { header: t('leave.sickShort'), numeric: true, cell: (r) => r.sick_days },
             { header: t('leave.unpaidShort'), numeric: true, cell: (r) => r.unpaid_days },
           ]}
+          status={{ header: t('employee.type'), tableFrom: 'xl', cell: (r) => <Badge variant="info">{t(`enum.type.${r.type}`)}</Badge> }}
           // ltr: in Arabic text a leading minus would otherwise land after the digits
           hero={{ header: t('leave.remaining'), cell: (r) => <bdi dir="ltr" className={cn(r.remaining < 0 && 'text-destructive')}>{r.remaining ?? '—'}</bdi> }}
         />

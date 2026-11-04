@@ -24,7 +24,7 @@ export type DataColumns<T> = {
   /** Label/value lines on the card; the middle columns of the table. */
   fields?: Field<T>[]
   /** One pill: the last data column in the table, at the top of the card under the heading. */
-  status?: { header: string; cell: (row: T) => ReactNode }
+  status?: { header: string; cell: (row: T) => ReactNode; tableFrom?: Field<T>['tableFrom'] }
   /** The trailing cell (sr-only header `common.actions`); top-end of the card. */
   actions?: (row: T) => ReactNode
   /** The figure the row is about: the last data column under a visible end-aligned header; top-end of the card, labelled. Takes the card spot of `actions`, so pass one or the other. */
@@ -80,7 +80,7 @@ export function DataList<T>({ label, rows, rowKey, title, fields = [], status, a
                   {f.header}
                 </TableHead>
               ))}
-              {status && <TableHead role="columnheader">{status.header}</TableHead>}
+              {status && <TableHead role="columnheader" className={cn(status.tableFrom && FROM[status.tableFrom])}>{status.header}</TableHead>}
               {hero && <TableHead role="columnheader" className="text-end text-foreground">{hero.header}</TableHead>}
               {actions && (
                 <TableHead role="columnheader">
@@ -92,7 +92,7 @@ export function DataList<T>({ label, rows, rowKey, title, fields = [], status, a
           <TableBody role="rowgroup" className="max-sm:block">
             {rows.map((r) => (
               <TableRow role="row" key={rowKey(r)} className={cn(CARD, to && 'relative')}>
-                <td role="cell" className={cn(CELL, 'max-sm:col-start-1 max-sm:row-start-1 max-sm:font-medium')}>
+                <td role="cell" className={cn(CELL, 'sm:whitespace-normal max-sm:col-start-1 max-sm:row-start-1 max-sm:font-medium')}>
                   {to ? (
                     <Link to={to(r)} className="outline-none after:absolute after:inset-0 hover:underline focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring">
                       {title.cell(r)}
@@ -119,7 +119,7 @@ export function DataList<T>({ label, rows, rowKey, title, fields = [], status, a
                   </td>
                 ))}
                 {status && (
-                  <td role="cell" className={cn(CELL, 'max-sm:col-span-2 max-sm:row-start-2')}>
+                  <td role="cell" className={cn(CELL, 'max-sm:col-span-2 max-sm:row-start-2', status.tableFrom && FROM[status.tableFrom])}>
                     {status.cell(r)}
                   </td>
                 )}
