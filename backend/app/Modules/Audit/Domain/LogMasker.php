@@ -20,10 +20,13 @@ final class LogMasker
         'insurance_no', 'bank_account', 'phone'];
 
     /** Western, Arabic-Indic and Persian digits, mixed in one run too: HR types on Arabic keyboards. `/u` is safe after mb_scrub. */
-    private const DIGIT_RUN = '/[0-9٠-٩۰-۹]{7,}/u';
+    private const DIGIT = '[0-9٠-٩۰-۹]';
 
-    /** DIGIT_RUN for text, with a whole UUID (not glued to more hex) matched first so text() can hand it back unchanged. */
-    private const UUID_OR_DIGIT_RUN = '/(?<![0-9a-f])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f])|[0-9٠-٩۰-۹]{7,}/iu';
+    private const DIGIT_RUN = '/'.self::DIGIT.'{7,}/u';
+
+    /** DIGIT_RUN for text, with a whole UUID (not glued to more hex or any digit) matched first so text() can hand it back unchanged. */
+    private const UUID_OR_DIGIT_RUN = '/(?<![a-f]|'.self::DIGIT.')[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![a-f]|'
+        .self::DIGIT.')|'.self::DIGIT.'{7,}/iu';
 
     private const MAX_BYTES = 65536;
 

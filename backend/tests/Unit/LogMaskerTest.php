@@ -65,6 +65,10 @@ class LogMaskerTest extends TestCase
         // A digit run glued to a UUID is not a UUID: it is masked, not passed through.
         $this->assertSame('[masked]', LogMasker::text('123456789012345678'));
         $this->assertStringNotContainsString('1234567890', LogMasker::text('ad93e478-b02c-4113-9017-123456789012345678'));
+        // Arabic-Indic digits glued on either side make it no UUID either.
+        $this->assertStringNotContainsString('123456789', LogMasker::text('ad93e478-b02c-4113-9017-2fc123456789٠١٢٣٤'));
+        $this->assertStringNotContainsString('٠١٢٣٤', LogMasker::text('ad93e478-b02c-4113-9017-2fc123456789٠١٢٣٤'));
+        $this->assertStringNotContainsString('1234567', LogMasker::text('٠١٢٣٤٥ad93e478-b02c-4113-9017-2fc1234567fa'));
     }
 
     public function test_arabic_indic_digit_runs_are_masked(): void
