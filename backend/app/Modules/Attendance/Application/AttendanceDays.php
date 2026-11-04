@@ -20,6 +20,7 @@ use App\Modules\Sites\Domain\LeaveCode;
 use App\Modules\Sites\Domain\SiteKind;
 use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use App\Support\Database\ConcurrencyConflict;
+use DateTimeImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -194,6 +195,44 @@ final class AttendanceDays
         } catch (UniqueConstraintViolationException) {
             throw new ConcurrencyConflict;
         }
+    }
+
+    /**
+     * The leave workflow's cancel (leave spec, Workflow Cancel); call inside the caller's transaction. Soft-deletes, as clear() does (version+1,
+     * audited), every live day from $from to $to that still holds one of $leaveTypeIds with source `leave`, unless one of them holds a note or
+     * an advance (P28): then nothing is cleared and those dates are returned, for the caller to refuse. A date inside employment needs an open
+     * period even with nothing to clear; a date outside it (past a termination set since) has no period and is cleared. The employee may be deleted.
+     *
+     * @param  list<string>  $leaveTypeIds
+     * @return list<string> the dates blocked by a note or an advance, in date order
+     */
+    public function clearLeaveDays(string $employeeId, string $from, string $to, array $leaveTypeIds): array
+    {
+        $employee = $this->roster->find($employeeId, withTrashed: true) ?? throw new ModelNotFoundException;
+        $periods = [];
+        for ($d = new DateTimeImmutable($from); $d->format('Y-m-d') <= $to; $d = $d->modify('+1 day')) {
+            $type = Employment::typeOn($employee, $d->format('Y-m-d'));
+            if ($type !== null) {
+                $period = Period::containing($type, $d->format('Y-m-d'));
+                $periods[$period->group->value.$period->start] = $period;
+            }
+        }
+        foreach ($periods as $period) {
+            PeriodGuard::assertOpen($period);
+        }
+        $rows = AttendanceDay::where(['employee_id' => $employeeId, 'source' => 'leave'])->whereBetween('date', [$from, $to])
+            ->whereIn('site_id', $leaveTypeIds)->orderBy('date')->lockForUpdate()->get();
+        $blocked = array_values($rows->filter(fn (AttendanceDay $r) => $r->getAttribute('note') !== null || $r->getAttribute('advance_amount') !== null)
+            ->map(fn (AttendanceDay $r) => substr((string) $r->date, 0, 10))->all());
+        if ($blocked === []) {
+            foreach ($rows as $row) {
+                $row->version = $row->version + 1;
+                $row->save();
+                $row->delete();
+            }
+        }
+
+        return $blocked;
     }
 
     /**

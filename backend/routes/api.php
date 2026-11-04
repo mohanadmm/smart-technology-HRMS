@@ -164,6 +164,8 @@ Route::middleware('auth')->group(function (): void {
         Route::get('preview', 'preview')->middleware('permission:leave.request');
         Route::post('/', 'store')->middleware('permission:leave.request');
         Route::get('{id}', 'show')->middleware('permission:leave.view')->whereUuid('id');
+        // The requester or leave.request.all while undecided, leave.decide.all once approved; LeaveRequests checks it.
+        Route::post('{id}/cancel', 'cancel')->middleware('permission:leave.view')->whereUuid('id');
         // Deciding also needs the permission the request's status asks for (pending: leave.decide, escalated: leave.decide_escalated); LeaveRequests checks it.
         Route::post('{id}/{action}', 'decide')->middleware('permission:leave.view')->whereUuid('id')->whereIn('action', ['approve', 'refuse', 'escalate']);
     });

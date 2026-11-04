@@ -177,6 +177,7 @@ Spec: `docs/superpowers/specs/2026-11-03-leave-design.md`. Attendance is the led
 - A request's days = its dates, minus days not employed as a monthly type, the type's weekly off and official holidays (§2a). Those are not counted and not written.
 - On approval the days are counted again (a holiday added since the request drops out). The earliest dates keep the kind; annual or casual days beyond the balance (for casual, beyond the smaller of the two balances) are written as unpaid leave (بدون أجر). ⚠️ (L2, client question 9)
 - The split (and the balance the request preview and the decide dialog show) reads the balance without the request's own dates: a leave day already stored on one of them is replaced on approval, so it is not counted twice. A day HR stored there with the same leave type keeps HR's source.
+- Cancelling an approved request clears the days it wrote that still hold its leave type (or unpaid) with source `leave`, so the balance goes back up by those days. A day changed since (moved to a site, or HR's own day of that type) stays and keeps counting. A day to clear that holds a note or an advance refuses the cancel and is listed; HR changes it first, so no advance is lost. A date in a locked period refuses the whole cancel.
 
 **Leave pay (Release 2 payroll)**
 - Annual and casual leave are paid in full for monthly staff, like the weekly off.

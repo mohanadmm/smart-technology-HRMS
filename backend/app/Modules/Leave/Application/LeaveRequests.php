@@ -180,6 +180,73 @@ final class LeaveRequests
     }
 
     /**
+     * Withdraws a request. Pending or escalated: its requester or a holder of leave.request.all; approved: a holder of leave.decide.all, and
+     * every day it wrote that still holds its kind's or the unpaid leave type with source `leave` is cleared. A locked period, or a day to clear
+     * that holds a note or an advance (all such dates listed), refuses the whole cancel. Own scope: out of reach today is a 404, as show. A stale
+     * version is a conflict before the permission check: the caller can read the request, and its change since is the news.
+     *
+     * @return array<string, mixed> the show shape
+     */
+    public function cancel(string $id, int $version, ?string $reason, Authenticatable $by, ?string $ownerId): array
+    {
+        $read = LeaveRequest::whereKey($id)->first(['employee_id', 'status', 'requested_by', 'version']) ?? throw new ModelNotFoundException;
+        if ($ownerId !== null && ! EmployeeReach::reaches((string) $read->employee_id, $ownerId, now('Africa/Cairo')->toDateString())) {
+            throw new ModelNotFoundException;
+        }
+        if ($read->version !== $version) {
+            throw new ConcurrencyConflict;
+        }
+        $status = LeaveStatus::from((string) $read->status);
+        $byId = (string) $by->getAuthIdentifier();
+        $allowed = match ($status) {
+            LeaveStatus::Pending, LeaveStatus::Escalated => $read->requested_by === $byId || $this->authorize->decide($by, 'leave.request')->allows(Scope::All),
+            LeaveStatus::Approved => $this->authorize->decide($by, 'leave.decide')->allows(Scope::All),
+            LeaveStatus::Refused, LeaveStatus::Cancelled => throw new ConcurrencyConflict,
+        };
+        if (! $allowed) {
+            throw AuthorizationRefused::of($status === LeaveStatus::Approved ? 'leave.decide' : 'leave.request');
+        }
+
+        $employeeId = (string) $read->employee_id;
+
+        return $this->detail(DB::transaction(function () use ($id, $version, $reason, $byId, $status, $employeeId): LeaveRequest {
+            LeaveRequestLock::forEmployee($employeeId);
+            $request = LeaveRequest::whereKey($id)->lockForUpdate()->firstOrFail();
+            if ($request->status !== $status->value || $request->version !== $version) {
+                throw new ConcurrencyConflict;
+            }
+            if ($status === LeaveStatus::Approved) {
+                // Approval wrote the kind's or the unpaid leave type and did not store which; a type deleted or deactivated since still counts.
+                $types = array_values(Site::withTrashed()->where('kind', SiteKind::Leave->value)->whereIn('leave_code', [(string) $request->kind, LeaveKind::Unpaid->value])
+                    ->pluck('id')->map(fn ($id) => (string) $id)->all());
+                $blocked = $this->attendance->clearLeaveDays($employeeId, (string) $request->from_date, (string) $request->to_date, $types);
+                if ($blocked !== []) {
+                    throw new LeaveRefused(LeaveRefusal::CancelBlocked, ['count' => (string) count($blocked)], $blocked);
+                }
+            }
+            $decider = $request->decided_by;
+            $request->fill(['status' => LeaveStatus::Cancelled->value, 'decided_by' => $byId, 'decided_at' => now(), 'decision_reason' => $reason, 'version' => $request->version + 1])->save();
+            $recipients = [(string) $request->requested_by, ...($decider === null ? [] : [(string) $decider]), ...$this->holders->userIds('leave.decide.all'), ...($status === LeaveStatus::Escalated ? $this->holders->userIds('leave.decide_escalated.all') : [])];
+            foreach (array_diff(array_unique($recipients), [$byId]) as $userId) {
+                $this->notifier->notifyOnce($userId, 'leave_cancelled', now('Africa/Cairo')->toDateString(), $this->notice($request), (string) $request->id);
+            }
+
+            return $request;
+        }));
+    }
+
+    /**
+     * Deleting an employee withdraws their pending and escalated requests (Slice 6 D4), audited, with no notification; decided ones stay.
+     * Call inside the delete's transaction.
+     */
+    public function cancelOpenOf(string $employeeId, ?string $byId): void
+    {
+        LeaveRequestLock::forEmployee($employeeId);
+        LeaveRequest::where('employee_id', $employeeId)->whereIn('status', [LeaveStatus::Pending->value, LeaveStatus::Escalated->value])->lockForUpdate()->get()
+            ->each(fn (LeaveRequest $r) => $r->fill(['status' => LeaveStatus::Cancelled->value, 'decided_by' => $byId, 'decided_at' => now(), 'decision_reason' => null, 'version' => $r->version + 1])->save());
+    }
+
+    /**
      * The request locked for a decision. Permission follows its status: pending (or escalated, to escalate it) needs leave.decide, escalated
      * needs leave.decide_escalated, and a decided request needs either for every action, so only a decider learns it is a conflict. Both are `.all` only.
      * The permission is checked on the unlocked status, so a caller without it never waits on or takes the locks; a status changed

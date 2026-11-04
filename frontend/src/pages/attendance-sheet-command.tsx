@@ -29,11 +29,11 @@ function BatchPreview({ batch, count }: { batch: Batch; count: number }) {
  * Bulk paste (an Excel column, a WhatsApp list): newlines become spaces, then `parseBatch`. Only an ID
  * batch is written; a name never is. `onApply` is the sheet's `apply()` and resolves true once the rows are written.
  */
-export function PasteDialog({ open, onOpenChange, rows, leaveSite, onApply }: {
+export function PasteDialog({ open, onOpenChange, rows, leaveTypeId, onApply }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   rows: SheetRow[]
-  leaveSite: (code: string) => string | undefined
+  leaveTypeId: (code: string) => string | undefined
   onApply: (action: SheetAction, rows: SheetRow[], label: string) => Promise<boolean>
 }) {
   const { t, i18n } = useTranslation()
@@ -76,7 +76,7 @@ export function PasteDialog({ open, onOpenChange, rows, leaveSite, onApply }: {
         <DialogFooter>
           {QUICK.map(([action, label, Icon, tone]) => (
             // a ghost has no border, so the tone's hover:border-* is dropped
-            <Button key={label} type="button" variant={action.kind === 'present' ? 'default' : 'ghost'} className={cn(action.kind !== 'present' && tone.replace(/ hover:border-\S+/, ''))} disabled={!ids?.matches.length || (action.kind === 'leave' && !leaveSite(action.code))}
+            <Button key={label} type="button" variant={action.kind === 'present' ? 'default' : 'ghost'} className={cn(action.kind !== 'present' && tone.replace(/ hover:border-\S+/, ''))} disabled={!ids?.matches.length || (action.kind === 'leave' && !leaveTypeId(action.code))}
               onClick={() => void run(action, t(label))}>
               <Icon aria-hidden />
               {t(label)}

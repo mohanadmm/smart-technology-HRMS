@@ -157,7 +157,7 @@ test('nothing is previewed until employee, from and to are all set', async () =>
 const SHOW = 'GET /api/v1/leave/requests/r1'
 const shown = (p: object = {}, approval: object | null = {}) => ({
   id: 'r1', employee: { id: 'e1', code: 101, name_ar: 'سامي فؤاد', name_en: 'Sami Fouad' }, kind: 'annual', from_date: '2026-11-10', to_date: '2026-11-15', days: 4,
-  status: 'pending', note: 'سفر عائلي', requested_by: { id: 'u2', name: 'مدير الموقع' }, created_at: '2026-11-04T08:00:00Z', version: 3,
+  status: 'pending', note: 'سفر عائلي', requested_by: { id: 'u2', name: 'كريم حسن' }, created_at: '2026-11-04T08:00:00Z', version: 3,
   decision_reason: null, decided_by: null, decided_at: null,
   approval: approval && { dates: ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-15'], days: 4, balance, keep: 4, unpaid: 0, remaining_after: -2, blocked: [], ...approval },
   ...p,
@@ -178,31 +178,38 @@ test('the decide dialog shows the request, the requester, and the balance before
   expect(term('الفترة')).toHaveTextContent('2026-11-10 – 2026-11-15')
   expect(term('الأيام المحسوبة')).toHaveTextContent('4')
   expect(term('ملاحظة')).toHaveTextContent('سفر عائلي')
-  expect(term('مقدّم الطلب')).toHaveTextContent('مدير الموقع')
+  expect(term('مقدّم الطلب')).toHaveTextContent('كريم حسن')
   expect(term('الرصيد قبل الموافقة')).toHaveTextContent(/2$/)
   expect(within(term('الرصيد بعد الموافقة')).getByText('-2')).toHaveClass('text-destructive')
   expect(screen.queryByText('العارضة المتبقية قبل الموافقة')).toBeNull()
 })
 
-test('a pending request offers HR approve, refuse and escalate', async () => {
+test('a reader who decides but does not file for anyone is offered escalate, refuse and approve on a pending request', async () => {
   mockFetch({ [SHOW]: () => json(200, { data: shown() }) })
   decide(HR)
-  await screen.findByText('مدير الموقع')
+  await screen.findByText('كريم حسن')
   expect(buttons()).toEqual(['إحالة إلى الرئيس التنفيذي', 'رفض', 'موافقة'])
+})
+
+test('the real HR role sees cancel, escalate, refuse and approve on a pending request, in that order', async () => {
+  mockFetch({ [SHOW]: () => json(200, { data: shown() }) })
+  decide(['leave.view.all', 'leave.request.all', 'leave.decide.all'])
+  await screen.findByText('كريم حسن')
+  expect(buttons()).toEqual(['إلغاء الطلب', 'إحالة إلى الرئيس التنفيذي', 'رفض', 'موافقة'])
 })
 
 test('an escalated request offers the CEO approve and refuse, and shows the escalation note', async () => {
   mockFetch({ [SHOW]: () => json(200, { data: shown({ status: 'escalated', decision_reason: 'الرصيد سالب' }) }) })
   decide(CEO)
-  await screen.findByText('مدير الموقع')
+  await screen.findByText('كريم حسن')
   expect(buttons()).toEqual(['رفض', 'موافقة'])
   expect(term('ملاحظة الإحالة')).toHaveTextContent('الرصيد سالب')
 })
 
-test('HR sees an escalated request read-only', async () => {
+test('a decider who does not file for anyone sees an escalated request read-only', async () => {
   mockFetch({ [SHOW]: () => json(200, { data: shown({ status: 'escalated' }) }) })
   decide(HR)
-  await screen.findByText('مدير الموقع')
+  await screen.findByText('كريم حسن')
   expect(buttons()).toEqual([])
   expect(term('الحالة')).toHaveTextContent('محال إلى الرئيس التنفيذي')
 })
@@ -210,18 +217,18 @@ test('HR sees an escalated request read-only', async () => {
 test('the CEO cannot decide a pending request, nor can a reader without a decide permission', async () => {
   mockFetch({ [SHOW]: () => json(200, { data: shown() }) })
   const ceo = decide(CEO)
-  await screen.findByText('مدير الموقع')
+  await screen.findByText('كريم حسن')
   expect(buttons()).toEqual([])
   ceo.unmount()
   decide(['leave.view.own'])
-  await screen.findByText('مدير الموقع')
+  await screen.findByText('كريم حسن')
   expect(buttons()).toEqual([])
 })
 
 test('a decided request is read-only with its status, decider, date and reason', async () => {
   mockFetch({ [SHOW]: () => json(200, { data: shown({ status: 'refused', decision_reason: 'ضغط العمل', decided_by: { id: 'u1', name: 'منى' }, decided_at: '2026-11-05T08:00:00Z' }, null) }) })
   decide(HR)
-  await screen.findByText('مدير الموقع')
+  await screen.findByText('كريم حسن')
   expect(buttons()).toEqual([])
   expect(term('الحالة')).toHaveTextContent('مرفوض')
   expect(term('صاحب القرار')).toHaveTextContent('منى')
@@ -240,7 +247,7 @@ test('days beyond the balance show the split and an amber warning', async () => 
 test('casual leave shows the casual days remaining before', async () => {
   mockFetch({ [SHOW]: () => json(200, { data: shown({ kind: 'casual' }, { remaining_after: 0 }) }) })
   decide(HR)
-  await screen.findByText('مدير الموقع')
+  await screen.findByText('كريم حسن')
   expect(term('العارضة المتبقية قبل الموافقة')).toHaveTextContent(/3$/)
 })
 
@@ -252,7 +259,7 @@ test('blocked dates are listed before the click, and approve stays available', a
 })
 
 test('approve posts the version, says so, and closes', async () => {
-  const post = vi.fn(() => json(200, { data: shown({ status: 'approved' }, null) }))
+  const post = vi.fn(() => json(200, { data: shown({ status: 'approved', requested_by: theirs }, null) }))
   const onOpenChange = vi.fn()
   mockFetch({ [SHOW]: () => json(200, { data: shown() }), 'POST /api/v1/leave/requests/r1/approve': post })
   decide(HR, onOpenChange)
@@ -292,7 +299,8 @@ test('a stale version shows the conflict and reloads the request', async () => {
   await user.click(await screen.findByRole('button', { name: 'موافقة' }))
   expect(await screen.findByText('عُدِّل هذا السجل في أثناء ذلك.')).toBeInTheDocument()
   await waitFor(() => expect(term('الحالة')).toHaveTextContent('موافق عليه'))
-  expect(buttons()).toEqual([])
+  // decided now: only HR's cancel of an approved request is left
+  expect(buttons()).toEqual(['إلغاء الطلب'])
 })
 
 test('refuse needs a reason, then posts it with the version', async () => {
@@ -363,7 +371,7 @@ test('a refusal the server rejects closes the reason form and shows the conflict
 
 test('the request dialog does not close while a decision is in flight', async () => {
   let answer!: () => void
-  const post = vi.fn(() => new Promise<Response>((r) => (answer = () => r(json(200, { data: shown({ status: 'approved' }, null) })))))
+  const post = vi.fn(() => new Promise<Response>((r) => (answer = () => r(json(200, { data: shown({ status: 'approved', requested_by: theirs }, null) })))))
   const onOpenChange = vi.fn()
   mockFetch({ [SHOW]: () => json(200, { data: shown() }), 'POST /api/v1/leave/requests/r1/approve': post as never })
   decide(HR, onOpenChange)
@@ -375,4 +383,107 @@ test('the request dialog does not close while a decision is in flight', async ()
   answer()
   await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
   expect(toast.success).toHaveBeenCalledWith('تمت الموافقة على الطلب.')
+})
+
+const LEAD = ['leave.view.own', 'leave.request.own']
+const mine = { id: 'u1', name: 'منى' }
+const theirs = { id: 'u2', name: 'كريم حسن' }
+const cancelButton = () => within(screen.getByRole('dialog')).queryByRole('button', { name: 'إلغاء الطلب' })
+
+test.each([
+  ['a site manager, on their own pending request', LEAD, { status: 'pending', requested_by: mine }, true],
+  ['a site manager, on their own escalated request', LEAD, { status: 'escalated', requested_by: mine }, true],
+  ['a site manager, on their own approved request', LEAD, { status: 'approved', requested_by: mine }, false],
+  ["a site manager, on someone else's pending request", LEAD, { status: 'pending', requested_by: theirs }, false],
+  ['HR filing for anyone, on a pending request', ['leave.view.all', 'leave.request.all'], { status: 'pending', requested_by: theirs }, true],
+  ['HR filing for anyone, on an escalated request', ['leave.view.all', 'leave.request.all'], { status: 'escalated', requested_by: theirs }, true],
+  ['HR deciding for anyone, on an approved request', HR, { status: 'approved', requested_by: theirs }, true],
+  ['a reader who files for anyone but does not decide, on an approved request', ['leave.view.all', 'leave.request.all'], { status: 'approved', requested_by: theirs }, false],
+  ['the CEO, on an approved request', CEO, { status: 'approved', requested_by: theirs }, false],
+  ['HR with every leave permission, on a refused request of their own', [...HR, 'leave.request.all'], { status: 'refused', requested_by: mine }, false],
+  ['HR with every leave permission, on a cancelled request of their own', [...HR, 'leave.request.all'], { status: 'cancelled', requested_by: mine }, false],
+])('the cancel button for %s', async (_, perms, p, offered) => {
+  mockFetch({ [SHOW]: () => json(200, { data: shown(p, p.status === 'pending' || p.status === 'escalated' ? {} : null) }) })
+  decide(perms as string[])
+  await screen.findByText(p.requested_by.name, { selector: 'dd' })
+  expect(!!cancelButton()).toBe(offered)
+})
+
+test('cancelling an approved request says its leave days leave attendance, then posts the version and the reason', async () => {
+  const post = vi.fn(() => json(200, { data: shown({ status: 'cancelled' }, null) }))
+  const onOpenChange = vi.fn()
+  mockFetch({ [SHOW]: () => json(200, { data: shown({ status: 'approved', requested_by: theirs }, null) }), 'POST /api/v1/leave/requests/r1/cancel': post })
+  decide(HR, onOpenChange)
+  await user.click(await screen.findByRole('button', { name: 'إلغاء الطلب' }))
+  const ask = await screen.findByRole('dialog', { name: 'إلغاء طلب الإجازة' })
+  expect(ask).toHaveAccessibleDescription('ستُمسح من الحضور أيام الإجازة التي سجّلتها الموافقة على هذا الطلب، عدا الأيام التي غُيّر نوعها بعدها. ويُرفض الإلغاء إذا كان على أحد هذه الأيام ملاحظة أو سلفة، أو وقع في فترة مقفلة.')
+  await user.type(within(ask).getByLabelText('سبب الإلغاء (اختياري)'), ' عاد الموظف مبكرًا ')
+  await user.click(within(ask).getByRole('button', { name: 'تأكيد الإلغاء' }))
+  await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+  expect(bodyOf(post)).toEqual({ version: 3, reason: 'عاد الموظف مبكرًا' })
+  expect(toast.success).toHaveBeenCalledWith('أُلغي الطلب.')
+})
+
+test('a site manager withdraws their own pending request without a reason', async () => {
+  const post = vi.fn(() => json(200, { data: shown({ status: 'cancelled' }, null) }))
+  mockFetch({ [SHOW]: () => json(200, { data: shown({ requested_by: mine }) }), 'POST /api/v1/leave/requests/r1/cancel': post })
+  decide(LEAD)
+  await user.click(await screen.findByRole('button', { name: 'إلغاء الطلب' }))
+  const ask = await screen.findByRole('dialog', { name: 'إلغاء طلب الإجازة' })
+  expect(ask).toHaveAccessibleDescription('سيُسحب الطلب دون أن يُسجَّل شيء في الحضور.')
+  await user.click(within(ask).getByRole('button', { name: 'تأكيد الإلغاء' }))
+  await waitFor(() => expect(post).toHaveBeenCalled())
+  expect(bodyOf(post)).toEqual({ version: 3 })
+})
+
+test('a cancel refused for days holding a note or an advance shows the reason and lists those dates', async () => {
+  mockFetch({
+    [SHOW]: () => json(200, { data: shown({ status: 'approved', requested_by: theirs }, null) }),
+    'POST /api/v1/leave/requests/r1/cancel': () => json(409, { error: { code: 'leave_cancel_blocked', message: 'عدد أيام الإجازة التي تحمل ملاحظة أو سلفة: 2. عدّلها في الحضور أولًا.', dates: ['2026-11-11', '2026-11-12'] } }),
+  })
+  const onOpenChange = vi.fn()
+  decide(HR, onOpenChange)
+  await user.click(await screen.findByRole('button', { name: 'إلغاء الطلب' }))
+  const ask = await screen.findByRole('dialog', { name: 'إلغاء طلب الإجازة' })
+  await user.click(within(ask).getByRole('button', { name: 'تأكيد الإلغاء' }))
+  const outer = screen.getByRole('dialog', { name: 'تفاصيل طلب الإجازة' })
+  expect(await within(outer).findByText('عدد أيام الإجازة التي تحمل ملاحظة أو سلفة: 2. عدّلها في الحضور أولًا.')).toBeInTheDocument()
+  expect(within(outer).getByText('2026-11-11')).toHaveAttribute('dir', 'ltr')
+  expect(within(outer).getByText('2026-11-12')).toBeInTheDocument()
+  expect(onOpenChange).not.toHaveBeenCalled()
+})
+
+test('a cancelled request shows who cancelled it and why', async () => {
+  mockFetch({ [SHOW]: () => json(200, { data: shown({ status: 'cancelled', decision_reason: 'عاد الموظف مبكرًا', decided_by: { id: 'u1', name: 'منى' }, decided_at: '2026-11-05T08:00:00Z' }, null) }) })
+  decide(HR)
+  await screen.findByText('كريم حسن')
+  expect(term('الحالة')).toHaveTextContent('ملغى')
+  expect(term('ألغاه')).toHaveTextContent('منى')
+  expect(term('تاريخ الإلغاء')).toBeInTheDocument()
+  expect(screen.queryByText('صاحب القرار')).toBeNull()
+  expect(screen.queryByText('تاريخ القرار')).toBeNull()
+  expect(term('سبب الإلغاء')).toHaveTextContent('عاد الموظف مبكرًا')
+})
+
+test.each([
+  ['a locked period', 423, 'period_locked', 'فترة الحضور مقفلة ولا يمكن تعديلها.'],
+  ['a stale version', 409, 'concurrency_conflict', 'عُدِّل هذا السجل في أثناء ذلك.'],
+])('a cancel refused for %s shows the reason, keeps the request open, and reloads it', async (_, status, code, message) => {
+  let version = 3
+  mockFetch({
+    [SHOW]: () => json(200, { data: shown({ status: 'approved', requested_by: theirs, version }, null) }),
+    'POST /api/v1/leave/requests/r1/cancel': () => {
+      version = 4
+      return json(status, { error: { code, message } })
+    },
+  })
+  const onOpenChange = vi.fn()
+  decide(HR, onOpenChange)
+  await user.click(await screen.findByRole('button', { name: 'إلغاء الطلب' }))
+  await user.click(within(await screen.findByRole('dialog', { name: 'إلغاء طلب الإجازة' })).getByRole('button', { name: 'تأكيد الإلغاء' }))
+  const outer = screen.getByRole('dialog', { name: 'تفاصيل طلب الإجازة' })
+  expect(await within(outer).findByText(message)).toBeInTheDocument()
+  await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([u]) => String(u).endsWith('/leave/requests/r1')).length).toBeGreaterThan(1))
+  expect(onOpenChange).not.toHaveBeenCalled()
+  expect(within(outer).getByRole('button', { name: 'إلغاء الطلب' })).toBeEnabled()
 })

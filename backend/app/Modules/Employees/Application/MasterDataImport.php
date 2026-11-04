@@ -380,7 +380,7 @@ final class MasterDataImport
             return null;
         }
 
-        // Work sites only: a row named like a leave day-type («غ») must collide visibly, not take over the leave site.
+        // Work sites only: a row named like a leave day-type («غ») must collide visibly, not take over the leave type.
         return $this->siteIds[$name] ??= self::key(Site::where(['kind' => SiteKind::Work->value, 'name_ar' => $name])->value('id'));
     }
 

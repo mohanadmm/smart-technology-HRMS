@@ -79,6 +79,14 @@ final class LeaveRequestController
         });
     }
 
+    public function cancel(Request $request, string $id): JsonResponse
+    {
+        $v = $request->validate(['version' => ['required', 'integer', 'min:1'], 'reason' => ['nullable', 'string', 'max:1000']]);
+        $user = $request->user() ?? throw new AuthenticationException;
+
+        return ApiEnvelope::single($request, $this->requests->cancel($id, (int) $v['version'], $v['reason'] ?? null, $user, RequestScope::ownerId($request)));
+    }
+
     /** @return array<string, list<mixed>> */
     private static function range(): array
     {

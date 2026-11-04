@@ -14,9 +14,10 @@ enum LeaveRefusal: string
     case TooLong = 'leave_too_long';
     case NotInReach = 'site_not_in_reach';
     case DaysBlocked = 'leave_days_blocked';
+    case CancelBlocked = 'leave_cancel_blocked';
 
     public function status(): int
     {
-        return $this === self::DaysBlocked ? 409 : 422;
+        return in_array($this, [self::DaysBlocked, self::CancelBlocked], true) ? 409 : 422;
     }
 }

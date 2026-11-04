@@ -778,6 +778,10 @@
         "line": "Leave refused: <name/> (<code/>)",
         "unknown": "A leave request was refused"
       }
+    },
+    "leaveCancelled": {
+      "line": "Leave request for <name/> (<code/>) cancelled",
+      "unknown": "A leave request was cancelled"
     }
   },
   "time": {
@@ -886,6 +890,18 @@
       "decidedBy": "Decided by",
       "decidedAt": "Decided on",
       "escalationNote": "Escalation note",
+      "cancelledBy": "Cancelled by",
+      "cancelledAt": "Cancelled on",
+      "cancelReason": "Reason for cancelling",
+      "cancel": {
+        "action": "Cancel request",
+        "title": "Cancel the leave request",
+        "clear": "The leave days this request's approval wrote in attendance will be cleared, except days whose type was changed since. The cancel is refused if any of these days holds a note or an advance, or falls in a locked period.",
+        "withdraw": "The request will be withdrawn; nothing is written in attendance.",
+        "reason": "Reason for cancelling (optional)",
+        "submit": "Confirm cancellation",
+        "done": "Request cancelled."
+      },
       "approve": {
         "action": "Approve",
         "done": "Request approved."

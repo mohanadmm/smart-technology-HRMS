@@ -2,8 +2,10 @@
 
 namespace App\Providers;
 
+use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Identity\Infrastructure\BearerSessionResolver;
 use App\Modules\Identity\Infrastructure\RolePermissions;
+use App\Modules\Leave\Application\LeaveRequests;
 use App\Modules\Settings\Application\BusinessRules;
 use App\Support\Database\StandardColumns;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -36,6 +38,9 @@ class AppServiceProvider extends ServiceProvider
             RolePermissions::forgetAll();
             BusinessRules::forgetCache();
         });
+
+        // Leave reacts to an employee delete, so Employees never depends on Leave (Slice 6 D4).
+        Employee::deleted(fn (Employee $e) => app(LeaveRequests::class)->cancelOpenOf((string) $e->getKey(), Auth::id() === null ? null : (string) Auth::id()));
 
         Auth::viaRequest('hrms-bearer-session', fn (Request $r) => app(BearerSessionResolver::class)->forRequest($r));
 

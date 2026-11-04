@@ -113,7 +113,7 @@ For each date from..to: skip dates outside employment as a monthly type, the typ
 - **Refuse** (same permission as Approve): reason required (≤ 1000), stored in `decision_reason`; notifies `requested_by` (`leave_decided`, data `status` refused) unless the decider filed it.
 - **Escalate** (`leave.decide.all`, pending only): status `escalated`; HR's optional note goes in `decision_reason` for the CEO to read; notifies holders of `leave.decide_escalated.all` (`leave_escalated`).
 - A stale version, or a request no longer pending/escalated (pending for Escalate), is 409 `concurrency_conflict`. A caller without the permission the status needs is 403; on a decided request, holding either decide permission is enough to learn it is a conflict.
-- **Cancel:** the requester or HR while pending or escalated; HR only when approved. Cancelling an approved request clears the days it wrote that still hold its leave code and source `leave`; a date in a locked period refuses the whole cancel.
+- **Cancel:** the requester or HR while pending or escalated; HR only when approved. Cancelling an approved request clears the days it wrote that still hold its leave code and source `leave`; a date in a locked period refuses the whole cancel. A day to clear that holds a note or an advance refuses the cancel too (409 `leave_cancel_blocked`, the dates listed), so HR changes that day first and no advance is lost (Slice 6). The requester, HR and the CEO holders of an escalated request are notified (`leave_cancelled`). Deleting an employee cancels their pending and escalated requests.
 - HR's own submission can be approved straight away from the same dialog (two calls, no special path).
 
 ### Anniversary alert
@@ -140,7 +140,7 @@ Job `leave:alert-anniversary`, daily 08:00 Cairo, `maintenance` queue, same retr
 | GET | `leave/requests/preview?employee_id=&kind=&from_date=&to_date=` (`dates`, `days`, `balance`, `keep`, `unpaid`, `remaining_after`) | `leave.request` |
 | POST | `leave/requests` (`employee_id`, `kind`, `from_date`, `to_date`, `note`) → 201 | `leave.request` |
 | GET | `leave/requests/{id}` (the row plus `decision_reason`, `decided_by: {id, name}`, `decided_at`, and `approval`: while pending or escalated `{dates, days, balance, keep, unpaid, remaining_after, blocked}` computed now, else null; own scope out of reach today → 404) | `leave.view` |
-| POST | `leave/requests/{id}/approve` (`version`), `/refuse` (`version`, `reason`), `/escalate` (`version`, `reason?`) → 200 the `GET {id}` shape; `/cancel` (Slice 6) | as in Workflow |
+| POST | `leave/requests/{id}/approve` (`version`), `/refuse` (`version`, `reason`), `/escalate` (`version`, `reason?`) → 200 the `GET {id}` shape; `/cancel` (`version`, `reason?`) → 200 the `GET {id}` shape; 403 without the permission for the status, 404 out of reach, 409 `concurrency_conflict` (stale, or already refused/cancelled), 409 `leave_cancel_blocked` with `error.dates`, 423 `period_locked` | as in Workflow (Cancel) |
 
 `.own` reads return only employees in the caller's reach today. A request row is `{id, employee: {id, code, name_ar, name_en}, kind, from_date, to_date, days, status, note, requested_by: {id, name}, created_at, version}`; refusals are 422 with the code named in Workflow. `remaining_after` is the remaining balance less the kept days for annual and casual, the remaining balance for sick and unpaid, and null with no entitlement.
 

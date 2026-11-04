@@ -49,9 +49,9 @@ final class EffectiveDays
         }
         $holidays = $locked ? [] : array_flip(OfficialHoliday::whereBetween('date', [$p->start, $p->end])->pluck('date')->all());
         // A stored day may point at a since-deactivated or deleted leave type; a derived day only at the active one.
-        $leaveSites = Site::withTrashed()->where('kind', 'leave')->get(['id', 'leave_code', 'active', 'deleted_at']);
-        $codeOf = $leaveSites->pluck('leave_code', 'id')->all();
-        $activeSite = $leaveSites->filter(fn (Site $s) => $s->active && ! $s->trashed())->pluck('id', 'leave_code')->all();
+        $leaveTypes = Site::withTrashed()->where('kind', 'leave')->get(['id', 'leave_code', 'active', 'deleted_at']);
+        $codeOf = $leaveTypes->pluck('leave_code', 'id')->all();
+        $activeType = $leaveTypes->filter(fn (Site $s) => $s->active && ! $s->trashed())->pluck('id', 'leave_code')->all();
         $settings = $this->rules->all();   // once per period: it is a cache round trip, and this loop runs per cell
         $weeklyOff = $this->weeklyOff($p->group, $settings);
         $today = self::today();
@@ -71,7 +71,7 @@ final class EffectiveDays
                     $day['state'] = $code !== null ? 'derived' : ($date > $today ? 'future' : 'missing');
                     if ($code !== null) {
                         // A leave day, as save() would store it: no scheduled times, and a permanent worker's transport is none.
-                        $day = [...$day, 'leave_code' => $code, 'site_id' => $activeSite[$code] ?? null];
+                        $day = [...$day, 'leave_code' => $code, 'site_id' => $activeType[$code] ?? null];
                         if ($type === EmployeeType::PermanentWorker) {
                             $day['transport'] = 'none';
                         }

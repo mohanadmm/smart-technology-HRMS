@@ -92,7 +92,7 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
   const [undoCount, setUndoCount] = useState(0)
   // the header's period may still be the previous one while the next loads: write only into the period that holds this date
   const editable = !!period && period.group === group && period.start <= date && date <= period.end && !period.is_locked && can('attendance.edit')
-  const leaveSite = (code: string) => sites.find((s) => s.kind === 'leave' && s.leave_code === code && s.active)?.id as string | undefined
+  const leaveTypeId = (code: string) => sites.find((s) => s.kind === 'leave' && s.leave_code === code && s.active)?.id as string | undefined
   const workSites = sites.filter((s) => s.kind === 'work' && s.active)
 
   const name = (r: SheetRow) => localName(r.employee, i18n.language)
@@ -127,7 +127,7 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
   /** The one writer: sends `action` for `chosen` (minus rows in flight or already in that state), pushes it onto the undo stack and returns it, or null when nothing was written. */
   async function apply(action: SheetAction, chosen: SheetRow[], label: string): Promise<Applied | null> {
     const free = chosen.filter((r) => !flight.current.has(r.employee.id))
-    const { rows: out, skipped } = bulkRows(action, free, leaveSite, office)
+    const { rows: out, skipped } = bulkRows(action, free, leaveTypeId, office)
     if (out.length > MAX_BATCH) {
       toast.error(t('attendance.sheet.toast.tooMany', { max: MAX_BATCH }))
       return null
@@ -208,7 +208,7 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
     return next
   })
   const bulk = (action: SheetAction, label: string) => void apply(action, picked, label).then((done) => done && unselect())
-  const noLeave = (a: SheetAction) => a.kind === 'leave' && !leaveSite(a.code)
+  const noLeave = (a: SheetAction) => a.kind === 'leave' && !leaveTypeId(a.code)
 
   return (
     <div className="space-y-4">
@@ -312,14 +312,14 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
             <p aria-live="polite" className="mt-2 text-xs text-muted-foreground empty:mt-0">{query.trim() && t('attendance.sheet.found', { shown: shown.length, total: rows.length })}</p>
           </div>
         )}
-        {editable && <PasteDialog open={pasting} onOpenChange={setPasting} rows={rows} leaveSite={leaveSite} onApply={async (action, chosen, label) => !!(await apply(action, chosen, label))} />}
+        {editable && <PasteDialog open={pasting} onOpenChange={setPasting} rows={rows} leaveTypeId={leaveTypeId} onApply={async (action, chosen, label) => !!(await apply(action, chosen, label))} />}
         {!rows.length ? (
           <EmptyState icon={Users} title={t('attendance.empty')} />
         ) : !shown.length ? (
           <EmptyState icon={Users} title={t('attendance.sheet.noMatch')} />
         ) : (
           <>
-            <SheetRows rows={pageRows} office={office} editable={editable} date={date} sites={sites} selected={selected} pending={pending} leaveSite={leaveSite}
+            <SheetRows rows={pageRows} office={office} editable={editable} date={date} sites={sites} selected={selected} pending={pending} leaveTypeId={leaveTypeId}
               onToggle={toggle} onApply={(action, r, label) => apply(action, [r], label)} onOpenDay={onOpenDay} />
             <Pagination page={page} pageSize={PER_PAGE} total={shown.length} onPageChange={setPage} />
           </>

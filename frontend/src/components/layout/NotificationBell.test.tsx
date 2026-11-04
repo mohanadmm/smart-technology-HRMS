@@ -260,3 +260,26 @@ test('an approved and a refused leave are told apart, and each opens its request
   await user.click(screen.getByRole('menuitem', { name: /رُفض طلب إجازة/ }))
   expect(screen.getByRole('status')).toHaveTextContent('/leave?request=r2')
 })
+
+const cancelled = (employee: { id: string; code: number; name_ar: string; name_en: string | null } | null) => ({
+  id: 'c1', type: 'leave_cancelled', date: '2026-11-05', ref: 'r3', read_at: null, employee,
+  data: { employee_id: 'e1', request_id: 'r3', kind: 'annual', from_date: '2026-11-10', to_date: '2026-11-12', days: 3 },
+})
+
+test('a cancelled leave request is listed and counted, and opens the request', async () => {
+  mockFetch({ 'GET /api/v1/notifications': inbox([cancelled(ahmed)]), 'PATCH /api/v1/notifications/c1/read': () => json(200, { data: {} }) })
+  renderWithAuth(<><NotificationBell /><Where /></>, [])
+  await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (1 غير مقروء)' }))
+  const line = await screen.findByRole('menuitem')
+  expect(line).toHaveAccessibleName(/^غير مقروء، أُلغي طلب إجازة أحمد علي \(1042\)،\s*إجازة اعتيادية: 2026-11-10 – 2026-11-12$/)
+  await user.click(line)
+  expect(screen.getByRole('status')).toHaveTextContent('/leave?request=r3')
+})
+
+test('a cancelled leave request about someone the reader cannot name reads as a generic line', async () => {
+  await i18n.changeLanguage('en')
+  mockFetch({ 'GET /api/v1/notifications': inbox([cancelled(null)]) })
+  renderWithAuth(<NotificationBell />, [])
+  await user.click(await screen.findByRole('button', { name: 'Open notifications (1 unread)' }))
+  expect(await screen.findByRole('menuitem')).toHaveAccessibleName(/^unread, A leave request was cancelled,\s*Annual leave: 2026-11-10 – 2026-11-12$/)
+})
