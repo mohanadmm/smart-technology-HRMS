@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { DataList } from '@/components/common/DataList'
 import { FilterSelect, SearchInput } from '@/components/common/Filters'
 import { PageHeader } from '@/components/common/PageHeader'
-import { cairoToday, localName, type Row } from '@/components/form'
+import { cairoToday, localName, ltrDates, type Row } from '@/components/form'
 import { SegmentedControl } from '@/components/layout/SegmentedControl'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -20,7 +20,8 @@ const PAGE = 20
 /** `GET /leave/balances`: one row per monthly employee, every number the server's (docs/calculations.md §7). */
 export function LeavePage() {
   const { t, i18n } = useTranslation()
-  const thisYear = Number(cairoToday().slice(0, 4))
+  const today = cairoToday()
+  const thisYear = Number(today.slice(0, 4))
   const [year, setYear] = useState(String(thisYear))
   const [type, setType] = useState('')
   const [q, setQ] = useState('')
@@ -57,12 +58,21 @@ export function LeavePage() {
           label={t('leave.list')}
           rows={rows}
           rowKey={(r) => r.id}
-          to={(r) => `/employees/${r.id}?tab=leave`}
+          to={(r) => `/employees/${r.id}?tab=leave&year=${year}`}
           loading={loading}
           error={err}
           empty={{ icon: CalendarDays, title: t('common.noResults') }}
           page={{ page, pageSize: PAGE, total, onPageChange: setPage }}
-          title={{ header: t('employee.employee'), cell: (r) => localName(r, i18n.language) }}
+          title={{
+            header: t('employee.employee'),
+            cell: (r) => (
+              <>
+                {localName(r, i18n.language)}
+                {/* the termination day is still worked, so a leaver is one whose date is past */}
+                {r.termination_date && <span className="block text-xs font-normal text-muted-foreground">{ltrDates(t(r.termination_date < today ? 'leave.leftOn' : 'employee.leavesOn', { date: r.termination_date }))}</span>}
+              </>
+            ),
+          }}
           fields={[
             { header: t('employee.code'), tableFrom: 'xl', cell: (r) => <bdi dir="ltr" className="font-mono text-xs text-muted-foreground">{r.code ?? '—'}</bdi> },
             { header: t('leave.entitlementShort'), numeric: true, cell: (r) => r.entitlement ?? '—' },

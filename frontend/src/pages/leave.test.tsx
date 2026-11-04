@@ -87,9 +87,41 @@ test('a row opens the employee on the leave tab through a real link', async () =
   const user = userEvent.setup()
   render()
   const link = await screen.findByRole('link', { name: 'سامي فؤاد' })
-  expect(link).toHaveAttribute('href', '/employees/e1?tab=leave')
+  expect(link).toHaveAttribute('href', '/employees/e1?tab=leave&year=2026')
   await user.click(link)
-  expect(await screen.findByText('opened /employees/e1?tab=leave')).toBeInTheDocument()
+  expect(await screen.findByText('opened /employees/e1?tab=leave&year=2026')).toBeInTheDocument()
+})
+
+test('the row link keeps the selected year', async () => {
+  mockFetch({ [BALANCES]: () => balances() })
+  const user = userEvent.setup()
+  render()
+  await screen.findByText('سامي فؤاد')
+  await user.click(screen.getByRole('button', { name: '2025' }))
+  await waitFor(() => expect(screen.getByRole('link', { name: 'سامي فؤاد' })).toHaveAttribute('href', '/employees/e1?tab=leave&year=2025'))
+})
+
+test('a leaver is marked with the termination date', async () => {
+  mockFetch({ [BALANCES]: () => balances([{ ...row, termination_date: '2025-09-30' }]) })
+  render()
+  const r = (await screen.findByText('سامي فؤاد')).closest('tr')!
+  expect(r).toHaveTextContent('ترك العمل في 2025-09-30')
+})
+
+test('an employee leaving later this year is marked with the date to come', async () => {
+  mockFetch({ [BALANCES]: () => balances([{ ...row, termination_date: '2026-12-15' }]) })
+  render()
+  const r = (await screen.findByText('سامي فؤاد')).closest('tr')!
+  expect(r).toHaveTextContent('ينتهي في 2026-12-15')
+  expect(r).not.toHaveTextContent('ترك العمل')
+})
+
+test('an employee still employed carries no leaver mark', async () => {
+  mockFetch({ [BALANCES]: () => balances([{ ...row, termination_date: null }]) })
+  render()
+  const r = (await screen.findByText('سامي فؤاد')).closest('tr')!
+  expect(r).not.toHaveTextContent('ترك العمل')
+  expect(r).not.toHaveTextContent('ينتهي في')
 })
 
 test('no rows shows the empty state', async () => {

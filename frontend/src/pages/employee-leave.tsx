@@ -18,17 +18,17 @@ type Balance = { entitlement: number | null; casual_cap: number | null; used: nu
 type Adjustment = { entitlement: number | null; opening_used: number; opening_casual_used: number; reason: string | null; version: number }
 type EmployeeLeave = { balance: Balance | null; adjustment: Adjustment | null }
 
-/** The year's leave balance; the year selector offers the current Cairo year and one either side. */
-export function Leave({ emp }: { emp: Row }) {
+/** The year's leave balance; the year selector offers the current Cairo year and one either side, and starts on `initialYear` when it is one of them. */
+export function Leave({ emp, initialYear }: { emp: Row; initialYear?: string | null }) {
   const { t } = useTranslation()
   const { can } = useAuth()
   const thisYear = Number(cairoToday().slice(0, 4))
-  const [year, setYear] = useState(thisYear)
+  const years = [thisYear - 1, thisYear, thisYear + 1].map(String)
+  const [year, setYear] = useState(Number(years.find((y) => y === initialYear) ?? thisYear))
   const path = `/employees/${emp.id}/leave?year=${year}`
   // fresh + ready: attendance edits change the balance but refresh only attendance queries, so a cached copy may be stale
   const { data, err, ready } = useApi<EmployeeLeave>(path, { fresh: true })
   const b = data?.balance
-  const years = [thisYear - 1, thisYear, thisYear + 1].map(String)
 
   return (
     <Card>

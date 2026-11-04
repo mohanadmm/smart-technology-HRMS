@@ -372,7 +372,7 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
             site: <SiteHistory emp={emp} />,
             history: <History emp={emp} />,
             documents: <Documents emp={emp} />,
-            leave: <Leave emp={emp} />,
+            leave: <Leave emp={emp} initialYear={params.get('year')} />,
           }[tab]}
         </TabsContent>
       </Tabs>

@@ -795,6 +795,7 @@
     "period": "Monthly staff balances, January 1 to December 31, {{year}}",
     "search": "Search name or ID",
     "list": "Leave balances",
+    "leftOn": "Left on {{date}}",
     "entitlementShort": "Entitlement",
     "sickShort": "Sick",
     "unpaidShort": "Unpaid",

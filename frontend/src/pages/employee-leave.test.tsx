@@ -122,6 +122,29 @@ test('the employee page opens the leave tab', async () => {
   expect(await remainingTile()).toHaveTextContent('11')
 })
 
+const detailAt = (url: string) => (
+  <MemoryRouter initialEntries={[url]}>
+    <Routes><Route path="employees/:id" element={<EmployeeFormPage />} /></Routes>
+  </MemoryRouter>
+)
+const leaveCalls = () => vi.mocked(fetch).mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith('/api/v1/employees/e1/leave'))
+
+test('the leave tab opens on the year in the link', async () => {
+  page('office')
+  renderWithAuth(detailAt('/employees/e1?tab=leave&year=2025'), VIEW, { router: false })
+  expect(await remainingTile()).toHaveTextContent('11')
+  expect(screen.getByRole('button', { name: '2025' })).toHaveAttribute('aria-pressed', 'true')
+  expect(leaveCalls()).toEqual(['/api/v1/employees/e1/leave?year=2025'])
+})
+
+test('a year the selector does not offer falls back to the current year', async () => {
+  page('office')
+  renderWithAuth(detailAt('/employees/e1?tab=leave&year=2019'), VIEW, { router: false })
+  expect(await remainingTile()).toHaveTextContent('11')
+  expect(screen.getByRole('button', { name: '2026' })).toHaveAttribute('aria-pressed', 'true')
+  expect(leaveCalls()).toEqual(['/api/v1/employees/e1/leave?year=2026'])
+})
+
 test('a day laborer has no leave tab', async () => {
   page('day_laborer')
   renderWithAuth(detail, VIEW, { router: false })
