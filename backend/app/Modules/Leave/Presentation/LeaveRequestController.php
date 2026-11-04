@@ -68,7 +68,7 @@ final class LeaveRequestController
                 'escalate' => ['nullable', 'string', 'max:1000'],
                 default => ['prohibited'],
             },
-            'replace_dates' => $action === 'approve' ? ['sometimes', 'array', 'max:61'] : ['prohibited'],
+            'replace_dates' => $action === 'approve' ? ['sometimes', 'array', 'max:'.LeaveRequests::MAX_RANGE_DAYS] : ['prohibited'],
             'replace_dates.*' => ['date_format:Y-m-d'],
         ]);
         $user = $request->user() ?? throw new AuthenticationException;
