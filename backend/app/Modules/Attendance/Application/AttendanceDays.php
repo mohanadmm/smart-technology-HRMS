@@ -186,11 +186,11 @@ final class AttendanceDays
      * no reach check (deciders hold `.all`). A stored leave day is replaced, keeping its note and advance (P28), and its source when it
      * already holds this leave type; a work day or office present refuses (`leave_days_blocked`).
      */
-    public function writeLeaveDay(string $employeeId, string $date, string $leaveSiteId): void
+    public function writeLeaveDay(string $employeeId, string $date, string $leaveTypeId): void
     {
         $employee = $this->roster->find($employeeId) ?? throw new ModelNotFoundException;
         try {
-            DB::transaction(fn () => $this->write($employee, $date, ['site_id' => $leaveSiteId], null, 'leave', true, leaveDay: true));
+            DB::transaction(fn () => $this->write($employee, $date, ['site_id' => $leaveTypeId], null, 'leave', true, leaveDay: true));
         } catch (UniqueConstraintViolationException) {
             throw new ConcurrencyConflict;
         }

@@ -180,8 +180,8 @@ final class LeaveRequests
     }
 
     /**
-     * The request locked for a decision. Permission follows its status: pending (or any escalate) needs leave.decide, escalated needs
-     * leave.decide_escalated, and a decided request needs either, so only a decider learns it is a conflict. Both are `.all` only.
+     * The request locked for a decision. Permission follows its status: pending (or escalated, to escalate it) needs leave.decide, escalated
+     * needs leave.decide_escalated, and a decided request needs either for every action, so only a decider learns it is a conflict. Both are `.all` only.
      * The permission is checked on the unlocked status, so a caller without it never waits on or takes the locks; a status changed
      * before the lock is a conflict.
      */
@@ -190,7 +190,7 @@ final class LeaveRequests
         $read = LeaveRequest::whereKey($id)->first(['employee_id', 'status']) ?? throw new ModelNotFoundException;
         $status = LeaveStatus::from((string) $read->status);
         $abilities = match (true) {
-            $pendingOnly, $status === LeaveStatus::Pending => ['leave.decide'],
+            $status === LeaveStatus::Pending, $pendingOnly && $status === LeaveStatus::Escalated => ['leave.decide'],
             $status === LeaveStatus::Escalated => ['leave.decide_escalated'],
             default => ['leave.decide', 'leave.decide_escalated'],
         };

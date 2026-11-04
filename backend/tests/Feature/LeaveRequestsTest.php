@@ -592,6 +592,12 @@ class LeaveRequestsTest extends TestCase
         $this->decide($id, 'approve')->assertOk();
         $this->decide($id, 'approve')->assertStatus(409)->assertJsonPath('error.code', 'concurrency_conflict');
         $this->decide($id, 'refuse', ['reason' => 'R'])->assertStatus(409);
+        $this->decide($id, 'escalate')->assertStatus(409);
+        $this->actingAs($this->ceo, 'api');
+        foreach (['approve', 'refuse', 'escalate'] as $action) {
+            $this->decide($id, $action, $action === 'refuse' ? ['reason' => 'R'] : [])->assertStatus(409)->assertJsonPath('error.code', 'concurrency_conflict');
+        }
+        $this->actingAs($this->hr[0], 'api');
         $this->decide($id, 'approve', ['version' => null])->assertStatus(422);
         $this->postJson('/api/v1/leave/requests/'.Str::uuid7().'/approve', ['version' => 1])->assertNotFound();
     }
