@@ -6,7 +6,7 @@ export class ApiError extends Error {
   code: string
   status: number
   details: ApiErrorDetail[]
-  /** The dates a refusal names (leave_days_blocked, leave_cancel_blocked). */
+  /** The dates a refusal names (`error.dates`, e.g. leave_days_blocked, leave_cancel_blocked); `ErrorBanner` lists them. Empty when the error names none. */
   dates: string[]
   constructor(code: string, message: string, status: number, details: ApiErrorDetail[] = [], dates: string[] = []) {
     super(message)

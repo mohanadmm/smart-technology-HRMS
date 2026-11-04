@@ -4,14 +4,13 @@ import { toast } from 'sonner'
 import { Alert } from '@/components/common/Alert'
 import { SearchInput } from '@/components/common/Filters'
 import { StatusBadge } from '@/components/common/StatusBadge'
-import { type Controlled, ErrorBanner, Field, type FormApi, FormDialog, localName, ltrDates, type Row, SelectField, TextField, useCairoTime } from '@/components/form'
+import { type Controlled, Dates, ErrorBanner, Field, type FormApi, FormDialog, localName, ltrDates, type Row, SelectField, TextField, useCairoTime } from '@/components/form'
 import type { BadgeVariant } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/misc'
 import { useDebounced } from '@/hooks/useDebounced'
-import { ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { useApi, useList, useSave } from '@/lib/query'
 import { cn } from '@/lib/utils'
@@ -167,18 +166,12 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
     }
   }
   const kind = t(`attendance.leaveName.${r.kind}`)
+  const label = LABELS[r.status] ?? LABELS.decided
 
   return (
     <>
       <DialogBody className="grid gap-4">
-        {err instanceof ApiError && err.code === 'leave_cancel_blocked' ? (
-          <Alert tone="danger">
-            <p>{err.message}</p>
-            <Dates dates={err.dates} />
-          </Alert>
-        ) : (
-          <ErrorBanner err={err} shown={[]} />
-        )}
+        <ErrorBanner err={err} shown={[]} />
         <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
           <Item label={t('employee.employee')}>{r.employee ? <>{localName(r.employee, i18n.language)} (<bdi dir="ltr">{r.employee.code}</bdi>)</> : '—'}</Item>
           <Item label={t('leave.requests.kind')}>{kind}</Item>
@@ -193,10 +186,10 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
               <Item label={t('leave.decide.after')}><Count n={a.remaining_after} /></Item>
             </>
           )}
-          {r.decided_by && <Item label={t('leave.decide.decidedBy')}>{r.decided_by.name}</Item>}
-          {r.decided_at && <Item label={t('leave.decide.decidedAt')}>{time(r.decided_at)}</Item>}
+          {r.decided_by && <Item label={t(label.by)}>{r.decided_by.name}</Item>}
+          {r.decided_at && <Item label={t(label.at)}>{time(r.decided_at)}</Item>}
           {r.note && <Item label={t('leave.request.note')} wide>{r.note}</Item>}
-          {r.decision_reason && <Item label={t(REASON[r.status] ?? 'leave.decide.escalationNote')} wide>{r.decision_reason}</Item>}
+          {r.decision_reason && <Item label={t(label.reason)} wide>{r.decision_reason}</Item>}
         </dl>
         {a && a.unpaid > 0 && (
           <Alert tone="warning">
@@ -215,7 +208,7 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
       {(!!actions.length || cancellable) && (
         <DialogFooter>
           {/* cancelling is not a decision: set apart at the start, and red so it is not taken for the dialog's own close */}
-          {cancellable && <Button type="button" variant="outline" className="text-destructive sm:me-auto" disabled={busy} onClick={() => setAsking('cancel')}>{t('leave.decide.cancel.action')}</Button>}
+          {cancellable && <Button type="button" variant="outline" className="text-destructive hover:text-destructive sm:me-auto" disabled={busy} onClick={() => setAsking('cancel')}>{t('leave.decide.cancel.action')}</Button>}
           {actions.map((action) =>
             action === 'approve' ? (
               <Button key={action} type="button" disabled={busy} onClick={() => run('approve')}>{t('leave.decide.approve.action')}</Button>
@@ -229,7 +222,7 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
         <FormDialog
           key={action}
           title={t(`leave.decide.${action}.title`)}
-          description={action === 'cancel' && t(`leave.decide.cancel.${undecided ? 'withdraw' : 'clear'}`)}
+          description={action === 'cancel' ? t(`leave.decide.cancel.${undecided ? 'withdraw' : 'clear'}`) : undefined}
           open={asking === action}
           onOpenChange={(o) => setAsking(o ? action : undefined)}
           init={{ reason: '' }}
@@ -253,9 +246,13 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
   )
 }
 
-const REASON: Record<string, string> = { refused: 'leave.decide.refuse.reason', cancelled: 'leave.decide.cancelReason' }
-
-const Dates = ({ dates }: { dates: string[] }) => <ul className="flex flex-wrap gap-x-4">{dates.map((d) => <li key={d}><bdi dir="ltr">{d}</bdi></li>)}</ul>
+const decided = { by: 'leave.decide.decidedBy', at: 'leave.decide.decidedAt', reason: 'leave.decide.escalationNote' }
+/** The decider, date and reason row labels by status; any other status's reason is HR's escalation note. */
+const LABELS: Record<string, typeof decided> = {
+  decided,
+  refused: { ...decided, reason: 'leave.decide.refuse.reason' },
+  cancelled: { by: 'leave.decide.cancelledBy', at: 'leave.decide.cancelledAt', reason: 'leave.decide.cancelReason' },
+}
 
 function Item({ label, wide, children }: { label: string; wide?: boolean; children: React.ReactNode }) {
   return (

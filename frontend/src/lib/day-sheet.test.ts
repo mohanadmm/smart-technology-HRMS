@@ -12,7 +12,7 @@ const row = (code: number, o: { day?: Partial<SheetRow['day']>; last_site_id?: s
 const sheet = Array.from({ length: 12 }, (_, i) => row(i + 1))
 const codes = (input: string) => parseBatch(input, sheet).matches.map((r) => r.employee.code)
 const stored = (o: Partial<SheetRow['day']>) => ({ state: 'stored' as const, source: 'entered', version: 3, ...o })
-const leaveSite = (code: string) => ({ absent: 'L-absent', sick: 'L-sick' })[code]
+const leaveTypeId = (code: string) => ({ absent: 'L-absent', sick: 'L-sick' })[code]
 
 test('parseBatch takes a single code', () => {
   expect(codes('12')).toEqual([12])
@@ -109,26 +109,26 @@ test('parseBatch folds a name search', () => {
 test('bulkRows present uses the last site and skips rows without one', () => {
   const a = row(1, { last_site_id: 'S1', day: { version: null } })
   const b = row(2)
-  expect(bulkRows({ kind: 'present' }, [a, b], leaveSite, false)).toEqual({ rows: [{ employee_id: 'e1', version: null, site_id: 'S1' }], skipped: [b] })
+  expect(bulkRows({ kind: 'present' }, [a, b], leaveTypeId, false)).toEqual({ rows: [{ employee_id: 'e1', version: null, site_id: 'S1' }], skipped: [b] })
 })
 
 test('bulkRows present on an office row writes site_id null even without a last site', () => {
   const r = row(1, { day: { state: 'derived', leave_code: 'friday' } })
-  expect(bulkRows({ kind: 'present' }, [r], leaveSite, true)).toEqual({ rows: [{ employee_id: 'e1', version: null, site_id: null }], skipped: [] })
+  expect(bulkRows({ kind: 'present' }, [r], leaveTypeId, true)).toEqual({ rows: [{ employee_id: 'e1', version: null, site_id: null }], skipped: [] })
 })
 
 test('bulkRows leaves out rows already present at that site', () => {
   const done = row(1, { last_site_id: 'S1', day: stored({ site_id: 'S1' }) })
   const moved = row(2, { last_site_id: 'S1', day: stored({ site_id: 'L-absent', leave_code: 'absent' }) })
   const office = row(3, { day: stored({ site_id: null }) })
-  expect(bulkRows({ kind: 'present' }, [done, moved], leaveSite, false).rows).toEqual([{ employee_id: 'e2', version: 3, site_id: 'S1' }])
-  expect(bulkRows({ kind: 'present' }, [office], leaveSite, true).rows).toEqual([])
+  expect(bulkRows({ kind: 'present' }, [done, moved], leaveTypeId, false).rows).toEqual([{ employee_id: 'e2', version: 3, site_id: 'S1' }])
+  expect(bulkRows({ kind: 'present' }, [office], leaveTypeId, true).rows).toEqual([])
 })
 
 test('bulkRows absent uses the absent leave day-type and passes the version through', () => {
   const a = row(1, { day: stored({ site_id: 'S1', version: 4 }) })
   const done = row(2, { day: stored({ site_id: 'L-absent', leave_code: 'absent' }) })
-  expect(bulkRows({ kind: 'leave', code: 'absent' }, [a, done], leaveSite, false)).toEqual({ rows: [{ employee_id: 'e1', version: 4, site_id: 'L-absent' }], skipped: [] })
+  expect(bulkRows({ kind: 'leave', code: 'absent' }, [a, done], leaveTypeId, false)).toEqual({ rows: [{ employee_id: 'e1', version: 4, site_id: 'L-absent' }], skipped: [] })
 })
 
 test('bulkRows skips every row when the leave day-type is unknown', () => {
@@ -138,30 +138,30 @@ test('bulkRows skips every row when the leave day-type is unknown', () => {
 
 test('bulkRows site sets the site unless it is already there', () => {
   const rows = [row(1), row(2, { day: stored({ site_id: 'S2' }) })]
-  expect(bulkRows({ kind: 'site', siteId: 'S2' }, rows, leaveSite, false).rows).toEqual([{ employee_id: 'e1', version: null, site_id: 'S2' }])
+  expect(bulkRows({ kind: 'site', siteId: 'S2' }, rows, leaveTypeId, false).rows).toEqual([{ employee_id: 'e1', version: null, site_id: 'S2' }])
 })
 
 test('bulkRows time keeps a field row at its stored site and sends only the given field', () => {
   const r = row(1, { day: stored({ site_id: 'S1', in_time: '08:00:00', out_time: '17:00:00' }) })
-  expect(bulkRows({ kind: 'time', out_time: '15:00' }, [r], leaveSite, false)).toEqual({ rows: [{ employee_id: 'e1', version: 3, site_id: 'S1', out_time: '15:00' }], skipped: [] })
+  expect(bulkRows({ kind: 'time', out_time: '15:00' }, [r], leaveTypeId, false)).toEqual({ rows: [{ employee_id: 'e1', version: 3, site_id: 'S1', out_time: '15:00' }], skipped: [] })
 })
 
 test('bulkRows time skips a field row with no stored work site', () => {
   const missing = row(1, { last_site_id: 'S1' })
   const absent = row(2, { day: stored({ site_id: 'L-absent', leave_code: 'absent' }) })
-  expect(bulkRows({ kind: 'time', in_time: '08:30' }, [missing, absent], leaveSite, false)).toEqual({ rows: [], skipped: [missing, absent] })
+  expect(bulkRows({ kind: 'time', in_time: '08:30' }, [missing, absent], leaveTypeId, false)).toEqual({ rows: [], skipped: [missing, absent] })
 })
 
 test('bulkRows time leaves out a row whose given values already match', () => {
   const same = row(1, { day: stored({ site_id: 'S1', in_time: '08:00:00', out_time: '17:00:00' }) })
   const other = row(2, { day: stored({ site_id: 'S1', in_time: '09:00:00', out_time: '17:00:00' }) })
-  expect(bulkRows({ kind: 'time', in_time: '08:00', out_time: '17:00' }, [same, other], leaveSite, false).rows).toEqual([{ employee_id: 'e2', version: 3, site_id: 'S1', in_time: '08:00', out_time: '17:00' }])
+  expect(bulkRows({ kind: 'time', in_time: '08:00', out_time: '17:00' }, [same, other], leaveTypeId, false).rows).toEqual([{ employee_id: 'e2', version: 3, site_id: 'S1', in_time: '08:00', out_time: '17:00' }])
 })
 
 test('bulkRows time writes the office in-time with site_id null', () => {
   const a = row(1)
   const same = row(2, { day: stored({ site_id: null, in_time: '09:20:00' }) })
-  expect(bulkRows({ kind: 'time', in_time: '09:20' }, [a, same], leaveSite, true).rows).toEqual([{ employee_id: 'e1', version: null, site_id: null, in_time: '09:20' }])
+  expect(bulkRows({ kind: 'time', in_time: '09:20' }, [a, same], leaveTypeId, true).rows).toEqual([{ employee_id: 'e1', version: null, site_id: null, in_time: '09:20' }])
 })
 
 test('undoRows restores every value of a stored day with the new version', () => {

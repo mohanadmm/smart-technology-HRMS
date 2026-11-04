@@ -184,11 +184,18 @@ test('the decide dialog shows the request, the requester, and the balance before
   expect(screen.queryByText('العارضة المتبقية قبل الموافقة')).toBeNull()
 })
 
-test('a pending request offers HR approve, refuse and escalate', async () => {
+test('a reader who decides but does not file for anyone is offered escalate, refuse and approve on a pending request', async () => {
   mockFetch({ [SHOW]: () => json(200, { data: shown() }) })
   decide(HR)
   await screen.findByText('كريم حسن')
   expect(buttons()).toEqual(['إحالة إلى الرئيس التنفيذي', 'رفض', 'موافقة'])
+})
+
+test('the real HR role sees cancel, escalate, refuse and approve on a pending request, in that order', async () => {
+  mockFetch({ [SHOW]: () => json(200, { data: shown() }) })
+  decide(['leave.view.all', 'leave.request.all', 'leave.decide.all'])
+  await screen.findByText('كريم حسن')
+  expect(buttons()).toEqual(['إلغاء الطلب', 'إحالة إلى الرئيس التنفيذي', 'رفض', 'موافقة'])
 })
 
 test('an escalated request offers the CEO approve and refuse, and shows the escalation note', async () => {
@@ -384,13 +391,14 @@ const theirs = { id: 'u2', name: 'كريم حسن' }
 const cancelButton = () => within(screen.getByRole('dialog')).queryByRole('button', { name: 'إلغاء الطلب' })
 
 test.each([
-  ['a team lead, on their own pending request', LEAD, { status: 'pending', requested_by: mine }, true],
-  ['a team lead, on their own escalated request', LEAD, { status: 'escalated', requested_by: mine }, true],
-  ['a team lead, on their own approved request', LEAD, { status: 'approved', requested_by: mine }, false],
-  ["a team lead, on someone else's pending request", LEAD, { status: 'pending', requested_by: theirs }, false],
+  ['a site manager, on their own pending request', LEAD, { status: 'pending', requested_by: mine }, true],
+  ['a site manager, on their own escalated request', LEAD, { status: 'escalated', requested_by: mine }, true],
+  ['a site manager, on their own approved request', LEAD, { status: 'approved', requested_by: mine }, false],
+  ["a site manager, on someone else's pending request", LEAD, { status: 'pending', requested_by: theirs }, false],
   ['HR filing for anyone, on a pending request', ['leave.view.all', 'leave.request.all'], { status: 'pending', requested_by: theirs }, true],
   ['HR filing for anyone, on an escalated request', ['leave.view.all', 'leave.request.all'], { status: 'escalated', requested_by: theirs }, true],
   ['HR deciding for anyone, on an approved request', HR, { status: 'approved', requested_by: theirs }, true],
+  ['a reader who files for anyone but does not decide, on an approved request', ['leave.view.all', 'leave.request.all'], { status: 'approved', requested_by: theirs }, false],
   ['the CEO, on an approved request', CEO, { status: 'approved', requested_by: theirs }, false],
   ['HR with every leave permission, on a refused request of their own', [...HR, 'leave.request.all'], { status: 'refused', requested_by: mine }, false],
   ['HR with every leave permission, on a cancelled request of their own', [...HR, 'leave.request.all'], { status: 'cancelled', requested_by: mine }, false],
@@ -408,7 +416,7 @@ test('cancelling an approved request says its leave days leave attendance, then 
   decide(HR, onOpenChange)
   await user.click(await screen.findByRole('button', { name: 'إلغاء الطلب' }))
   const ask = await screen.findByRole('dialog', { name: 'إلغاء طلب الإجازة' })
-  expect(ask).toHaveAccessibleDescription('ستُمسح من الحضور أيام الإجازة التي سجّلتها الموافقة على هذا الطلب، عدا الأيام التي عُدّلت بعدها.')
+  expect(ask).toHaveAccessibleDescription('ستُمسح من الحضور أيام الإجازة التي سجّلتها الموافقة على هذا الطلب، عدا الأيام التي غُيّر نوعها بعدها. ويُرفض الإلغاء إذا كان على أحد هذه الأيام ملاحظة أو سلفة، أو وقع في فترة مقفلة.')
   await user.type(within(ask).getByLabelText('سبب الإلغاء (اختياري)'), ' عاد الموظف مبكرًا ')
   await user.click(within(ask).getByRole('button', { name: 'تأكيد الإلغاء' }))
   await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
@@ -416,7 +424,7 @@ test('cancelling an approved request says its leave days leave attendance, then 
   expect(toast.success).toHaveBeenCalledWith('أُلغي الطلب.')
 })
 
-test('a team lead withdraws their own pending request without a reason', async () => {
+test('a site manager withdraws their own pending request without a reason', async () => {
   const post = vi.fn(() => json(200, { data: shown({ status: 'cancelled' }, null) }))
   mockFetch({ [SHOW]: () => json(200, { data: shown({ requested_by: mine }) }), 'POST /api/v1/leave/requests/r1/cancel': post })
   decide(LEAD)
@@ -431,7 +439,7 @@ test('a team lead withdraws their own pending request without a reason', async (
 test('a cancel refused for days holding a note or an advance shows the reason and lists those dates', async () => {
   mockFetch({
     [SHOW]: () => json(200, { data: shown({ status: 'approved', requested_by: theirs }, null) }),
-    'POST /api/v1/leave/requests/r1/cancel': () => json(409, { error: { code: 'leave_cancel_blocked', message: 'يومان من أيام الإجازة عليهما ملاحظة أو سلفة.', dates: ['2026-11-11', '2026-11-12'] } }),
+    'POST /api/v1/leave/requests/r1/cancel': () => json(409, { error: { code: 'leave_cancel_blocked', message: 'عدد أيام الإجازة التي تحمل ملاحظة أو سلفة: 2. عدّلها في الحضور أولًا.', dates: ['2026-11-11', '2026-11-12'] } }),
   })
   const onOpenChange = vi.fn()
   decide(HR, onOpenChange)
@@ -439,7 +447,7 @@ test('a cancel refused for days holding a note or an advance shows the reason an
   const ask = await screen.findByRole('dialog', { name: 'إلغاء طلب الإجازة' })
   await user.click(within(ask).getByRole('button', { name: 'تأكيد الإلغاء' }))
   const outer = screen.getByRole('dialog', { name: 'تفاصيل طلب الإجازة' })
-  expect(await within(outer).findByText('يومان من أيام الإجازة عليهما ملاحظة أو سلفة.')).toBeInTheDocument()
+  expect(await within(outer).findByText('عدد أيام الإجازة التي تحمل ملاحظة أو سلفة: 2. عدّلها في الحضور أولًا.')).toBeInTheDocument()
   expect(within(outer).getByText('2026-11-11')).toHaveAttribute('dir', 'ltr')
   expect(within(outer).getByText('2026-11-12')).toBeInTheDocument()
   expect(onOpenChange).not.toHaveBeenCalled()
@@ -450,5 +458,32 @@ test('a cancelled request shows who cancelled it and why', async () => {
   decide(HR)
   await screen.findByText('كريم حسن')
   expect(term('الحالة')).toHaveTextContent('ملغى')
+  expect(term('ألغاه')).toHaveTextContent('منى')
+  expect(term('تاريخ الإلغاء')).toBeInTheDocument()
+  expect(screen.queryByText('صاحب القرار')).toBeNull()
+  expect(screen.queryByText('تاريخ القرار')).toBeNull()
   expect(term('سبب الإلغاء')).toHaveTextContent('عاد الموظف مبكرًا')
+})
+
+test.each([
+  ['a locked period', 423, 'period_locked', 'فترة الحضور مقفلة ولا يمكن تعديلها.'],
+  ['a stale version', 409, 'concurrency_conflict', 'عُدِّل هذا السجل في أثناء ذلك.'],
+])('a cancel refused for %s shows the reason, keeps the request open, and reloads it', async (_, status, code, message) => {
+  let version = 3
+  mockFetch({
+    [SHOW]: () => json(200, { data: shown({ status: 'approved', requested_by: theirs, version }, null) }),
+    'POST /api/v1/leave/requests/r1/cancel': () => {
+      version = 4
+      return json(status, { error: { code, message } })
+    },
+  })
+  const onOpenChange = vi.fn()
+  decide(HR, onOpenChange)
+  await user.click(await screen.findByRole('button', { name: 'إلغاء الطلب' }))
+  await user.click(within(await screen.findByRole('dialog', { name: 'إلغاء طلب الإجازة' })).getByRole('button', { name: 'تأكيد الإلغاء' }))
+  const outer = screen.getByRole('dialog', { name: 'تفاصيل طلب الإجازة' })
+  expect(await within(outer).findByText(message)).toBeInTheDocument()
+  await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([u]) => String(u).endsWith('/leave/requests/r1')).length).toBeGreaterThan(1))
+  expect(onOpenChange).not.toHaveBeenCalled()
+  expect(within(outer).getByRole('button', { name: 'إلغاء الطلب' })).toBeEnabled()
 })

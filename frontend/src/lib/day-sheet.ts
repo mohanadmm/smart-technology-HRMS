@@ -59,10 +59,10 @@ export function parseBatch(input: string, rows: SheetRow[]): { matches: SheetRow
 export const hhmm = (t: string | number | null) => (t == null ? null : String(t).slice(0, 5))
 
 /** The bulk rows for one action over the chosen rows; rows already in the target state are left out. */
-export function bulkRows(action: SheetAction, rows: SheetRow[], leaveSite: (code: string) => string | undefined, office: boolean): { rows: BulkRow[]; skipped: SheetRow[] } {
+export function bulkRows(action: SheetAction, rows: SheetRow[], leaveTypeId: (code: string) => string | undefined, office: boolean): { rows: BulkRow[]; skipped: SheetRow[] } {
   const out: BulkRow[] = []
   const skipped: SheetRow[] = []
-  const leave = action.kind === 'leave' ? leaveSite(action.code) : undefined
+  const leave = action.kind === 'leave' ? leaveTypeId(action.code) : undefined
   for (const r of rows) {
     const d = r.day
     const stored = d.state === 'stored'

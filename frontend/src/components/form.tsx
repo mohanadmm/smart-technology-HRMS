@@ -23,14 +23,19 @@ export function ErrorBanner({ err, shown }: { err: unknown; shown: string[] }) {
     err instanceof ApiError && err.details.length
       ? err.details.filter((d) => !d.field || !shown.includes(d.field)).map((d) => d.message)
       : [err instanceof Error ? err.message : String(err)]
+  const dates = err instanceof ApiError ? err.dates : []
   return msgs.length ? (
     <Alert tone="danger">
       {msgs.map((m, i) => (
         <p key={i}>{m}</p>
       ))}
+      {!!dates.length && <Dates dates={dates} />}
     </Alert>
   ) : null
 }
+
+/** ISO dates as a wrapping list, each in an LTR isolate. */
+export const Dates = ({ dates }: { dates: string[] }) => <ul className="flex flex-wrap gap-x-4">{dates.map((d) => <li key={d}><bdi dir="ltr">{d}</bdi></li>)}</ul>
 
 /** A record's name in the UI language: in English `name_en` when set, else `fallback`, else `name_ar`; Arabic always shows `name_ar`. */
 export const localName = (row: Row, lang: string, fallback?: string): string => (lang === 'en' ? row.name_en || fallback || row.name_ar : row.name_ar)
