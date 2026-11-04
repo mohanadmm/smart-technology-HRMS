@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\AddRequestId;
 use App\Http\Middleware\ForgetResolvedGuards;
+use App\Http\Middleware\RecordRequest;
 use App\Http\Middleware\SetLocaleFromRequest;
 use App\Modules\Attendance\Domain\AttendanceRefused;
 use App\Modules\Attendance\Presentation\AlertMissingDaysCommand;
@@ -40,6 +41,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         // Global, not api-group: unmatched routes (404) never enter the api group.
         $middleware->prepend(AddRequestId::class);
+        // Outermost (prepended last): its duration covers every other middleware, and any refusal they render is logged.
+        $middleware->prepend(RecordRequest::class);
         $middleware->append(ForgetResolvedGuards::class);
         $middleware->api(prepend: [SetLocaleFromRequest::class]);
         // No login route to redirect to: an API guest gets the 401 envelope.
