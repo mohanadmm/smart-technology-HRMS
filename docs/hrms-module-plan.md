@@ -47,7 +47,7 @@ Smart Technology runs HR and payroll today on 6 hand-built Excel workbooks (anal
    - RBAC: create roles and edit permissions per role.
    - Account management.
    - Audit-log panel (who did what, before/after values).
-   - Error & request/response log screen: done (`/console/logs`, Developer only via `system_log.view`).
+   - Error & request/response log screen: done (`/console/logs`, Developer only via `system_log.view.all`).
    - Retention: 1 year for audit, 90 days for request/error logs: done by `logs:prune` (daily 03:00 Cairo).
 3. **Employees**:
    - Auto sequential code; optional `crm_user_id`.

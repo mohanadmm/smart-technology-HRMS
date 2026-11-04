@@ -59,7 +59,7 @@ Two new tables, not business tables (no `standardColumns`, like `audit_log`), UU
 
 `request_log`, one row per `/api/*` request:
 - `request_id`, `user_id` (nullable), `method` (string 10), `path` (string 2048, without the query string), `route` (matched route pattern, nullable for 404s), `query` (jsonb, masked, nullable), `status` (smallint), `duration_ms` (integer), `ip`, `user_agent` (512), `request_body` (jsonb, nullable), `response_body` (jsonb, nullable), `occurred_at` (timestamptz, the request's start time).
-- Indexes on `occurred_at desc`, `(status, occurred_at desc)`, `request_id`.
+- Indexes on `occurred_at desc`, `(status, occurred_at desc)`, `request_id`, `(user_id, occurred_at desc)` (the account filter, as on `audit_log`).
 
 `error_log`, one row per reported exception:
 - `request_id` (nullable: jobs and commands have none), `user_id` (nullable), `class`, `message` (text, masked), `file`, `line`, `trace` (text: frames only), `sqlstate` (nullable), `occurred_at`.
@@ -73,15 +73,16 @@ One masker, used for the query, the request body, the response body, uploaded fi
    - its lowercased name contains `password`, `token`, `secret`, `authorization` or `cookie`; or
    - its name is exactly one of the money and ID keys: `salary`, `raise`, `insured_basic`, `daily_wage`, `value`, `amount`, `current_pay`, `national_id`, `insurance_no`, `bank_account`, `phone`; or it ends in `_amount`.
 2. **By shape.** In any stored string, a run of 7 or more digits becomes `[masked]`. This catches a national ID, account or phone typed into `search=`/`q=`, an ID used as an uploaded file name, and an ID inside an error message, whatever the key.
+   Added during the build: keys go through the shape rule too; Arabic-Indic (٠-٩) and Persian (۰-۹) digits count as digits, mixed in one run too; an int or float value with a 7+ digit run is masked as well; a whole UUID is kept, since its hex groups often hold 7 digits in a row.
 
 Exact names, not fragments, for money: fragments like `pay`, `rate` or `basic` mask `pay_method`, `allowance_mode` or whole `fares` lists that are needed to debug a 422, and catch future harmless keys. The safety net is a test, not a manual check: it feeds the real validation rule arrays (`EmployeeRules`, `SiteRules`, the fare, pay-change and attendance rules) through the masker and asserts every key whose rule uses the money or mobile pattern, plus the ID keys, comes out masked. A new money field that reuses those rule constants fails the test until it is added.
 
-Uploaded files are not stored: the request body keeps each file field's masked original name and size. The request body is the JSON or form input (`$request->input()` without the query string merged in). A stored body larger than 64 KB after masking becomes `{"_truncated": true, "bytes": n}`. Headers are not stored, except the user agent.
+Uploaded files are not stored: the request body keeps each file field's masked original name and size. The request body is the JSON or form input alone (`$request->json()->all()` for JSON, else `$request->request->all()`): `input()` merges the query in, and dropping the query's keys from it would also drop a body key of the same name. A stored body larger than 64 KB after masking becomes `{"_truncated": true, "bytes": n}`. Headers are not stored, except the user agent.
 
 ### Error text without data
 
-- `config/database.php`: `'mask_bindings_in_exception_messages' => true` on the pgsql connection. One line; it also protects Laravel's file log and the debug 500 envelope.
-- For any exception whose `getPrevious()` chain holds a `PDOException` or `QueryException`, `error_log` stores the SQLSTATE, the constraint name if any, and `getSql()` (placeholders). Never the driver text: its `DETAIL:` line repeats the key (`Key (national_id)=(…)`) or the whole failing row.
+- `config/database.php`: `'mask_bindings_in_exception_messages' => true` on the pgsql connection. It masks the SQL bindings in the `QueryException` message only. PostgreSQL's driver text (the `DETAIL:` line) can still carry values into the debug 500 envelope and Laravel's file log (`storage/logs`); log rows never store driver text. `APP_DEBUG` must be false wherever real data lives.
+- For any exception whose `getPrevious()` chain holds a `PDOException` or `QueryException`, `error_log` stores the SQLSTATE (`unknown` when none resolves), the constraint name if any (read from the driver text's first line only), and `getSql()` (placeholders). Never the driver text: its `DETAIL:` line repeats the key (`Key (national_id)=(…)`) or the whole failing row.
 - Every other exception message goes through the masker's shape rule.
 - `Support/Money/Decimal.php` stops putting the value in its exception messages.
 - `trace` is built from `getTrace()` with only file, line, class, type and function, never `args`. `docker/php/Dockerfile`'s `zz-app.ini` also gets `zend.exception_ignore_args=On`, which protects the file log and `failed_jobs` too.
