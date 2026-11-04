@@ -12,6 +12,8 @@ use App\Modules\Identity\Domain\Authentication\AuthenticationRefused;
 use App\Modules\Identity\Domain\Rbac\AuthorizationRefused;
 use App\Modules\Identity\Presentation\AuthorizePermission;
 use App\Modules\Identity\Presentation\CreateUserCommand;
+use App\Modules\Leave\Domain\NoLeaveBalance;
+use App\Support\Database\ConcurrencyConflict;
 use App\Support\Http\ApiEnvelope;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -82,6 +84,17 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(fn (AttendanceRefused $e, Request $request) => ApiEnvelope::error(
             $request, $e->reason->status(), $e->reason->value, __('attendance.refusal.'.$e->reason->value, $e->params), $e->details,
+        ));
+
+        $exceptions->dontReport([ConcurrencyConflict::class, NoLeaveBalance::class]);
+
+        // Same text as Attendance's own concurrency_conflict refusal, which keeps its enum case until Attendance moves to this exception.
+        $exceptions->render(fn (ConcurrencyConflict $e, Request $request) => ApiEnvelope::error(
+            $request, 409, 'concurrency_conflict', __('attendance.refusal.concurrency_conflict'),
+        ));
+
+        $exceptions->render(fn (NoLeaveBalance $e, Request $request) => ApiEnvelope::error(
+            $request, 422, 'no_leave_balance', __('errors.no_leave_balance'),
         ));
 
         $exceptions->dontReport(EmployeeCodeTaken::class);

@@ -257,6 +257,11 @@ class LeaveBalancesTest extends TestCase
         $this->adjust($e, [...$body, 'opening_used' => 3, 'version' => 1])->assertStatus(409)->assertJsonPath('error.code', 'concurrency_conflict');
         $this->adjust($e, [...$body, 'opening_used' => 3])->assertStatus(409)->assertJsonPath('error.code', 'concurrency_conflict');
         $this->balance($e)->assertJsonPath('data.adjustment.opening_used', 2);
+
+        $fresh = $this->employee('office', '2020-01-01');
+        $this->adjust($fresh, [...$body, 'version' => 1])->assertStatus(409)->assertJsonPath('error.code', 'concurrency_conflict')
+            ->assertJsonPath('error.message', __('attendance.refusal.concurrency_conflict'));
+        $this->balance($fresh)->assertJsonPath('data.adjustment', null);
     }
 
     public function test_a_racing_create_is_a_conflict(): void
@@ -298,7 +303,7 @@ class LeaveBalancesTest extends TestCase
         ] as $field => $bad) {
             $this->adjust($e, [...$ok, ...$bad])->assertStatus(422)->assertJsonPath('error.details.0.field', $field);
         }
-        $this->adjust($e, $ok, 1999)->assertNotFound();
+        $this->adjust($e, $ok, 1999)->assertStatus(422)->assertJsonPath('error.details.0.field', 'year');
         $this->assertSame(0, DB::table('leave_year_adjustments')->count());
     }
 
@@ -306,7 +311,7 @@ class LeaveBalancesTest extends TestCase
     {
         $e = $this->employee('day_laborer', '2020-01-01');
         $this->adjust($e, ['entitlement' => 30, 'opening_used' => 0, 'opening_casual_used' => 0, 'reason' => 'Reason-1'])
-            ->assertStatus(422)->assertJsonPath('error.details.0.field', 'employee');
+            ->assertStatus(422)->assertJsonPath('error', ['code' => 'no_leave_balance', 'message' => __('errors.no_leave_balance')]);
         $this->adjust((string) Str::uuid7(), ['entitlement' => 30, 'opening_used' => 0, 'opening_casual_used' => 0, 'reason' => 'Reason-1'])->assertNotFound();
         $this->assertSame(0, DB::table('leave_year_adjustments')->count());
     }

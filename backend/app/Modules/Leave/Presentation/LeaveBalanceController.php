@@ -11,6 +11,7 @@ use App\Support\Http\ApiEnvelope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
 final class LeaveBalanceController
@@ -23,7 +24,7 @@ final class LeaveBalanceController
     {
         $v = $request->validate([
             'year' => self::YEAR,
-            'type' => ['sometimes', Rule::in([EmployeeType::Office->value, EmployeeType::Engineer->value, EmployeeType::PermanentWorker->value])],
+            'type' => ['sometimes', Rule::enum(EmployeeType::class)->only(EmployeeType::monthly())],
             'q' => ['sometimes', 'nullable', 'string', 'max:100'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'between:1,100'],
@@ -45,15 +46,14 @@ final class LeaveBalanceController
 
     public function adjust(Request $request, string $employee, string $year): JsonResponse
     {
-        abort_unless((int) $year >= 2000 && (int) $year <= 2100, 404);
-        $nonDefault = $request->input('entitlement') !== null || $request->integer('opening_used') > 0 || $request->integer('opening_casual_used') > 0;
-        $data = $request->validate([
+        $data = Validator::make([...$request->all(), 'year' => $year], [
+            'year' => self::YEAR,
             'entitlement' => ['nullable', 'integer', 'between:0,366'],
             'opening_used' => ['required', 'integer', 'between:0,366'],
             'opening_casual_used' => ['required', 'integer', 'min:0', 'lte:opening_used'],
-            'reason' => ['nullable', 'string', 'max:1000', Rule::requiredIf($nonDefault)],
+            'reason' => ['nullable', 'string', 'max:1000'],
             'version' => ['nullable', 'integer', 'min:1'],
-        ]);
+        ])->validate();
 
         return ApiEnvelope::single($request, $this->balances->adjust(
             $employee, (int) $year, Arr::only($data, ['entitlement', 'opening_used', 'opening_casual_used', 'reason']), isset($data['version']) ? (int) $data['version'] : null,

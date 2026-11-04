@@ -9,7 +9,9 @@ use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeePayChange;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeTypeChange;
+use App\Support\Http\Paginates;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Read model of live employees with their dated types and shifts, so other modules never query Employees' tables.
@@ -18,6 +20,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final class EmployeeRoster
 {
+    use Paginates;
+
     private const RELATIONS = ['typeChanges', 'payChanges', 'siteAssignments'];
 
     /**
@@ -31,12 +35,10 @@ final class EmployeeRoster
 
     private const HOME_SITE = '(select s.site_id from employee_site_assignments s where s.employee_id = employees.id and s.deleted_at is null and s.effective_from <= ?::date order by s.effective_from desc limit 1) = ?';
 
-    private const TYPE_TODAY = '(select t.type from employee_type_changes t where t.employee_id = employees.id and t.deleted_at is null and t.effective_from <= ?::date order by t.effective_from desc limit 1)';
-
     /** @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}} */
     public function ofType(EmployeeType $type, string $from, string $to, int $perPage, int $page, ?string $managedBy = null): array
     {
-        return $this->paginate($this->employedAs($type, $from, $to, $managedBy), $perPage, $page);
+        return $this->page($this->employedAs($type, $from, $to, $managedBy), $perPage, $page);
     }
 
     /**
@@ -50,18 +52,14 @@ final class EmployeeRoster
     {
         $today = now('Africa/Cairo')->toDateString();
         $values = array_map(fn (EmployeeType $t) => $t->value, $types);
-        $like = '%'.addcslashes((string) $search, '%_\\').'%';
         $query = Employee::with(self::RELATIONS)
             ->where(fn (Builder $q) => $q->whereNull('termination_date')->orWhere('termination_date', '>=', $today))
-            ->whereRaw(self::TYPE_TODAY.' in ('.implode(',', array_fill(0, count($values), '?')).')', [$today, ...$values])
-            ->when($search !== null && $search !== '', fn (Builder $q) => $q->where(fn (Builder $q) => $q
-                ->where('name_ar', 'ilike', $like)
-                ->orWhere('name_en', 'ilike', $like)
-                ->when(preg_match('/^(0|[1-9]\d{0,8})$/D', (string) $search) === 1, fn (Builder $q) => $q->orWhere('code', (int) $search))))
+            ->whereRaw(Employee::TYPE_ON.' in ('.implode(',', array_fill(0, count($values), '?')).')', [$today, ...$values])
+            ->when($search !== null && $search !== '', fn (Builder $q) => $q->matching((string) $search))
             ->when($managedBy !== null, fn (Builder $q) => EmployeeReach::apply($q, (string) $managedBy, $today))
             ->orderBy('code');
 
-        return $this->paginate($query, $perPage, $page);
+        return $this->page($query, $perPage, $page);
     }
 
     /** @return list<array<string, mixed>> */
@@ -125,30 +123,10 @@ final class EmployeeRoster
         return array_values($query->get()->map(fn (Employee $e) => $this->row($e))->all());
     }
 
-    /**
-     * @param  Builder<Employee>  $query
-     * @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}}
-     */
-    private function paginate(Builder $query, int $perPage, int $page): array
-    {
-        $result = $query->paginate(min(max($perPage, 1), 100), ['*'], 'page', max($page, 1));
-
-        return [
-            'data' => array_values($result->getCollection()->map(fn (Employee $e) => $this->row($e))->all()),
-            'pagination' => [
-                'page' => $result->currentPage(),
-                'per_page' => $result->perPage(),
-                'total' => $result->total(),
-                'total_pages' => $result->lastPage(),
-                'has_next_page' => $result->hasMorePages(),
-                'has_previous_page' => $result->currentPage() > 1,
-            ],
-        ];
-    }
-
     /** @return array<string, mixed> */
-    private function row(Employee $e): array
+    private function row(Model $e): array
     {
+        /** @var Employee $e */
         $hhmm = fn (?string $t) => $t === null ? null : substr($t, 0, 5);
 
         return [

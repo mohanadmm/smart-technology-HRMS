@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace App\Modules\Leave\Application;
 
-use App\Modules\Attendance\Domain\AttendanceRefusal;
-use App\Modules\Attendance\Domain\AttendanceRefused;
 use App\Modules\Employees\Application\EmployeeRoster;
 use App\Modules\Employees\Domain\EffectiveDated;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Leave\Domain\LeaveBalance;
+use App\Modules\Leave\Domain\NoLeaveBalance;
 use App\Modules\Leave\Infrastructure\Eloquent\LeaveYearAdjustment;
 use App\Modules\Settings\Application\BusinessRules;
 use App\Modules\Sites\Domain\LeaveCode;
 use App\Modules\Sites\Domain\SiteKind;
+use App\Support\Database\ConcurrencyConflict;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -24,8 +24,6 @@ final class LeaveBalances
 {
     private const COUNTED = [LeaveCode::Annual, LeaveCode::Casual, LeaveCode::Sick, LeaveCode::Unpaid];
 
-    private const MONTHLY = [EmployeeType::Office, EmployeeType::Engineer, EmployeeType::PermanentWorker];
-
     private const ADJUSTMENT = ['entitlement', 'opening_used', 'opening_casual_used', 'reason', 'version'];
 
     public function __construct(private readonly EmployeeRoster $roster, private readonly BusinessRules $rules) {}
@@ -34,7 +32,7 @@ final class LeaveBalances
     public function forEmployee(string $employeeId, int $year): array
     {
         $employee = $this->roster->find($employeeId) ?? throw new ModelNotFoundException;
-        [$read] = $this->read([$employee], $year);
+        $read = $this->read([$employee], $year)[$employeeId];
 
         return ['employee_id' => $employeeId, 'year' => $year, 'type' => $read['type'], 'hire_date' => $employee['hire_date'], 'balance' => $read['balance'], 'adjustment' => $read['adjustment']];
     }
@@ -46,31 +44,29 @@ final class LeaveBalances
      */
     public function list(int $year, ?string $type, ?string $q, int $perPage, int $page, ?string $managerId): array
     {
-        $types = $type === null ? self::MONTHLY : [EmployeeType::from($type)];
+        $types = $type === null ? EmployeeType::monthly() : [EmployeeType::from($type)];
         $result = $this->roster->activeOfTypes($types, $q, $perPage, $page, $managerId);
-        $data = [];
-        foreach ($this->read($result['data'], $year) as $i => $read) {
-            $e = $result['data'][$i];
-            $data[] = [
-                'id' => $e['id'], 'code' => $e['code'], 'name_ar' => $e['name_ar'], 'name_en' => $e['name_en'], 'type' => $read['type'], 'hire_date' => $e['hire_date'],
-                ...$read['balance'] ?? [],
-            ];
-        }
+        $reads = $this->read($result['data'], $year);
+        $data = array_map(fn (array $e) => [
+            'id' => $e['id'], 'code' => $e['code'], 'name_ar' => $e['name_ar'], 'name_en' => $e['name_en'], 'type' => $reads[$e['id']]['type'], 'hire_date' => $e['hire_date'],
+            ...$reads[$e['id']]['balance'] ?? [],
+        ], $result['data']);
 
         return ['data' => $data, 'pagination' => $result['pagination']];
     }
 
     /**
-     * Creates the year's adjustment, or updates it when $version matches the stored one (else 409); a day laborer has none (422).
+     * Creates or updates the year's adjustment when $version equals the stored one, null meaning no row yet (else 409); a day laborer has none (422).
+     * Any value off its default (entitlement null, opening days 0) needs a reason, as an HR override does.
      *
-     * @param  array<string, mixed>  $input  validated: entitlement ?int, opening_used int, opening_casual_used int, reason ?string
+     * @param  array<string, mixed>  $input  validated: entitlement ?int, opening_used int, opening_casual_used int (≤ opening_used), reason ?string
      * @return array<string, mixed> forEmployee() after the write
      */
     public function adjust(string $employeeId, int $year, array $input, ?int $version): array
     {
         $employee = $this->roster->find($employeeId) ?? throw new ModelNotFoundException;
-        if (self::typeToday($employee) === EmployeeType::DayLaborer->value) {
-            throw ValidationException::withMessages(['employee' => __('errors.no_leave_balance')]);
+        if (! self::hasBalance(self::typeToday($employee))) {
+            throw new NoLeaveBalance;
         }
         $values = [
             'entitlement' => $input['entitlement'] ?? null,
@@ -78,23 +74,23 @@ final class LeaveBalances
             'opening_casual_used' => (int) $input['opening_casual_used'],
             'reason' => $input['reason'] ?? null,
         ];
+        if (($values['entitlement'] !== null || $values['opening_used'] > 0 || $values['opening_casual_used'] > 0) && blank($values['reason'])) {
+            throw ValidationException::withMessages(['reason' => __('validation.required', ['attribute' => __('validation.attributes.reason')])]);
+        }
 
         try {
             DB::transaction(function () use ($employeeId, $year, $values, $version): void {
                 $row = LeaveYearAdjustment::where(['employee_id' => $employeeId, 'year' => $year])->lockForUpdate()->first();
-                if ($row === null) {
-                    LeaveYearAdjustment::create([...$values, 'employee_id' => $employeeId, 'year' => $year, 'version' => 1]);
-
-                    return;
+                if ($row?->version !== $version) {
+                    throw new ConcurrencyConflict;
                 }
-                if ($row->version !== $version) {
-                    throw AttendanceRefused::because(AttendanceRefusal::ConcurrencyConflict);
-                }
-                $row->fill([...$values, 'version' => $row->version + 1])->save();
+                $row === null
+                    ? LeaveYearAdjustment::create([...$values, 'employee_id' => $employeeId, 'year' => $year, 'version' => 1])
+                    : $row->fill([...$values, 'version' => $row->version + 1])->save();
             });
         } catch (UniqueConstraintViolationException) {
             // A racing create of the same employee and year won.
-            throw AttendanceRefused::because(AttendanceRefusal::ConcurrencyConflict);
+            throw new ConcurrencyConflict;
         }
 
         return $this->forEmployee($employeeId, $year);
@@ -104,7 +100,7 @@ final class LeaveBalances
      * One counts query and one adjustments query whatever the number of employees.
      *
      * @param  list<array<string, mixed>>  $employees  EmployeeRoster rows
-     * @return list<array{type: ?string, balance: ?array<string, ?int>, adjustment: ?array<string, mixed>}> in $employees order
+     * @return array<string, array{type: ?string, balance: ?array<string, ?int>, adjustment: ?array<string, mixed>}> keyed by employee id
      */
     private function read(array $employees, int $year): array
     {
@@ -113,23 +109,31 @@ final class LeaveBalances
         $adjustments = LeaveYearAdjustment::whereIn('employee_id', $ids)->where('year', $year)->get()->keyBy('employee_id');
         $rules = $this->rules->all();
 
-        return array_map(function (array $e) use ($year, $counts, $adjustments, $rules): array {
+        $reads = [];
+        foreach ($employees as $e) {
             // ponytail: the type today decides balance or none; a mid-year monthly <-> daily change is not pro-rated (spec, Balance).
             $type = self::typeToday($e);
             $adjustment = $adjustments->get($e['id']);
-
-            return [
+            $reads[(string) $e['id']] = [
                 'type' => $type,
-                'balance' => $type === EmployeeType::DayLaborer->value ? null : $this->balance($e['hire_date'], $year, $adjustment, $counts[$e['id']], $rules),
+                'balance' => self::hasBalance($type) ? $this->balance($e['hire_date'], $year, $adjustment, $counts[$e['id']], $rules) : null,
                 'adjustment' => $adjustment?->only(self::ADJUSTMENT),
             ];
-        }, $employees);
+        }
+
+        return $reads;
     }
 
     /** @param  array<string, mixed>  $employee  an EmployeeRoster row */
     private static function typeToday(array $employee): ?string
     {
         return EffectiveDated::at($employee['types'], now('Africa/Cairo')->toDateString())['type'] ?? null;
+    }
+
+    /** An employee with no type in force yet keeps a balance; only a day laborer has none. */
+    private static function hasBalance(?string $type): bool
+    {
+        return $type === null || EmployeeType::from($type)->isMonthly();
     }
 
     /**

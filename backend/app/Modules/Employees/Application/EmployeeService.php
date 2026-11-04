@@ -30,8 +30,6 @@ final class EmployeeService
 {
     private const HIDDEN = ['created_by', 'updated_by', 'deleted_at'];
 
-    private const CURRENT_TYPE = '(select t.type from employee_type_changes t where t.employee_id = employees.id and t.deleted_at is null and t.effective_from <= ? order by t.effective_from desc limit 1)';
-
     private const CURRENT_SITE = '(select s.site_id from employee_site_assignments s where s.employee_id = employees.id and s.deleted_at is null and s.effective_from <= ? order by s.effective_from desc limit 1)';
 
     private const PAY_FIELDS = ['effective_from', 'salary', 'raise', 'insured_basic', 'daily_wage', 'shift_start', 'shift_end'];
@@ -47,10 +45,10 @@ final class EmployeeService
      */
     public function list(array $filters, ?string $ownerId = null): array
     {
-        $query = $this->visibleTo($ownerId, $filters['archived'] ?? false)->select('employees.*')->selectRaw(self::CURRENT_TYPE.' as current_type', [self::today()])->orderBy('code');
+        $query = $this->visibleTo($ownerId, $filters['archived'] ?? false)->select('employees.*')->selectRaw(Employee::TYPE_ON.' as current_type', [self::today()])->orderBy('code');
 
         if (isset($filters['type'])) {
-            $query->whereRaw(self::CURRENT_TYPE.' = ?', [self::today(), $filters['type']]);
+            $query->whereRaw(Employee::TYPE_ON.' = ?', [self::today(), $filters['type']]);
         }
 
         if (isset($filters['site_id'])) {
@@ -58,14 +56,7 @@ final class EmployeeService
         }
 
         if (isset($filters['search']) && $filters['search'] !== '') {
-            $search = $filters['search'];
-            $like = '%'.addcslashes($search, '%_\\').'%';
-            // Every arm must be indexable or Postgres scans the table: trigram indexes for the text, the code's unique index for a number.
-            $query->where(fn (Builder $q) => $q
-                ->where('name_ar', 'ilike', $like)
-                ->orWhere('name_en', 'ilike', $like)
-                ->when($ownerId === null, fn (Builder $q) => $q->orWhere('national_id', 'like', $like))
-                ->when(preg_match('/^(0|[1-9]\d{0,8})$/D', $search) === 1, fn (Builder $q) => $q->orWhere('code', (int) $search)));
+            $query->matching($filters['search'], $ownerId === null);
         }
 
         $page = $query->paginate(min(max($filters['per_page'] ?? 20, 1), 100));
@@ -87,7 +78,7 @@ final class EmployeeService
     public function countsByType(?string $ownerId = null): array
     {
         $counts = $this->visibleTo($ownerId)->toBase()
-            ->selectRaw(self::CURRENT_TYPE.' as type, count(*) as n', [self::today()])
+            ->selectRaw(Employee::TYPE_ON.' as type, count(*) as n', [self::today()])
             ->groupBy('type')->pluck('n', 'type');
         $byType = array_map(fn (EmployeeType $t) => (int) ($counts[$t->value] ?? 0), array_column(EmployeeType::cases(), null, 'value'));
 
