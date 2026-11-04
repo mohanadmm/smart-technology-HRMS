@@ -756,8 +756,8 @@
       "period": "{{start}} – {{end}}"
     },
     "leaveAnniversary": {
-      "line": "{{name}} completed one year of service today",
-      "unknown": "An employee completed one year of service today",
+      "line": "One year since <name/> (<code/>) was hired",
+      "unknown": "One year since an employee was hired",
       "hired": "Hired {{date}}"
     }
   },

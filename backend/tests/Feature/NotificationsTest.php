@@ -10,6 +10,7 @@ use App\Modules\Notifications\Application\Notifier;
 use App\Modules\Notifications\Infrastructure\Eloquent\Notification;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -124,7 +125,22 @@ class NotificationsTest extends TestCase
         $this->assertSame(3, Notification::count());
     }
 
-    public function test_the_inbox_names_the_employee_a_row_points_to(): void
+    public function test_notify_once_losing_a_race_inside_a_transaction_leaves_the_transaction_usable(): void
+    {
+        $id = $this->makeUser('hr')->id;
+        $key = ['user_id' => $id, 'type' => 'attendance_missing_days', 'date' => '2026-10-20', 'ref' => null];
+        // A concurrent run inserts the same row between notifyOnce's check and its insert.
+        Notification::creating(function () use ($key) {
+            Notification::withoutEvents(fn () => Notification::create([...$key, 'data' => []]));
+        });
+
+        DB::transaction(function () use ($id) {
+            $this->assertFalse(app(Notifier::class)->notifyOnce($id, 'attendance_missing_days', '2026-10-20', []));
+            $this->assertSame(1, DB::table('users')->where('id', $id)->count());
+        });
+    }
+
+    public function test_the_inbox_names_the_live_employee_a_row_points_to(): void
     {
         $hr = $this->makeUser('hr');
         $employee = $this->employee('office', '2025-10-20');
@@ -137,7 +153,7 @@ class NotificationsTest extends TestCase
         $this->actingAs($hr, 'api');
         $rows = collect($this->getJson('/api/v1/notifications')->assertOk()->json('data'))->keyBy('ref');
         $this->assertSame(['id' => $employee, 'code' => (int) $rows[$employee]['employee']['code'], 'name_ar' => 'Office-1', 'name_en' => null], $rows[$employee]['employee']);
-        $this->assertSame('Office-2', $rows[$gone]['employee']['name_ar']);
+        $this->assertNull($rows[$gone]['employee']);   // the employee page is a 404 for a deleted employee
         $this->assertSame($employee, $this->patchJson('/api/v1/notifications/'.$rows[$employee]['id'].'/read')->assertOk()->json('data.employee.id'));
     }
 

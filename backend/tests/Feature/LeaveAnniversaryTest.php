@@ -49,10 +49,24 @@ class LeaveAnniversaryTest extends TestCase
         $this->assertEquals(['employee_id' => $office, 'hire_date' => '2025-03-10'], $n->data);
     }
 
+    public function test_a_run_catches_up_on_the_six_days_before_it(): void
+    {
+        $office = $this->employee('office', '2025-03-10');
+
+        $this->artisan('leave:alert-anniversary', ['date' => '2026-03-17'])->assertSuccessful();   // 03-11 .. 03-17
+        $this->assertSame(0, Notification::count());
+        $this->artisan('leave:alert-anniversary', ['date' => '2026-03-14'])->assertSuccessful();   // 03-08 .. 03-14
+        $this->artisan('leave:alert-anniversary', ['date' => '2026-03-16'])->assertSuccessful();   // overlaps: nothing new
+
+        $this->assertSame([['2026-03-10', $office], ['2026-03-10', $office]], Notification::all()
+            ->map(fn (Notification $n) => [substr((string) $n->date, 0, 10), $n->ref])->all());
+    }
+
     public function test_a_jan_1_hire_is_already_on_the_full_entitlement(): void
     {
         $this->employee('office', '2025-01-01');
         $this->artisan('leave:alert-anniversary', ['date' => '2026-01-01'])->assertSuccessful();
+        $this->artisan('leave:alert-anniversary', ['date' => '2026-01-05'])->assertSuccessful();
         $this->assertSame(0, Notification::count());
     }
 
@@ -62,6 +76,7 @@ class LeaveAnniversaryTest extends TestCase
 
         $this->artisan('leave:alert-anniversary', ['date' => '2025-02-28'])->assertSuccessful();
         $this->artisan('leave:alert-anniversary', ['date' => '2025-03-01'])->assertSuccessful();
+        $this->artisan('leave:alert-anniversary', ['date' => '2025-03-06'])->assertSuccessful();   // the last run whose window holds 02-28
 
         $this->assertSame([['2025-02-28', $worker], ['2025-02-28', $worker]], Notification::all()
             ->map(fn (Notification $n) => [substr((string) $n->date, 0, 10), $n->ref])->all());

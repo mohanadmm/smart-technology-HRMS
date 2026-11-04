@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Bell } from 'lucide-react'
 import { useId } from 'react'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { localName, ltrDates } from '@/components/form'
@@ -34,9 +34,9 @@ export function NotificationBell() {
   const list = ((err ? kept : rows) ?? []) as { type: string }[]
   const known = list.filter((n): n is Notification => KNOWN.has(n.type)) // an unknown type is neither counted nor shown
   const unread = known.filter((n) => !n.read_at).length
-  const open = (n: Notification, to: string) => {
+  const open = (n: Notification, to: string | null) => {
     if (!n.read_at) save(`/notifications/${n.id}/read`, { method: 'PATCH' }).catch((e: Error) => toast.error(e.message))
-    navigate(to)
+    if (to) navigate(to)
   }
   const unreadWord = (n: Notification) => !n.read_at && <><span className="sr-only">{t('notifications.unread')}</span> </>
   // without it, screen readers other than Chromium's run the line into the date that follows
@@ -70,13 +70,15 @@ export function NotificationBell() {
         )}
         {!loading && !err && known.length === 0 && <p className="px-2.5 py-3 text-sm text-muted-foreground">{t('notifications.empty')}</p>}
         {known.map((n) => n.type === 'leave_anniversary' ? (
-          <DropdownMenuItem key={n.id} onSelect={() => open(n, `/employees/${n.data.employee_id}?tab=leave`)} className={cn('flex-col items-start gap-0.5', !n.read_at && 'font-semibold')}>
+          // a deleted employee (employee null) has no page to open; the year is the anniversary's, not today's
+          <DropdownMenuItem key={n.id} onSelect={() => open(n, n.employee && `/employees/${n.employee.id}?tab=leave&year=${n.date.slice(0, 4)}`)} className={cn('flex-col items-start gap-0.5', !n.read_at && 'font-semibold')}>
             <span className="flex items-baseline gap-2">
               {!n.read_at && <span aria-hidden className="size-2 shrink-0 self-center rounded-full bg-primary" />}
               <span>
                 {unreadWord(n)}
-                {n.employee ? t('notifications.leaveAnniversary.line', { name: localName(n.employee, i18n.language) }) : t('notifications.leaveAnniversary.unknown')}
-                {n.employee && <> <bdi dir="ltr" className="font-mono text-xs font-normal text-muted-foreground">{n.employee.code}</bdi></>}
+                {n.employee
+                  ? <Trans i18nKey="notifications.leaveAnniversary.line" components={{ name: <bdi>{localName(n.employee, i18n.language)}</bdi>, code: <bdi dir="ltr">{n.employee.code}</bdi> }} />
+                  : t('notifications.leaveAnniversary.unknown')}
                 {pause}
               </span>
             </span>

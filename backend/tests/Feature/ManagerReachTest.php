@@ -115,6 +115,7 @@ class ManagerReachTest extends TestCase
                 ->assertJsonPath('error.details.0.field', 'rows.0')
                 ->assertJsonPath('error.details.0.message', 'Annual, casual and unpaid leave need a leave request.');
         }
+        $this->putDay($this->e1, '2026-10-22', ['site_id' => $leave['annual']])->assertStatus(422)->assertJsonPath('error.code', 'leave_needs_request');
         $this->assertSame(0, AttendanceDay::count());
         $bulk('sick', '2026-10-21')->assertOk();
         $bulk('absent')->assertOk();

@@ -71,9 +71,6 @@ final class AttendanceDays
 
     private const TIMES = ['in_time', 'out_time', 'scheduled_in', 'scheduled_out'];
 
-    /** Leave an own-scope writer may not store: it goes through a leave request (leave spec, Manager rule). */
-    private const NEEDS_REQUEST = [LeaveCode::Annual, LeaveCode::Casual, LeaveCode::Unpaid];
-
     public function __construct(
         private readonly EmployeeRoster $roster,
         private readonly EffectiveDays $days,
@@ -207,7 +204,7 @@ final class AttendanceDays
         $site = $siteId === null ? null : Site::find((string) $siteId);
         if ($ownerId !== null) {
             $this->assertInReach($employee, $type, $date, $site?->kind === SiteKind::Work->value ? (string) $site->id : null, $ownerId);
-            if ($site?->id !== $live?->site_id && in_array(LeaveCode::tryFrom((string) $site?->leave_code), self::NEEDS_REQUEST, true)) {
+            if ($site?->id !== $live?->site_id && LeaveCode::tryFrom((string) $site?->leave_code)?->needsRequest() === true) {
                 throw AttendanceRefused::because(AttendanceRefusal::LeaveNeedsRequest);
             }
         }

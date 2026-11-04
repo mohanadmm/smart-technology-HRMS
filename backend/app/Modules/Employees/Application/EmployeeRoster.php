@@ -129,10 +129,10 @@ final class EmployeeRoster
     }
 
     /**
-     * Who a stored id points to, for labels; deleted employees included.
+     * Who a stored id points to, for labels.
      *
      * @param  list<string>  $ids
-     * @return array<string, array{id: string, code: int, name_ar: string, name_en: ?string}> keyed by id; unknown ids are left out
+     * @return array<string, array{id: string, code: int, name_ar: string, name_en: ?string}> keyed by id; unknown and deleted ids are left out
      */
     public function names(array $ids): array
     {
@@ -140,7 +140,7 @@ final class EmployeeRoster
             return [];
         }
         $rows = [];
-        foreach (Employee::withTrashed()->whereKey($ids)->get(['id', 'code', 'name_ar', 'name_en']) as $e) {
+        foreach (Employee::whereKey($ids)->get(['id', 'code', 'name_ar', 'name_en']) as $e) {
             $id = (string) $e->getKey();
             $rows[$id] = ['id' => $id, 'code' => (int) $e->code, 'name_ar' => (string) $e->name_ar, 'name_en' => $e->name_en];
         }

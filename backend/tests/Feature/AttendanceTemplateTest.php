@@ -236,6 +236,21 @@ class AttendanceTemplateTest extends TestCase
         }
     }
 
+    public function test_an_own_scope_template_leaves_out_leave_that_needs_a_request(): void
+    {
+        $lead = $this->userWith('own', 'own');
+        $this->assign($this->employee('engineer'), $lead);
+        $name = fn (string $code) => (string) Site::whereKey($this->leave[$code])->value('name_ar');
+        $needsRequest = [$name('annual'), $name('casual'), $name('unpaid')];
+        $this->assertContains('اعتيادية', $needsRequest);
+
+        $this->assertSame($needsRequest, array_values(array_intersect($needsRequest, array_column($this->download(self::ENGINEERS)['lists']['rows'], 0))));
+        $this->actingAs($lead, 'api');
+        $lists = array_column($this->download(self::ENGINEERS)['lists']['rows'], 0);
+        $this->assertSame([], array_values(array_intersect($needsRequest, $lists)));
+        $this->assertContains($name('sick'), $lists);
+    }
+
     /** @return array{string, string} Engineer-1 (stored 10-01 at Site-1) and Engineer-2 (hired 10-10); 10-06 a holiday */
     private function twoEngineers(): array
     {

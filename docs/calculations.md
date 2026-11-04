@@ -171,7 +171,7 @@ Spec: `docs/superpowers/specs/2026-11-03-leave-design.md`. Attendance is the led
 - Read date for year Y: D = the earliest of today, Dec 31 of Y and the termination date, moved up to the hire date when that is later (an employee HR created ahead of their start date). The type on D decides balance or none (day laborer → none); a mid-year monthly ↔ daily change is not pro-rated.
 - The balances list for Y holds everyone employed at some point in Y (hired by Dec 31 or with no hire date, not terminated before Jan 1) whose type on D is monthly. A manager sees those in their reach today.
 - Someone who passes 1 year of service mid-year: HR gets an alert on the anniversary and decides whether to change the year's entitlement.
-  The alert fires on date D for an employee of a monthly type employed on D whose hire date plus one year is D (a Feb 29 hire: Feb 28), unless the hire date is Jan 1 (they already have 1 year on Jan 1). Each holder of `leave.decide.all` gets it once (`leave:alert-anniversary`, daily 08:00 Cairo).
+  The alert fires on date D for an employee of a monthly type employed on D whose hire date plus one year is D (a Feb 29 hire: Feb 28), unless the hire date is Jan 1 (they already have 1 year on Jan 1). Each holder of `leave.decide.all` gets it once, dated D (`leave:alert-anniversary`, daily 08:00 Cairo). A run on day R covers every D from R − 6 to R, so the next run makes up a missed or failed one.
 
 **Leave request days**
 - A request's days = its dates, minus days not employed as a monthly type, the type's weekly off and official holidays (§2a). Those are not counted and not written.

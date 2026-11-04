@@ -7,6 +7,7 @@ namespace App\Modules\Attendance\Application;
 use App\Modules\Attendance\Infrastructure\XlsxTemplateWriter;
 use App\Modules\Employees\Application\EmployeeRoster;
 use App\Modules\Employees\Domain\EmployeeType;
+use App\Modules\Sites\Domain\LeaveCode;
 use App\Modules\Sites\Infrastructure\Eloquent\Site;
 
 /** The Excel grid template of one group's period (slice 3): one row per employee, one column per period day, each cell a site or a leave type. */
@@ -50,7 +51,7 @@ final class AttendanceTemplate
         $employees = $this->roster->allOfType($g, $p->start, $p->end, $ownerId);
         $days = $this->days->forPeriod($p, $employees);
         // A stored day may point at a since-deactivated or deleted site; it still shows by name.
-        $sites = Site::withTrashed()->orderBy('name_ar')->get(['id', 'name_ar', 'kind', 'active', 'deleted_at']);
+        $sites = Site::withTrashed()->orderBy('name_ar')->get(['id', 'name_ar', 'kind', 'leave_code', 'active', 'deleted_at']);
         $names = $sites->pluck('name_ar', 'id')->all();
         $present = (string) __('attendance.template.present');
         $today = EffectiveDays::today();
@@ -74,7 +75,9 @@ final class AttendanceTemplate
             $rows[] = $row;
         }
 
-        $live = $sites->filter(fn (Site $s) => $s->active && ! $s->trashed());
+        // An own-scope writer cannot store leave that needs a request, so their dropdown does not offer it.
+        $live = $sites->filter(fn (Site $s) => $s->active && ! $s->trashed()
+            && ($ownerId === null || LeaveCode::tryFrom((string) $s->leave_code)?->needsRequest() !== true));
         $first = $g === EmployeeType::Office ? [$present] : $live->where('kind', 'work')->pluck('name_ar')->all();
 
         return ['dates' => $p->days(), 'rows' => $rows, 'choices' => array_values([...$first, ...$live->where('kind', 'leave')->pluck('name_ar')->all()])];
