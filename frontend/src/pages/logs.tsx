@@ -157,7 +157,7 @@ function FilterActions({ requestId, onClearRequestId, dirty, onClear }: { reques
     <div className="flex flex-wrap items-center gap-2">
       {requestId && (
         <span className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted ps-2 text-xs text-muted-foreground">
-          <span className="min-w-0 truncate">
+          <span className="min-w-0 py-1 [overflow-wrap:anywhere]">
             {t('logs.requestId')}: <bdi dir="ltr" className="font-mono text-foreground">{requestId}</bdi>
           </span>
           <button type="button" onClick={onClearRequestId} aria-label={t('logs.clearRequestId')} className="grid min-h-tap min-w-tap shrink-0 place-items-center rounded hover:bg-background hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
@@ -249,14 +249,15 @@ function ErrorsTab() {
           rows={rows}
           rowKey={(r) => r.id}
           title={{ header: t('logs.time'), cell: (r) => time(r.occurred_at) }}
+          // the table must fit its card with the request ID whole: class and message are capped per width, narrower from xl where the request ID column joins
           fields={[
             {
               header: t('logs.class'),
-              cell: (r) => <span dir="ltr" title={r.class} className="inline-block max-w-full truncate align-bottom font-mono text-xs sm:max-w-xs">{r.class}</span>,
+              cell: (r) => <span dir="ltr" title={r.class} className="inline-block max-w-full truncate align-bottom font-mono text-xs sm:max-w-28 md:max-w-40 xl:max-w-36 2xl:max-w-56">{r.class}</span>,
             },
             {
               header: t('logs.message'),
-              cell: (r) => <span dir="auto" title={r.message} className="block max-w-full truncate sm:max-w-xs lg:max-w-md">{r.message}</span>,
+              cell: (r) => <span dir="auto" title={r.message} className="block max-w-full truncate sm:max-w-36 md:max-w-52 xl:max-w-44 2xl:max-w-80">{r.message}</span>,
             },
             { header: t('logs.requestId'), cell: (r) => (r.request_id ? <span dir="ltr" className="font-mono text-xs">{r.request_id}</span> : '—'), tableFrom: 'xl' },
           ]}
