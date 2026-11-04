@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Employees\Application;
 
+use App\Modules\Employees\Domain\EffectiveDated;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeePayChange;
@@ -33,6 +34,10 @@ final class EmployeeRoster
             (select min(n.effective_from) from employee_type_changes n where n.employee_id = t.employee_id and n.deleted_at is null and n.effective_from > t.effective_from) - 1,
             employees.termination_date, ?::date))';
 
+    /** The type in force on typeInYear's read date D; the bound `?` is min(Dec 31 of the year, today). greatest/least skip a null hire or termination date. */
+    private const TYPE_IN_YEAR = '(select t.type from employee_type_changes t where t.employee_id = employees.id and t.deleted_at is null
+        and t.effective_from <= greatest(employees.hire_date, least(?::date, employees.termination_date)) order by t.effective_from desc limit 1)';
+
     private const HOME_SITE = '(select s.site_id from employee_site_assignments s where s.employee_id = employees.id and s.deleted_at is null and s.effective_from <= ?::date order by s.effective_from desc limit 1) = ?';
 
     /** @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}} */
@@ -42,26 +47,41 @@ final class EmployeeRoster
     }
 
     /**
-     * Employees whose employment overlaps [from, to] and whose type on their own read date D is one of $types, by code (calculations §7):
-     * D = least(min($to, today), termination_date). $search matches either name, or the exact code when it is a number.
-     * $managedBy narrows to that user's reach today.
+     * The employees of $year (hired by Dec 31 or with no hire date, not terminated before Jan 1) whose typeInYear() is one of $types, by code.
+     * $search matches either name, or the exact code when it is a number. $managedBy narrows to that user's reach today.
      *
      * @param  non-empty-list<EmployeeType>  $types
      * @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}}
      */
-    public function ofTypesDuring(array $types, string $from, string $to, ?string $search, int $perPage, int $page, ?string $managedBy = null): array
+    public function ofTypesInYear(array $types, int $year, ?string $search, int $perPage, int $page, ?string $managedBy = null): array
     {
         $today = now('Africa/Cairo')->toDateString();
         $values = array_map(fn (EmployeeType $t) => $t->value, $types);
         $query = Employee::with(self::RELATIONS)
-            ->where(fn (Builder $q) => $q->whereNull('hire_date')->orWhere('hire_date', '<=', $to))
-            ->where(fn (Builder $q) => $q->whereNull('termination_date')->orWhere('termination_date', '>=', $from))
-            ->whereRaw(Employee::TYPE_ON_OR_LEAVING.' in ('.implode(',', array_fill(0, count($values), '?')).')', [min($to, $today), ...$values])
+            ->where(fn (Builder $q) => $q->whereNull('hire_date')->orWhere('hire_date', '<=', "{$year}-12-31"))
+            ->where(fn (Builder $q) => $q->whereNull('termination_date')->orWhere('termination_date', '>=', "{$year}-01-01"))
+            ->whereRaw(self::TYPE_IN_YEAR.' in ('.implode(',', array_fill(0, count($values), '?')).')', [min("{$year}-12-31", $today), ...$values])
             ->when($search !== null && $search !== '', fn (Builder $q) => $q->matching((string) $search))
             ->when($managedBy !== null, fn (Builder $q) => EmployeeReach::apply($q, (string) $managedBy, $today))
             ->orderBy('code');
 
         return $this->page($query, $perPage, $page);
+    }
+
+    /**
+     * The employee's type for $year, read on D = max(hire date, min(today, Dec 31 of $year, termination date)), a null date left out
+     * (calculations §7). TYPE_IN_YEAR is the same read in SQL. Null when no type is in force on D.
+     * ponytail: a type history that starts after the hire date or after the termination date still reads no type on D (bad data);
+     * ofTypesInYear then leaves the employee out while their Leave tab keeps a balance. Fix the data if it appears.
+     *
+     * @param  array<string, mixed>  $employee  a roster row
+     */
+    public static function typeInYear(array $employee, int $year): ?string
+    {
+        $d = min(array_filter([now('Africa/Cairo')->toDateString(), "{$year}-12-31", $employee['termination_date']]));
+        $d = max($d, $employee['hire_date'] ?? $d);
+
+        return EffectiveDated::at($employee['types'], $d)['type'] ?? null;
     }
 
     /** @return list<array<string, mixed>> */

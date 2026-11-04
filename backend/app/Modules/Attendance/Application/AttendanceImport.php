@@ -179,7 +179,7 @@ final class AttendanceImport
         } catch (AttendanceRefused $e) {
             return self::error(...$at, error: $e->reason->value, message: (string) __('attendance.refusal.'.$e->reason->value, $e->params));
         } catch (ConcurrencyConflict) {
-            return self::error(...$at, error: ConcurrencyConflict::CODE, message: (string) __('errors.'.ConcurrencyConflict::CODE));
+            return self::error(...$at, error: ConcurrencyConflict::CODE, message: ConcurrencyConflict::message());
         } catch (DayRulesViolated $e) {
             $code = $e->violations[0]['code'];
 

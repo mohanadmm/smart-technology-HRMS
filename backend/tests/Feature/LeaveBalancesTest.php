@@ -172,7 +172,7 @@ class LeaveBalancesTest extends TestCase
             ->assertJsonPath('meta.pagination', ['page' => 1, 'per_page' => 20, 'total' => 1, 'total_pages' => 1, 'has_next_page' => false, 'has_previous_page' => false])
             ->assertJsonPath('data.0', [
                 'id' => $e, 'code' => DB::table('employees')->where('id', $e)->value('code'), 'name_ar' => 'Office-1', 'name_en' => null, 'type' => 'office',
-                'hire_date' => '2026-07-01', 'entitlement' => 8, 'casual_cap' => 6, 'used' => 4, 'casual_used' => 2, 'remaining' => 4,
+                'hire_date' => '2026-07-01', 'termination_date' => null, 'entitlement' => 8, 'casual_cap' => 6, 'used' => 4, 'casual_used' => 2, 'remaining' => 4,
                 'casual_remaining' => 4, 'sick_days' => 0, 'unpaid_days' => 0,
             ]);
         $this->balance($e)->assertJsonPath('data.balance.remaining', 4);
@@ -260,7 +260,7 @@ class LeaveBalancesTest extends TestCase
 
         $fresh = $this->employee('office', '2020-01-01');
         $this->adjust($fresh, [...$body, 'version' => 1])->assertStatus(409)->assertJsonPath('error.code', 'concurrency_conflict')
-            ->assertJsonPath('error.message', __('errors.concurrency_conflict'));
+            ->assertJsonPath('error.message', self::CONFLICT_MESSAGE['en']);
         $this->balance($fresh)->assertJsonPath('data.adjustment', null);
     }
 
@@ -379,6 +379,32 @@ class LeaveBalancesTest extends TestCase
         $stayed = $this->employee('office', '2020-01-01', ['termination_date' => '2025-01-01']);
 
         $this->assertSame([$stayed], $this->listed('?year=2025'));
+    }
+
+    public function test_a_future_hire_this_year_is_listed_with_the_hired_during_the_year_entitlement_and_the_leave_tab_agrees(): void
+    {
+        $future = $this->employee('office', '2026-11-01');
+
+        $this->getJson('/api/v1/leave/balances')->assertOk()->assertJsonPath('data.*.id', [$future])
+            ->assertJsonPath('data.0.type', 'office')->assertJsonPath('data.0.entitlement', 1)->assertJsonPath('data.0.remaining', 1);
+        $this->balance($future)->assertJsonPath('data.type', 'office')
+            ->assertJsonPath('data.balance.entitlement', 1)->assertJsonPath('data.balance.remaining', 1);
+    }
+
+    public function test_a_hire_on_dec_31_is_in_that_years_list(): void
+    {
+        $last = $this->employee('office', '2026-12-31');
+
+        $this->assertSame([$last], $this->listed());
+        $this->assertSame([], $this->listed('?year=2025'));
+    }
+
+    public function test_a_list_row_carries_the_termination_date(): void
+    {
+        $this->employee('office', '2020-01-01');
+        $this->employee('office', '2020-01-01', ['termination_date' => '2026-10-19']);
+
+        $this->getJson('/api/v1/leave/balances')->assertOk()->assertJsonPath('data.*.termination_date', [null, '2026-10-19']);
     }
 
     public function test_a_managers_list_for_last_year_holds_only_employees_in_reach_today(): void

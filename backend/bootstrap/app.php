@@ -89,7 +89,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->dontReport([ConcurrencyConflict::class, NoLeaveBalance::class]);
 
         $exceptions->render(fn (ConcurrencyConflict $e, Request $request) => ApiEnvelope::error(
-            $request, 409, ConcurrencyConflict::CODE, __('errors.'.ConcurrencyConflict::CODE), $e->details,
+            $request, 409, ConcurrencyConflict::CODE, ConcurrencyConflict::message(), $e->details,
         ));
 
         $exceptions->render(fn (NoLeaveBalance $e, Request $request) => ApiEnvelope::error(

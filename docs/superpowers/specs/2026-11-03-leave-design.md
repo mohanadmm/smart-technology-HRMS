@@ -84,9 +84,9 @@ Leave used = stored attendance days with a leave code. A leave request is only t
 - **Setting** `sick_leave_pay_percent` = 100 (L1), added to `SettingController::RULES`. Read by Release 2 payroll only.
 
 ### Balance (pure `Leave\Domain\LeaveBalance`, settings passed in)
-For employee E and year Y, read on date D = min(today in Africa/Cairo, Y-12-31, E's termination date when set):
+For employee E and year Y, read on date D = max(E's hire date, min(today in Africa/Cairo, Y-12-31, E's termination date)), a null date left out (so an employee HR created ahead of their start date reads the type they start with):
 - No balance when E's type on D is day laborer.
-- The Balances list for Y holds the employees whose employment overlaps Y (hire date null or ≤ Y-12-31, termination date null or ≥ Y-01-01) and whose type on their own D is monthly (or the `type` filter); a manager's list keeps their reach today. The list and the employee's Leave tab read the same D, so they agree.
+- The Balances list for Y holds the employees whose employment overlaps Y (hired by Dec 31 or with no hire date, and not terminated before Jan 1) and whose type on their own D is monthly (or the `type` filter); a manager's list keeps their reach today. The list and the employee's Leave tab read the same D, so they agree.
 - `entitlement` = the adjustment's override, else:
   - hire_date null → null (UI: "set the hire date");
   - service on Jan 1 of Y ≥ 1 year → `leave_days_one_year_plus`;
@@ -140,7 +140,7 @@ Job `leave:alert-anniversary`, daily 08:00 Cairo, `maintenance` queue, same retr
 | POST | `leave/requests` | `leave.request` |
 | POST | `leave/requests/{id}/approve`, `/refuse`, `/escalate`, `/cancel` (with version) | as in Workflow |
 
-`.own` reads return only employees in the caller's reach on the read date.
+`.own` reads return only employees in the caller's reach today.
 
 ### Frontend
 - Nav entry «الإجازات» → `/leave` with two tabs: **Requests** (pending and escalated first; cards on phones) and **Balances** (table with the year selector; negative remaining in `text-destructive`).

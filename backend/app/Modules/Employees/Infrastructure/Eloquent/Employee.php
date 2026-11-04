@@ -19,9 +19,6 @@ class Employee extends Model
     /** The employee's type in force on the bound date `?`. */
     public const TYPE_ON = '(select t.type from employee_type_changes t where t.employee_id = employees.id and t.deleted_at is null and t.effective_from <= ?::date order by t.effective_from desc limit 1)';
 
-    /** TYPE_ON read on the bound date `?` or the termination date, whichever is earlier (least() skips a null termination date). */
-    public const TYPE_ON_OR_LEAVING = '(select t.type from employee_type_changes t where t.employee_id = employees.id and t.deleted_at is null and t.effective_from <= least(?::date, employees.termination_date) order by t.effective_from desc limit 1)';
-
     protected $guarded = [];
 
     /**

@@ -118,9 +118,8 @@ final class AttendanceDays
         $order = array_keys($rows);
         usort($order, fn (int $a, int $b) => strcmp((string) $rows[$a]['employee_id'], (string) $rows[$b]['employee_id']));
         $settings = $this->rules->all();
-        $stale = fn (int $i) => ['field' => "rows.{$i}", 'code' => ConcurrencyConflict::CODE, 'message' => (string) __('errors.'.ConcurrencyConflict::CODE)];
         $versions = [];
-        DB::transaction(function () use ($date, $rows, $ownerId, $order, $employees, $settings, $stale, &$versions): void {
+        DB::transaction(function () use ($date, $rows, $ownerId, $order, $employees, $settings, &$versions): void {
             $conflicts = [];
             $errors = [];
             // ponytail: ~6 queries per row; preload sites and locks if 500-row requests get slow
@@ -135,7 +134,7 @@ final class AttendanceDays
                         $versions[$i] = $this->write($employee, $date, $row, $ownerId, 'entered', true, $settings);
                     }
                 } catch (ConcurrencyConflict) {
-                    $conflicts[$i] = $stale($i);
+                    $conflicts[$i] = "rows.{$i}";
                 } catch (AttendanceRefused $e) {
                     // A locked period or a future date refuses the whole request, so it names no row.
                     $named = in_array($e->reason, [AttendanceRefusal::EmployeeNotActive, AttendanceRefusal::SiteNotInReach], true);
@@ -143,7 +142,7 @@ final class AttendanceDays
                     throw AttendanceRefused::because($e->reason, $e->params, $named ? [$detail] : []);
                 } catch (UniqueConstraintViolationException) {
                     // A racing insert of this row's day won; the transaction is aborted, so stop at this row.
-                    throw new ConcurrencyConflict([$stale($i)]);
+                    throw new ConcurrencyConflict(["rows.{$i}"]);
                 } catch (ValidationException $e) {
                     foreach ($e->errors() as $field => $messages) {
                         $errors[$i]["rows.{$i}.{$field}"] = $messages;

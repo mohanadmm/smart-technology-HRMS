@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Modules\Leave\Application;
 
 use App\Modules\Employees\Application\EmployeeRoster;
-use App\Modules\Employees\Domain\EffectiveDated;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Leave\Domain\LeaveBalance;
 use App\Modules\Leave\Domain\NoLeaveBalance;
@@ -45,10 +44,11 @@ final class LeaveBalances
     public function list(int $year, ?string $type, ?string $q, int $perPage, int $page, ?string $managerId): array
     {
         $types = $type === null ? EmployeeType::monthly() : [EmployeeType::from($type)];
-        $result = $this->roster->ofTypesDuring($types, "{$year}-01-01", "{$year}-12-31", $q, $perPage, $page, $managerId);
+        $result = $this->roster->ofTypesInYear($types, $year, $q, $perPage, $page, $managerId);
         $reads = $this->read($result['data'], $year);
         $data = array_map(fn (array $e) => [
             'id' => $e['id'], 'code' => $e['code'], 'name_ar' => $e['name_ar'], 'name_en' => $e['name_en'], 'type' => $reads[$e['id']]['type'], 'hire_date' => $e['hire_date'],
+            'termination_date' => $e['termination_date'],
             ...$reads[$e['id']]['balance'] ?? [],
         ], $result['data']);
 
@@ -65,7 +65,7 @@ final class LeaveBalances
     public function adjust(string $employeeId, int $year, array $input, ?int $version): array
     {
         $employee = $this->roster->find($employeeId) ?? throw new ModelNotFoundException;
-        if (! self::hasBalance(self::typeIn($employee, $year))) {
+        if (! self::hasBalance(EmployeeRoster::typeInYear($employee, $year))) {
             throw new NoLeaveBalance;
         }
         $values = [
@@ -112,7 +112,7 @@ final class LeaveBalances
         $reads = [];
         foreach ($employees as $e) {
             // ponytail: the type on the read date decides balance or none; a mid-year monthly <-> daily change is not pro-rated (spec, Balance).
-            $type = self::typeIn($e, $year);
+            $type = EmployeeRoster::typeInYear($e, $year);
             $adjustment = $adjustments->get($e['id']);
             $reads[(string) $e['id']] = [
                 'type' => $type,
@@ -122,22 +122,6 @@ final class LeaveBalances
         }
 
         return $reads;
-    }
-
-    /** @param  array<string, mixed>  $employee  an EmployeeRoster row */
-    private static function typeIn(array $employee, int $year): ?string
-    {
-        return EffectiveDated::at($employee['types'], self::readDate($employee, $year))['type'] ?? null;
-    }
-
-    /**
-     * D = min(today, Dec 31 of $year, termination date), the same rule as EmployeeRoster::ofTypesDuring (calculations §7).
-     *
-     * @param  array<string, mixed>  $employee  an EmployeeRoster row
-     */
-    private static function readDate(array $employee, int $year): string
-    {
-        return min(array_filter([now('Africa/Cairo')->toDateString(), "{$year}-12-31", $employee['termination_date']]));
     }
 
     /** An employee with no type in force yet keeps a balance; only a day laborer has none. */
