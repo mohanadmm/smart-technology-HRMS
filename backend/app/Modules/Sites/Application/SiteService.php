@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Sites\Application;
 
 use App\Modules\Audit\Infrastructure\AuditLog;
+use App\Modules\Identity\Application\Rbac\PermissionHolders;
 use App\Modules\Identity\Domain\Authentication\IdentityAuditEvents;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
 use App\Modules\Sites\Domain\AllowanceMode;
@@ -19,6 +20,11 @@ use Illuminate\Validation\ValidationException;
 final class SiteService
 {
     use Paginates;
+
+    // A site manager is an account whose role sees only its own sites (CLAUDE.md: permissions by name, never by role).
+    // One that also sees every site is never narrowed by its sites (RequestScope: `all` wins), so it is not offered.
+
+    public function __construct(private readonly PermissionHolders $holders) {}
 
     /**
      * @param  array{kind?: string, active?: string, per_page?: int}  $filters
@@ -119,6 +125,19 @@ final class SiteService
         });
 
         return $this->show($id);
+    }
+
+    /** @return list<array{id: string, name: string}> the active accounts a site can have as its managers */
+    public function managerCandidates(): array
+    {
+        return array_values(User::whereIn('id', $this->managerCandidateIds())->orderBy('name')->get(['id', 'name'])
+            ->map(fn (User $u) => ['id' => (string) $u->id, 'name' => $u->name])->all());
+    }
+
+    /** @return list<string> */
+    public function managerCandidateIds(): array
+    {
+        return array_values(array_diff($this->holders->userIds('site.view.own'), $this->holders->userIds('site.view.all')));
     }
 
     /** @return list<string> the sites the user manages (P1: undated, so the current set on any date) */

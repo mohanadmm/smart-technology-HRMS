@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Modules\Identity\Infrastructure\Eloquent\Permission;
+use App\Modules\Identity\Infrastructure\Eloquent\Role;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -120,5 +122,30 @@ class ManagerScopeTest extends TestCase
         $this->getJson("/api/v1/sites/$leave")->assertOk();
         $this->getJson("/api/v1/sites/$other")->assertNotFound();
         $this->putJson("/api/v1/sites/$mine/managers", ['manager_ids' => []])->assertStatus(403);
+    }
+
+    public function test_only_accounts_that_see_their_own_sites_can_manage_a_site(): void
+    {
+        $lead = $this->makeUser('manager');
+        $hr = $this->makeUser('hr');
+        $gone = $this->makeUser('manager', ['is_active' => false]);
+        $custom = Role::create(['slug' => 'site-lead', 'name' => 'Site lead', 'name_ar' => 'مشرف']);   // by permission, not by role
+        $custom->permissions()->attach(Permission::where(['resource' => 'site', 'action' => 'view', 'scope' => 'own'])->value('id'));
+        $other = $this->makeUser('site-lead');
+        $wide = Role::create(['slug' => 'wide', 'name' => 'Wide', 'name_ar' => 'واسع']);   // sees every site anyway: not a site manager
+        $wide->permissions()->attach(Permission::where(['resource' => 'site', 'action' => 'view'])->pluck('id'));
+        $everywhere = $this->makeUser('wide');
+        $this->signIn('hr');
+        $site = $this->postJson('/api/v1/sites', ['name_ar' => 'سموحة', 'kind' => 'work'])->json('data.id');
+
+        $ids = collect($this->getJson('/api/v1/sites/manager-candidates')->assertOk()->json('data'))->pluck('id')->sort()->values()->all();
+        $this->assertSame(collect([$lead->id, $other->id])->sort()->values()->all(), $ids);
+        $this->putJson("/api/v1/sites/$site/managers", ['manager_ids' => [$hr->id]])->assertStatus(422)->assertJsonPath('error.details.0.field', 'manager_ids.0');
+        $this->putJson("/api/v1/sites/$site/managers", ['manager_ids' => [$gone->id]])->assertStatus(422);
+        $this->putJson("/api/v1/sites/$site/managers", ['manager_ids' => [$everywhere->id]])->assertStatus(422);
+        $this->putJson("/api/v1/sites/$site/managers", ['manager_ids' => [$lead->id, $other->id]])->assertOk()->assertJsonCount(2, 'data.managers');
+
+        $this->actingAs($lead, 'api');
+        $this->getJson('/api/v1/sites/manager-candidates')->assertStatus(403);
     }
 }

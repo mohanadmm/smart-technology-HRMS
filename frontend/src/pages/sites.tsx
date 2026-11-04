@@ -13,7 +13,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/ca
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useAuth } from '@/lib/auth'
-import { RESIDENCES, USERS, useApi, useSave } from '@/lib/query'
+import { RESIDENCES, useApi, useSave } from '@/lib/query'
 
 const LEAVE_CODES = ['friday', 'saturday', 'official_holiday', 'annual', 'casual', 'sick', 'unpaid', 'rest', 'absent', 'other']
 const MODES = ['none', 'share_of_wage', 'fixed']
@@ -175,10 +175,10 @@ function ManagersDialog({ site, open, onOpenChange }: { site: Row; open: boolean
 function ManagersBody({ siteId, onDone }: { siteId: string; onDone: () => void }) {
   const { t } = useTranslation()
   const site = useApi<Row>(`/sites/${siteId}`, { fresh: true }) // the ticks start from the site as it is now, never from the cache
-  const users = useApi<Row[]>(USERS) // shared with the accounts list and the audit filter
+  const users = useApi<Row[]>('/sites/manager-candidates') // only the active accounts whose role sees its own sites
   const err = site.err ?? users.err
   return site.ready && site.data && users.data ? (
-    <ManagersForm siteId={siteId} managerIds={site.data.managers.map((m: Row) => m.id)} users={users.data.filter((u) => u.is_active)} loadErr={err} onDone={onDone} />
+    <ManagersForm siteId={siteId} managerIds={site.data.managers.map((m: Row) => m.id)} users={users.data} loadErr={err} onDone={onDone} />
   ) : (
     <>
       <DialogBody className="grid gap-1">
