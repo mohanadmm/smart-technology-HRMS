@@ -469,6 +469,19 @@ class AttendanceImportTest extends TestCase
         $this->assertSame(['2026-10-03'], AttendanceDay::where('employee_id', $mine)->pluck('date')->all());
     }
 
+    public function test_an_own_scope_import_refuses_leave_that_needs_a_request(): void
+    {
+        $lead = $this->userWith('own', 'own');
+        DB::table('manager_sites')->insert(['manager_id' => $lead->id, 'site_id' => $this->site]);
+        $mine = $this->assign($this->employee('engineer'), $lead);
+        $file = $this->edit($this->download(), [$this->code($mine) => ['2026-10-01' => $this->leaveName('annual'), '2026-10-03' => $this->leaveName('sick')]]);
+
+        $this->actingAs($lead, 'api');
+        $errors = $this->upload('confirm', $file)->assertOk()->assertJsonPath('data.applied', 1)->json('data.errors');
+        $this->assertSame([[$this->column('2026-10-01'), 'leave_needs_request']], $this->errorsOf($errors, $mine));
+        $this->assertSame(['2026-10-03'], AttendanceDay::where('employee_id', $mine)->pluck('date')->all());
+    }
+
     public function test_an_own_scope_import_takes_reach_on_each_cells_date(): void
     {
         $site2 = $this->workSite('Site-2');

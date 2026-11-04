@@ -9,3 +9,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('attendance:alert-missing')->dailyAt('21:00')->timezone('Africa/Cairo');
+Schedule::command('leave:alert-anniversary')->dailyAt('08:00')->timezone('Africa/Cairo');

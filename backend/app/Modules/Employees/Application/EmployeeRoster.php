@@ -128,6 +128,35 @@ final class EmployeeRoster
         return $rows;
     }
 
+    /**
+     * Who a stored id points to, for labels; deleted employees included.
+     *
+     * @param  list<string>  $ids
+     * @return array<string, array{id: string, code: int, name_ar: string, name_en: ?string}> keyed by id; unknown ids are left out
+     */
+    public function names(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $rows = [];
+        foreach (Employee::withTrashed()->whereKey($ids)->get(['id', 'code', 'name_ar', 'name_en']) as $e) {
+            $rows[(string) $e->id] = ['id' => (string) $e->id, 'code' => (int) $e->code, 'name_ar' => (string) $e->name_ar, 'name_en' => $e->name_en];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * The live employees hired from $from to $to (inclusive), by code.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function hiredBetween(string $from, string $to): array
+    {
+        return $this->rows(Employee::with(self::RELATIONS)->whereBetween('hire_date', [$from, $to])->orderBy('code'));
+    }
+
     /** @return Builder<Employee> narrowed, when $managedBy is set, to the employees in that user's reach on min($to, today) (P4) */
     private function employedAs(EmployeeType $type, string $from, string $to, ?string $managedBy): Builder
     {

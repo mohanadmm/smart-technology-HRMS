@@ -15,6 +15,7 @@ docker compose exec app vendor/bin/deptrac analyse --config-file=deptrac.layers.
 `nginx` serves the API on `127.0.0.1:${APP_PORT:-8000}` and hands PHP to `app` (php-fpm, pool in `docker/php/zzz-pool.conf`); `curl http://127.0.0.1:8000/api/v1/health`.
 Queue workers (`worker-critical|pdf|reports|maintenance`, `queue:work redis --tries=3`) and `scheduler` (`schedule:work`) run from the same image; restart them after code changes (`docker compose restart worker-critical worker-pdf worker-reports worker-maintenance scheduler`).
 Scheduled: `attendance:alert-missing {date?}` runs daily at 21:00 Africa/Cairo and queues the missing-days alert on `maintenance` (3 tries, backoff 60 s / 300 s); it is idempotent per (user, type, date).
+`leave:alert-anniversary {date?}` runs daily at 08:00 Africa/Cairo on the same queue and retries; it is idempotent per (user, type, date, employee).
 Replay a failed day with `docker compose exec app php artisan attendance:alert-missing YYYY-MM-DD`; failures are in the log (`attendance.missing_days_alert_failed`) and the `failed_jobs` table.
 Full stack: `docker compose up -d`, `docker compose exec app php artisan migrate --seed`, then `npm run dev` in `frontend/`.
 

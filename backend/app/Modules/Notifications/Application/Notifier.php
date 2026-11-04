@@ -10,14 +10,15 @@ use Illuminate\Database\UniqueConstraintViolationException;
 final class Notifier
 {
     /**
-     * One notification per (user, type, date); a retried job adds nothing.
+     * One notification per (user, type, date, ref); a retried job adds nothing.
      *
      * @param  array<string, mixed>  $data  counts and ids only, never personal data (§9)
+     * @param  string|null  $ref  the id of what the notification is about, when one date can hold several (an employee, a request)
      * @return bool false when the row already exists
      */
-    public function notifyOnce(string $userId, string $type, string $date, array $data): bool
+    public function notifyOnce(string $userId, string $type, string $date, array $data, ?string $ref = null): bool
     {
-        $key = ['user_id' => $userId, 'type' => $type, 'date' => $date];
+        $key = ['user_id' => $userId, 'type' => $type, 'date' => $date, 'ref' => $ref];
         if (Notification::withTrashed()->where($key)->exists()) {
             return false;
         }

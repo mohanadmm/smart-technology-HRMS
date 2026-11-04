@@ -18,6 +18,7 @@ enum AttendanceRefusal: string
     case UnreadableFile = 'unreadable_file';
     case TooManyRows = 'too_many_rows';
     case SiteNotInReach = 'site_not_in_reach';
+    case LeaveNeedsRequest = 'leave_needs_request';
 
     public function status(): int
     {
@@ -25,7 +26,7 @@ enum AttendanceRefusal: string
             self::PeriodAlreadyLocked => 409,
             self::PeriodLocked => 423,
             self::FutureDate, self::EmployeeNotActive, self::MissingDaysUnconfirmed, self::PeriodNotLocked, self::LeaveTypeMissing,
-            self::TemplateMismatch, self::UnreadableFile, self::TooManyRows, self::SiteNotInReach => 422,
+            self::TemplateMismatch, self::UnreadableFile, self::TooManyRows, self::SiteNotInReach, self::LeaveNeedsRequest => 422,
         };
     }
 }

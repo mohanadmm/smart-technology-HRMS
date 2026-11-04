@@ -99,6 +99,31 @@ class ManagerReachTest extends TestCase
         $this->putDay($this->w1, '2026-10-21', ['site_id' => $sick])->assertOk();
     }
 
+    public function test_an_own_scope_writer_cannot_record_leave_that_needs_a_request(): void
+    {
+        $leave = $this->leaveTypes();
+        $writer = $this->userWith(null, 'own');
+        DB::table('manager_sites')->insert(['manager_id' => $writer->id, 'site_id' => $this->s1]);
+        $this->assignManager($this->e1, $writer, '2026-10-02');
+        $bulk = fn (string $code, string $date = '2026-10-22') => $this->postJson('/api/v1/attendance/days/bulk', [
+            'date' => $date, 'rows' => [['employee_id' => $this->e1, 'site_id' => $leave[$code]]],
+        ]);
+
+        $this->actingAs($writer, 'api');
+        foreach (['annual', 'casual', 'unpaid'] as $code) {
+            $bulk($code)->assertStatus(422)->assertJsonPath('error.code', 'leave_needs_request')
+                ->assertJsonPath('error.details.0.field', 'rows.0')
+                ->assertJsonPath('error.details.0.message', 'Annual, casual and unpaid leave need a leave request.');
+        }
+        $this->assertSame(0, AttendanceDay::count());
+        $bulk('sick', '2026-10-21')->assertOk();
+        $bulk('absent')->assertOk();
+
+        $this->actingAs($this->makeUser('hr'), 'api');
+        $bulk('annual', '2026-10-20')->assertOk();
+        $this->assertSame(3, AttendanceDay::where('employee_id', $this->e1)->count());
+    }
+
     private function assignManager(string $employeeId, User $manager, string $from = '2026-10-01'): void
     {
         app(EmployeeService::class)->assignManager($employeeId, ['manager_id' => $manager->id, 'effective_from' => $from]);
