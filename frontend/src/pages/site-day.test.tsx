@@ -107,7 +107,7 @@ test('request-only leave is never offered; a day already stored with it shows it
   for (const [name, leave] of [['Worker-1', 'إجازة اعتيادية'], ['Worker-2', 'إجازة عارضة'], ['Worker-3', 'إجازة بدون أجر']]) {
     const g = within(list).getByRole('group', { name })
     expect(within(g).getByText(leave)).toBeInTheDocument()
-    expect(within(g).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['حاضر', 'غياب', 'مرضي', 'أنواع إجازات أخرى']) // «المزيد» is disabled until the day editor lands; it must leave these three out too
+    expect(within(g).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['حاضر', 'غياب', 'مرضي', 'أنواع إجازات أخرى']) // «أنواع إجازات أخرى» is disabled until the day editor lands; it must leave these three out too
     expect(g.querySelector('[aria-pressed="true"]')).toBeNull()
   }
   expect(screen.queryByRole('button', { name: /اعتيادية|عارضة|بدون أجر/ })).toBeNull()
