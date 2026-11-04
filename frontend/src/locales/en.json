@@ -43,7 +43,8 @@
     },
     "settings": "Settings",
     "attendance": "Attendance",
-    "siteDay": "Site attendance"
+    "siteDay": "Site attendance",
+    "leave": "Leave"
   },
   "toggle": {
     "language": "Language",
@@ -788,6 +789,25 @@
     "ofCap": "{{used}} of {{cap}}",
     "sickDays": "Sick leave days",
     "unpaidDays": "Unpaid leave days",
-    "noHireDate": "Record the hire date in the employee's profile to compute the leave balance."
+    "noHireDate": "Record the hire date in the employee's profile to compute the leave balance.",
+    "page": "Leave",
+    "period": "Monthly staff balances, January 1 to December 31, {{year}}",
+    "search": "Search name or ID",
+    "list": "Leave balances",
+    "sickShort": "Sick",
+    "unpaidShort": "Unpaid",
+    "adjusted": "Adjusted by hand: {{reason}}",
+    "adjust": {
+      "open": "Adjust balance",
+      "title": "Adjust the {{year}} balance",
+      "description": "For days used before the system started, or an entitlement HR decides. Every adjustment is written to the audit log.",
+      "entitlement": "Annual entitlement (instead of the computed one)",
+      "entitlementHint": "Leave blank to compute it from the hire date.",
+      "openingUsed": "Days used before the system",
+      "openingCasualUsed": "Casual days used before the system",
+      "reason": "Reason for the adjustment",
+      "reasonRequired": "Write the reason for the adjustment.",
+      "casualOverUsed": "Casual days cannot exceed the days used."
+    }
   }
 }
