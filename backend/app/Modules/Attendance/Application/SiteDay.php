@@ -56,9 +56,10 @@ final class SiteDay
 
     /**
      * Each row carries the person's scheduled shift (their pay-row override, else the field shift setting) for the bulk fills,
-     * and whether the site manager may change the day now: `why_not` is locked, window or leave_request.
+     * and whether the site manager may change the day now: `why_not` is locked, window or leave_request. `leave_sites` are the
+     * leave types the site manager may store (P11), by code.
      *
-     * @return array{site: array{id: string, name_ar: string, name_en: ?string}, date: string, today: string, rows: list<array<string, mixed>>}
+     * @return array{site: array{id: string, name_ar: string, name_en: ?string}, date: string, today: string, leave_sites: array<string, string>, rows: list<array<string, mixed>>}
      */
     public function read(string $siteId, string $date, string $managerId): array
     {
@@ -71,6 +72,7 @@ final class SiteDay
             'site' => ['id' => (string) $site->getKey(), 'name_ar' => (string) $site->name_ar, 'name_en' => $site->name_en],
             'date' => $date,
             'today' => EffectiveDays::today(),
+            'leave_sites' => $this->managerLeaveSites(),
             'rows' => array_map(function (array $l) use ($days, $date, $settings, $window, &$locked): array {
                 [$e, $section] = $l;
                 $day = $days[$e['id']][$date];
@@ -116,8 +118,7 @@ final class SiteDay
         if (! $this->windowAllows($date, $settings)) {
             throw AttendanceRefused::because(AttendanceRefusal::OutsideManagerWindow, ['until' => $settings['manager_yesterday_until']], [$this->detail(0, AttendanceRefusal::OutsideManagerWindow, $settings)]);
         }
-        $allowedLeave = Site::where(['kind' => SiteKind::Leave->value, 'active' => true])
-            ->whereIn('leave_code', array_map(fn (LeaveCode $c) => $c->value, self::MANAGER_LEAVE))->pluck('id')->map(fn ($id) => (string) $id)->all();
+        $allowedLeave = array_values($this->managerLeaveSites());
 
         $errors = [];
         $out = [];
@@ -145,6 +146,15 @@ final class SiteDay
         $this->attendance->bulk($date, $out, $managerId, 'manager');
 
         return $this->read($siteId, $date, $managerId);
+    }
+
+    /** @return array<string, string> leave code => the active leave site, for the leave types a site manager may store */
+    private function managerLeaveSites(): array
+    {
+        $sites = Site::where(['kind' => SiteKind::Leave->value, 'active' => true])
+            ->whereIn('leave_code', array_map(fn (LeaveCode $c) => $c->value, self::MANAGER_LEAVE))->get(['id', 'leave_code']);
+
+        return $sites->mapWithKeys(fn (Site $s) => [(string) $s->leave_code => (string) $s->id])->all();
     }
 
     /**

@@ -6,18 +6,24 @@ import { json, mockFetch, pagination, renderWithAuth } from '@/test-utils'
 import { SiteDayPage } from './site-day'
 
 const user = userEvent.setup()
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  localStorage.clear()
+})
 
-const MANAGER = ['attendance.record.own', 'site.view.own']
+const MANAGER = ['attendance.record.own', 'site.view.own', 'employee.crew.own', 'employee.propose_laborer.own']
+const LEAVE = { absent: 'leave-absent', sick: 'leave-sick', rest: 'leave-rest', other: 'leave-other' }
 const site = (id: string, name: string) => ({ id, name_ar: name, name_en: name, kind: 'work', active: true })
 const day = (extra = {}) => ({ state: 'missing', version: null, site_id: null, leave_code: null, in_time: null, out_time: null, note: null, ...extra })
-const row = (id: string, name: string, type: string, section: string, d = {}) => ({ employee: { id, code: 1, name_ar: name, name_en: name, type }, section, day: day(d) })
-const answer = (s: { id: string; name_ar: string }, rows: unknown[]) => json(200, { data: { site: { ...s, name_en: s.name_ar }, date: '2026-10-22', today: '2026-10-22', rows } })
+const row = (id: string, name: string, type: string, section: string, d = {}, extra = {}) => ({
+  employee: { id, code: 1, name_ar: name, name_en: name, type }, section, shift: { start: '08:00', end: '16:00' }, day: day(d), can_edit: true, why_not: null, ...extra,
+})
+const answer = (s: { id: string; name_ar: string }, rows: unknown[]) => ({ site: { ...s, name_en: s.name_ar }, date: '2026-10-22', today: '2026-10-22', leave_sites: LEAVE, rows })
 
 const S1 = site('s1', 'Site-1')
 const S2 = site('s2', 'Site-2')
 const S1_ROWS = [
-  row('w1', 'Worker-1', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 's1' }),
+  row('w1', 'Worker-1', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 's1', in_time: '08:00' }),
   row('w2', 'Worker-2', 'permanent_worker', 'workers', { state: 'stored', version: 1, site_id: 'leave-absent', leave_code: 'absent' }),
   row('e1', 'Engineer-1', 'engineer', 'engineers'),
 ]
@@ -25,53 +31,221 @@ const S1_ROWS = [
 function Url() {
   return <output data-testid="url">{useLocation().search}</output>
 }
-const render = (path = '/site-day') => renderWithAuth(<><SiteDayPage /><Url /></>, MANAGER, { path })
+const render = (path = '/site-day', perms = MANAGER) => renderWithAuth(<><SiteDayPage /><Url /></>, perms, { path })
 
-function routes(sites: unknown[], days: Record<string, unknown[]>) {
+type Handler = (url: string, init?: RequestInit) => Response
+function routes(sites: unknown[], days: Record<string, unknown[]>, more: Record<string, Handler> = {}) {
   const siteDay = vi.fn((url: string) => {
     const id = new URL(url, 'http://x').searchParams.get('site_id')!
-    return answer(id === 's2' ? S2 : S1, days[id] ?? [])
+    return json(200, { data: answer(id === 's2' ? S2 : S1, days[id] ?? []) })
+  })
+  const post = vi.fn((_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body))
+    return json(200, { data: answer(body.site_id === 's2' ? S2 : S1, days[body.site_id] ?? []) })
   })
   mockFetch({
     'GET /api/v1/sites': () => json(200, { data: sites, meta: { pagination: { ...pagination, total: sites.length } } }),
     'GET /api/v1/attendance/site-day': siteDay,
+    'POST /api/v1/attendance/site-day': post,
+    ...more,
   })
-  return siteDay
+  return { siteDay, post }
 }
+const bodyOf = (fn: { mock: { calls: unknown[][] } }, i = 0) => JSON.parse(String((fn.mock.calls[i][1] as RequestInit).body))
+const group = (name: string) => screen.getByRole('group', { name })
 
-test('one site: no picker, workers then the engineers section', async () => {
-  const siteDay = routes([S1], { s1: S1_ROWS })
+test('one site: no switcher, workers then the engineers section, and the stored marks pressed', async () => {
+  const { siteDay } = routes([S1], { s1: S1_ROWS })
   render()
   const list = await screen.findByRole('list', { name: 'العاملون بالموقع' })
   expect(screen.getByRole('heading', { level: 1, name: 'Site-1' })).toBeInTheDocument()
-  expect(screen.queryByRole('combobox', { name: 'الموقع' })).toBeNull()
+  expect(screen.queryByRole('navigation', { name: 'الموقع' })).toBeNull()
   expect(siteDay.mock.calls[0][0]).toContain('site_id=s1')
   const items = within(list).getAllByRole('listitem').map((li) => li.textContent)
   expect(items[0]).toContain('Worker-1')
-  expect(items[1]).toContain('Worker-2')
   expect(items[2]).toBe('مهندسين')
   expect(items[3]).toContain('Engineer-1')
-  const worker1 = within(list).getByRole('group', { name: 'Worker-1' })
-  expect(within(worker1).getByText('عامل باليومية')).toBeInTheDocument()
-  expect(within(worker1).getByRole('button', { name: 'حاضر' })).toHaveAttribute('aria-pressed', 'true')
-  expect(within(worker1).getByRole('button', { name: 'غياب' })).toHaveAttribute('aria-pressed', 'false')
-  for (const b of within(worker1).getAllByRole('button')) expect(b).toBeDisabled()
-  expect(within(list).getByRole('group', { name: 'Worker-2' }).querySelector('[aria-pressed="true"]')).toHaveTextContent('غياب')
-  expect(within(list).getByRole('group', { name: 'Engineer-1' }).querySelector('[aria-pressed="true"]')).toBeNull()
-  expect(within(list).getAllByRole('button', { name: 'أنواع إجازات أخرى' })).toHaveLength(3)
+  expect(within(group('Worker-1')).getByRole('button', { name: 'حاضر' })).toHaveAttribute('aria-pressed', 'true')
+  expect(within(group('Worker-2')).getByRole('button', { name: 'غياب' })).toHaveAttribute('aria-pressed', 'true')
+  expect(group('Engineer-1').querySelector('[aria-pressed="true"]')).toBeNull()
+  expect(screen.getByRole('button', { name: 'حفظ اليوم' })).toBeDisabled()
 })
 
-test('two sites: the picker switches the list', async () => {
-  const siteDay = routes([S1, S2], { s1: S1_ROWS, s2: [row('w3', 'Worker-3', 'day_laborer', 'workers')] })
-  render('/site-day?date=2026-10-21')
-  const picker = await screen.findByRole('combobox', { name: 'الموقع' })
-  expect(await screen.findByText('Worker-1')).toBeInTheDocument()
-  expect(siteDay.mock.calls[0][0]).toContain('date=2026-10-21')
-  await user.selectOptions(picker, 's2')
-  expect(await screen.findByText('Worker-3')).toBeInTheDocument()
-  expect(screen.getByRole('heading', { level: 1, name: 'Site-2' })).toBeInTheDocument()
+test('morning: «حضور الكل» fills the shift start, keeps a typed arrival, an absence and approved leave, and saves only the changes', async () => {
+  const { post } = routes([S1], {
+    s1: [
+      row('a', 'Laborer-A', 'day_laborer', 'workers'),
+      row('b', 'Laborer-B', 'day_laborer', 'workers'),
+      row('c', 'Worker-C', 'permanent_worker', 'workers', { state: 'stored', version: 2, site_id: 'leave-absent', leave_code: 'absent' }),
+      row('d', 'Worker-D', 'permanent_worker', 'workers', { state: 'stored', version: 3, site_id: 'leave-annual', leave_code: 'annual' }, { can_edit: false, why_not: 'leave_request' }),
+      row('e', 'Engineer-E', 'engineer', 'engineers'),
+    ],
+  })
+  render()
+  await screen.findByRole('group', { name: 'Laborer-A' })
+  await user.click(within(group('Laborer-B')).getByRole('button', { name: 'حاضر' }))
+  const arrivalB = within(group('Laborer-B')).getByRole('textbox', { name: 'حضور Laborer-B' })
+  await user.clear(arrivalB)
+  await user.type(arrivalB, '9:15')
+
+  await user.click(screen.getByRole('button', { name: 'حضور الكل (2)' }))
+  expect(screen.getByRole('button', { name: 'حضور الكل (0)' })).toBeDisabled()
+  expect(within(group('Laborer-A')).getByRole('textbox', { name: 'حضور Laborer-A' })).toHaveValue('8:00')
+  expect(within(group('Laborer-A')).getByRole('textbox', { name: 'انصراف Laborer-A' })).toHaveValue('')
+  expect(within(group('Worker-C')).getByRole('button', { name: 'غياب' })).toHaveAttribute('aria-pressed', 'true')
+  expect(within(group('Worker-D')).getByText(/إجازة من طلب؛ تعدّلها الموارد البشرية/)).toBeInTheDocument()
+  for (const b of within(group('Worker-D')).getAllByRole('button')) expect(b).toBeDisabled()
+  expect(screen.getByText('تغييرات غير محفوظة: 3')).toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: 'حفظ اليوم' }))
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+  expect(bodyOf(post)).toEqual({
+    site_id: 's1',
+    date: '2026-10-22',
+    rows: [
+      { employee_id: 'a', version: null, site_id: 's1', in_time: '08:00', out_time: null },
+      { employee_id: 'b', version: null, site_id: 's1', in_time: '09:15', out_time: null },
+      { employee_id: 'e', version: null, site_id: 's1', in_time: '08:00', out_time: null },
+    ],
+  })
+  expect(await screen.findByText('تم الحفظ.')).toBeInTheDocument()
+})
+
+test('evening: «انصراف الكل» fills the shift end, keeps a typed departure, and shows early and late departures', async () => {
+  const { post } = routes([S1], {
+    s1: [
+      row('a', 'Laborer-A', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 's1', in_time: '08:00' }),
+      row('b', 'Laborer-B', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 's1', in_time: '08:00' }),
+      row('c', 'Laborer-C', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 's1', in_time: '08:00' }),
+      row('d', 'Worker-D', 'permanent_worker', 'workers', { state: 'stored', version: 1, site_id: 'leave-sick', leave_code: 'sick' }),
+    ],
+  })
+  render()
+  await screen.findByRole('group', { name: 'Laborer-A' })
+  expect(screen.getByText('بلا انصراف: 3')).toBeInTheDocument()
+  const outB = within(group('Laborer-B')).getByRole('textbox', { name: 'انصراف Laborer-B' })
+  await user.type(outB, '3:00')
+  await user.click(within(group('Laborer-B')).getAllByRole('button', { name: 'مساءً' })[1])
+  expect(within(group('Laborer-B')).getByText('انصراف مبكر 60 دقيقة')).toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: 'انصراف الكل (2)' }))
+  const outC = within(group('Laborer-C')).getByRole('textbox', { name: 'انصراف Laborer-C' })
+  expect(outC).toHaveValue('4:00')
+  await user.clear(outC)
+  await user.type(outC, '5:30')
+  expect(within(group('Laborer-C')).getByText(/بعد الموعد 90 دقيقة/)).toBeInTheDocument()
+  expect(screen.getByText('بلا انصراف: 0')).toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: 'حفظ اليوم' }))
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+  expect(bodyOf(post).rows).toEqual([
+    { employee_id: 'a', version: 1, site_id: 's1', in_time: '08:00', out_time: '16:00' },
+    { employee_id: 'b', version: 1, site_id: 's1', in_time: '08:00', out_time: '15:00' },
+    { employee_id: 'c', version: 1, site_id: 's1', in_time: '08:00', out_time: '17:30' },
+  ])
+})
+
+test('two sites: switching keeps each site its own roster and unsaved changes, and the last site is remembered', async () => {
+  routes([S1, S2], { s1: S1_ROWS, s2: [row('w3', 'Worker-3', 'day_laborer', 'workers')] })
+  render()
+  const nav = await screen.findByRole('navigation', { name: 'الموقع' })
+  await screen.findByRole('group', { name: 'Engineer-1' })
+  await user.click(within(group('Engineer-1')).getByRole('button', { name: 'غياب' }))
+  expect(within(nav).getByRole('button', { name: /Site-1/ })).toHaveTextContent('غير محفوظ')
+
+  await user.click(within(nav).getByRole('button', { name: /Site-2/ }))
+  expect(await screen.findByRole('group', { name: 'Worker-3' })).toBeInTheDocument()
+  expect(screen.queryByRole('group', { name: 'Engineer-1' })).toBeNull()
   expect(screen.getByTestId('url')).toHaveTextContent('site=s2')
-  expect(screen.getByTestId('url')).toHaveTextContent('date=2026-10-21')
+  expect(screen.getByRole('button', { name: 'حفظ اليوم' })).toBeDisabled()
+  expect(localStorage.getItem('hrms.siteDay.site')).toBe('s2')
+
+  await user.click(within(nav).getByRole('button', { name: /Site-1/ }))
+  expect(within(await screen.findByRole('group', { name: 'Engineer-1' })).getByRole('button', { name: 'غياب' })).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('the remembered site opens when it is still assigned', async () => {
+  localStorage.setItem('hrms.siteDay.site', 's2')
+  routes([S1, S2], { s1: S1_ROWS, s2: [row('w3', 'Worker-3', 'day_laborer', 'workers')] })
+  render()
+  expect(await screen.findByRole('heading', { level: 1, name: 'Site-2' })).toBeInTheDocument()
+})
+
+test('«⋯» offers rest and other only, never leave that needs a request', async () => {
+  routes([S1], { s1: S1_ROWS })
+  render()
+  await user.click(within(await screen.findByRole('group', { name: 'Engineer-1' })).getByRole('button', { name: 'أنواع إجازات أخرى' }))
+  const items = (await screen.findAllByRole('menuitem')).map((i) => i.textContent)
+  expect(items).toEqual(['راحة', 'أخرى'])
+})
+
+test('a 409 keeps the changes and offers the latest', async () => {
+  const { siteDay } = routes([S1], { s1: S1_ROWS }, {
+    'POST /api/v1/attendance/site-day': () => json(409, { error: { code: 'concurrency_conflict', message: 'تغيّر', details: [{ field: 'rows.0', code: 'concurrency_conflict', message: 'تغيّر' }] } }),
+  })
+  render()
+  await user.click(within(await screen.findByRole('group', { name: 'Engineer-1' })).getByRole('button', { name: 'مرضي' }))
+  await user.click(screen.getByRole('button', { name: 'حفظ اليوم' }))
+  expect(await screen.findByText(/عدّل شخص آخر هذا اليوم/)).toBeInTheDocument()
+  expect(within(group('Engineer-1')).getByRole('button', { name: 'مرضي' })).toHaveAttribute('aria-pressed', 'true')
+  const calls = siteDay.mock.calls.length
+  await user.click(screen.getByRole('button', { name: 'تحميل الأحدث' }))
+  await waitFor(() => expect(siteDay.mock.calls.length).toBeGreaterThan(calls))
+  expect(within(group('Engineer-1')).getByRole('button', { name: 'مرضي' })).toHaveAttribute('aria-pressed', 'false')
+})
+
+test('a day laborer with nothing recorded can be removed from today; one already recorded cannot', async () => {
+  const crew = vi.fn((_url: string, _init?: RequestInit) => json(200, { data: { employee_id: 'x', action: 'remove' } }))
+  routes([S1], { s1: [row('x', 'Laborer-X', 'day_laborer', 'workers'), ...S1_ROWS] }, { 'POST /api/v1/attendance/site-day/crew': crew })
+  render()
+  await user.click(within(await screen.findByRole('group', { name: 'Laborer-X' })).getByRole('button', { name: 'إخراج Laborer-X من طاقم اليوم' }))
+  await waitFor(() => expect(crew).toHaveBeenCalledTimes(1))
+  expect(bodyOf(crew)).toEqual({ site_id: 's1', employee_id: 'x', action: 'remove' })
+  expect(within(group('Worker-1')).queryByRole('button', { name: /إخراج/ })).toBeNull()
+  expect(within(group('Engineer-1')).queryByRole('button', { name: /إخراج/ })).toBeNull()
+})
+
+test('«إضافة عامل يومية» finds existing laborers first, then proposes a new one', async () => {
+  const crew = vi.fn((_url: string, _init?: RequestInit) => json(200, { data: {} }))
+  const create = vi.fn((_url: string, _init?: RequestInit) => json(201, { data: { id: 'n1', code: 77, name_ar: 'سعيد' } }))
+  routes([S1], { s1: S1_ROWS }, {
+    'GET /api/v1/attendance/site-day/laborers': () => json(200, {
+      data: [
+        { id: 'f1', code: 12, name_ar: 'سعيد علي', name_en: null, site: null, here: false, can_add: true },
+        { id: 'f2', code: 13, name_ar: 'سعيد حسن', name_en: null, site: { id: 's9', name_ar: 'Site-9', name_en: null }, here: false, can_add: false },
+      ],
+    }),
+    'POST /api/v1/attendance/site-day/crew': crew,
+    'POST /api/v1/attendance/site-day/laborers': create,
+  })
+  render()
+  await user.click(await screen.findByRole('button', { name: 'إضافة عامل يومية' }))
+  const dialog = await screen.findByRole('dialog')
+  await user.type(within(dialog).getByRole('textbox', { name: 'اسم العامل' }), 'سعيد')
+  const matches = await within(dialog).findByRole('region', { name: 'عمال مسجلون بهذا الاسم' })
+  expect(await within(matches).findByText('على موقع آخر؛ تواصل مع الموارد البشرية')).toBeInTheDocument()
+  expect(within(matches).getAllByRole('button', { name: 'إضافة لطاقم اليوم' })).toHaveLength(1)
+
+  await user.type(within(dialog).getByRole('textbox', { name: 'الأجر اليومي المقترح' }), '350')
+  await user.type(within(dialog).getByRole('textbox', { name: 'رقم الموبايل (اختياري)' }), '01012345678')
+  await user.click(within(dialog).getByRole('button', { name: 'إضافة العامل الجديد' }))
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+  expect(bodyOf(create)).toEqual({ site_id: 's1', name_ar: 'سعيد', daily_wage: '350', phone: '01012345678' })
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  await user.click(screen.getByRole('button', { name: 'إضافة عامل يومية' }))
+  await user.type(within(await screen.findByRole('dialog')).getByRole('textbox', { name: 'اسم العامل' }), 'سعيد')
+  await user.click(await screen.findByRole('button', { name: 'إضافة لطاقم اليوم' }))
+  await waitFor(() => expect(crew).toHaveBeenCalledTimes(1))
+  expect(bodyOf(crew)).toEqual({ site_id: 's1', employee_id: 'f1', action: 'add' })
+})
+
+test('without the crew permissions there is no add or remove', async () => {
+  routes([S1], { s1: [row('x', 'Laborer-X', 'day_laborer', 'workers')] })
+  render('/site-day', ['attendance.record.own', 'site.view.own'])
+  await screen.findByRole('group', { name: 'Laborer-X' })
+  expect(screen.queryByRole('button', { name: 'إضافة عامل يومية' })).toBeNull()
+  expect(screen.queryByRole('button', { name: /إخراج/ })).toBeNull()
 })
 
 test('an engineer at another site shows that site', async () => {
@@ -83,24 +257,15 @@ test('an engineer at another site shows that site', async () => {
   })
   render('/site-day?site=s1')
   expect(within(await screen.findByRole('group', { name: 'Engineer-1' })).getByText('في موقع: Site-2')).toBeInTheDocument()
-  expect(within(screen.getByRole('group', { name: 'Engineer-1' })).getByRole('button', { name: 'حاضر' })).toHaveAttribute('aria-pressed', 'false')
-  expect(within(screen.getByRole('group', { name: 'Engineer-2' })).getByText('في موقع آخر')).toBeInTheDocument()
+  expect(within(group('Engineer-1')).getByRole('button', { name: 'حاضر' })).toHaveAttribute('aria-pressed', 'false')
+  expect(within(group('Engineer-2')).getByText('في موقع آخر')).toBeInTheDocument()
 })
 
-test('a worker stored at another site shows the hint and nothing pressed', async () => {
-  routes([S1, S2], { s1: [row('w1', 'Worker-1', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 's2' })] })
-  render('/site-day?site=s1')
-  const worker = await screen.findByRole('group', { name: 'Worker-1' })
-  expect(within(worker).getByText('في موقع: Site-2')).toBeInTheDocument()
-  expect(worker.querySelector('[aria-pressed="true"]')).toBeNull()
-})
-
-test('no sites shows the empty state', async () => {
-  const siteDay = routes([], {})
+test('no sites shows the empty state with HR as the contact', async () => {
+  const { siteDay } = routes([], {})
   render()
   expect(await screen.findByText('لا توجد مواقع مسندة إليك. تواصل مع الموارد البشرية.')).toBeInTheDocument()
   await waitFor(() => expect(siteDay).not.toHaveBeenCalled())
-  expect(screen.queryByRole('list')).toBeNull()
 })
 
 test('a site with nobody on the day shows the empty list state', async () => {
@@ -116,4 +281,13 @@ test('a refused day shows the error', async () => {
   })
   render('/site-day?date=2026-10-30')
   expect(await screen.findByRole('alert')).toHaveTextContent('لا يمكن تسجيل يوم في المستقبل.')
+})
+
+test('a time that is not a time stops the save and names the person', async () => {
+  const { post } = routes([S1], { s1: [row('a', 'Laborer-A', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 's1', in_time: '08:00' })] })
+  render()
+  await user.type(await screen.findByRole('textbox', { name: 'انصراف Laborer-A' }), '3:303:30')
+  await user.click(screen.getByRole('button', { name: 'حفظ اليوم' }))
+  expect(await screen.findByText(/وقت غير صحيح عند: Laborer-A/)).toBeInTheDocument()
+  expect(post).not.toHaveBeenCalled()
 })

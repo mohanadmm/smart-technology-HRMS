@@ -51,7 +51,10 @@ class SiteDaySaveTest extends TestCase
     public function test_the_read_gives_each_row_its_shift_and_whether_it_can_be_edited(): void
     {
         $this->actingAs($this->m, 'api');
-        $row = $this->getJson("/api/v1/attendance/site-day?site_id={$this->s1}")->assertOk()->json('data.rows.0');
+        $r = $this->getJson("/api/v1/attendance/site-day?site_id={$this->s1}")->assertOk();
+        $this->assertEqualsCanonicalizing(['absent', 'sick', 'rest', 'other'], array_keys($r->json('data.leave_sites')));
+        $this->assertSame($this->leave['sick'], $r->json('data.leave_sites.sick'));
+        $row = $r->json('data.rows.0');
 
         $this->assertSame(['start' => '08:00', 'end' => '17:00'], $row['shift']);   // the field shift setting (R19 open)
         $this->assertSame([true, null], [$row['can_edit'], $row['why_not']]);

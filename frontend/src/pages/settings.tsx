@@ -17,7 +17,7 @@ import { FaresTab, LeaveTypesTab, ResidencesTab, SitesTab } from './sites'
 const GROUPS: [string, string[]][] = [
   ['time', ['month_days', 'day_hours', 'overtime_multiplier']],
   ['lateness', ['lateness_multiplier_office', 'lateness_multiplier_engineer', 'lateness_multiplier_permanent_worker', 'lateness_multiplier_day_laborer', 'office_grace_minutes']],
-  ['schedule', ['office_shift_start', 'office_shift_end', 'worker_shift_start', 'worker_shift_end', 'weekly_off_office', 'weekly_off_field']],
+  ['schedule', ['office_shift_start', 'office_shift_end', 'worker_shift_start', 'worker_shift_end', 'manager_yesterday_until', 'weekly_off_office', 'weekly_off_field']],
   ['leave', ['leave_days_under_one_year', 'leave_days_one_year_plus', 'leave_casual_days', 'sick_leave_pay_percent']],
 ]
 const KEYS = GROUPS.flatMap(([, keys]) => keys)
@@ -88,7 +88,7 @@ function RulesForm({ initial, loadErr }: { initial: Row; loadErr?: unknown }) {
         key={k}
         name={k}
         label={t(`rule.${k}`)}
-        {...(k.endsWith('_shift_start') || k.endsWith('_shift_end') ? { type: 'time' } : { inputMode: INTEGER.includes(k) ? 'numeric' : 'decimal' })}
+        {...(k.endsWith('_shift_start') || k.endsWith('_shift_end') || k === 'manager_yesterday_until' ? { type: 'time' } : { inputMode: INTEGER.includes(k) ? 'numeric' : 'decimal' })}
         values={form}
         set={set}
         errs={errs}
