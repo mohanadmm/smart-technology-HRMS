@@ -106,6 +106,17 @@ test('a 422 details sheet shows the request metadata and its masked body as it i
   expect(sheet).not.toHaveTextContent('[object Object]')
 })
 
+test('the details subtitle isolates the time, the account and the duration, so an Arabic name keeps its place in English', async () => {
+  mockFetch({ 'GET /api/v1/request-log': list([row({ user: { id: 'u1', name: 'أ.فاطمه' }, duration_ms: 27 })]) })
+  renderWithAuth(<LogsPage />, ['system_log.view.all'])
+  await i18n.changeLanguage('en')
+  await user.click(await screen.findByRole('button', { name: 'View details' }))
+  const sheet = await screen.findByRole('dialog')
+  expect(within(sheet).getByText('أ.فاطمه').tagName).toBe('BDI')
+  expect(within(sheet).getByText('27 ms').tagName).toBe('BDI')
+  expect(within(sheet).getByText(/11\/4\/26/).tagName).toBe('BDI')
+})
+
 test('without user.view there is no account filter and no account list call', async () => {
   mockFetch({ 'GET /api/v1/request-log': list([]) })
   renderWithAuth(<LogsPage />, ['system_log.view.all'])

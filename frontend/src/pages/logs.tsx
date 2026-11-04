@@ -32,7 +32,10 @@ function Details({ entry, onClose }: { entry: Row; onClose: () => void }) {
           </SheetTitle>
           <SheetDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <Badge variant={tone(entry.status)}>{entry.status}</Badge>
-            <span>{time(entry.occurred_at)} · {entry.user?.name ?? '—'} · {t('logs.ms', { n: entry.duration_ms })}</span>
+            {/* each part isolated: an Arabic name in an English line (or the reverse) must not pull the numbers into its run */}
+            <span>
+              <bdi>{time(entry.occurred_at)}</bdi> · <bdi>{entry.user?.name ?? '—'}</bdi> · <bdi>{t('logs.ms', { n: entry.duration_ms })}</bdi>
+            </span>
           </SheetDescription>
         </SheetHeader>
         <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain p-5">
