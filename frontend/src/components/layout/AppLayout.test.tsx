@@ -58,6 +58,8 @@ test('the profile menu shows the account and signs out from there', async () => 
   await user.click(await screen.findByRole('button', { name: 'قائمة الحساب' }))
   expect(await screen.findByRole('menuitem', { name: 'تسجيل الخروج' })).toBeInTheDocument()
   expect(screen.getAllByText('hr@smart.test').length).toBeGreaterThan(0)
+  // The header hides the role below lg, so the menu names it at every width.
+  expect(within(screen.getByRole('menu')).getByText('الموارد البشرية')).toBeInTheDocument()
 })
 
 test('the theme item in the profile menu switches the whole app theme', async () => {
