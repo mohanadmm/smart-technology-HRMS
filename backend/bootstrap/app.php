@@ -79,7 +79,7 @@ return Application::configure(basePath: dirname(__DIR__))
             $request, 403, 'permission_denied', __('identity.refusal.permission_denied'),
         ));
 
-        // An attendance refusal (stale version, locked period, future date) is an answer, not a fault.
+        // An attendance refusal (locked period, future date) is an answer, not a fault.
         $exceptions->dontReport(AttendanceRefused::class);
 
         $exceptions->render(fn (AttendanceRefused $e, Request $request) => ApiEnvelope::error(
@@ -88,9 +88,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->dontReport([ConcurrencyConflict::class, NoLeaveBalance::class]);
 
-        // Same text as Attendance's own concurrency_conflict refusal, which keeps its enum case until Attendance moves to this exception.
         $exceptions->render(fn (ConcurrencyConflict $e, Request $request) => ApiEnvelope::error(
-            $request, 409, 'concurrency_conflict', __('attendance.refusal.concurrency_conflict'),
+            $request, 409, ConcurrencyConflict::CODE, __('errors.'.ConcurrencyConflict::CODE), $e->details,
         ));
 
         $exceptions->render(fn (NoLeaveBalance $e, Request $request) => ApiEnvelope::error(

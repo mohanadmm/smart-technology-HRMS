@@ -2,7 +2,6 @@
 
 return [
     'refusal' => [
-        'concurrency_conflict' => 'Someone else changed this record. Load the latest version and try again.',
         'period_locked' => 'This attendance period is locked and cannot be edited.',
         'future_date' => 'Attendance cannot be recorded for a future date.',
         'employee_not_active' => 'The employee is not employed on this date.',

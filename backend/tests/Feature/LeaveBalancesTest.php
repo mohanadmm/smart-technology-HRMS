@@ -260,7 +260,7 @@ class LeaveBalancesTest extends TestCase
 
         $fresh = $this->employee('office', '2020-01-01');
         $this->adjust($fresh, [...$body, 'version' => 1])->assertStatus(409)->assertJsonPath('error.code', 'concurrency_conflict')
-            ->assertJsonPath('error.message', __('attendance.refusal.concurrency_conflict'));
+            ->assertJsonPath('error.message', __('errors.concurrency_conflict'));
         $this->balance($fresh)->assertJsonPath('data.adjustment', null);
     }
 

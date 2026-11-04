@@ -167,6 +167,21 @@ class AttendanceBulkTest extends TestCase
         $this->assertSame($audits, DB::table('audit_log')->count());
     }
 
+    public function test_stale_rows_are_detailed_in_request_order_with_their_message(): void
+    {
+        [$a, $b, $c] = [$this->employee('engineer'), $this->employee('engineer'), $this->employee('engineer')];
+        $this->putDay($b, self::DATE, ['site_id' => $this->site])->assertOk();
+        $this->putDay($c, self::DATE, ['site_id' => $this->site])->assertOk();
+
+        // Rows are written in employee_id order (a, b, c), the reverse of the request's.
+        foreach (self::CONFLICT_MESSAGE as $locale => $message) {
+            $detail = fn (int $i) => ['field' => "rows.{$i}", 'code' => 'concurrency_conflict', 'message' => $message];
+            $this->withHeader('Accept-Language', $locale)
+                ->bulk([['employee_id' => $c, 'version' => 9, 'site_id' => $this->site], ['employee_id' => $b, 'version' => null, 'site_id' => $this->site], ['employee_id' => $a, 'site_id' => $this->site]])
+                ->assertStatus(409)->assertJsonPath('error', ['code' => 'concurrency_conflict', 'message' => $message, 'details' => [$detail(0), $detail(1)]]);
+        }
+    }
+
     public function test_rule_violations_are_reported_per_row_and_nothing_is_written(): void
     {
         $eng = $this->employee('engineer');
@@ -263,8 +278,12 @@ class AttendanceBulkTest extends TestCase
             }
         });
 
-        $this->bulk([['employee_id' => $b, 'site_id' => $this->site], ['employee_id' => $a, 'site_id' => $this->site]])
-            ->assertStatus(409)->assertJsonPath('error.code', 'concurrency_conflict')->assertJsonPath('error.details.0.field', 'rows.0');
+        foreach (self::CONFLICT_MESSAGE as $locale => $message) {
+            $this->withHeader('Accept-Language', $locale)->bulk([['employee_id' => $b, 'site_id' => $this->site], ['employee_id' => $a, 'site_id' => $this->site]])
+                ->assertStatus(409)->assertJsonPath('error', [
+                    'code' => 'concurrency_conflict', 'message' => $message, 'details' => [['field' => 'rows.0', 'code' => 'concurrency_conflict', 'message' => $message]],
+                ]);
+        }
         $this->assertSame(0, AttendanceDay::count());
     }
 

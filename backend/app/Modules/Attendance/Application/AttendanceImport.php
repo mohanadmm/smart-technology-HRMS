@@ -11,6 +11,7 @@ use App\Modules\Attendance\Infrastructure\XlsxAttendanceReader;
 use App\Modules\Employees\Application\EmployeeRoster;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Sites\Infrastructure\Eloquent\Site;
+use App\Support\Database\ConcurrencyConflict;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -177,6 +178,8 @@ final class AttendanceImport
             return null;
         } catch (AttendanceRefused $e) {
             return self::error(...$at, error: $e->reason->value, message: (string) __('attendance.refusal.'.$e->reason->value, $e->params));
+        } catch (ConcurrencyConflict) {
+            return self::error(...$at, error: ConcurrencyConflict::CODE, message: (string) __('errors.'.ConcurrencyConflict::CODE));
         } catch (DayRulesViolated $e) {
             $code = $e->violations[0]['code'];
 

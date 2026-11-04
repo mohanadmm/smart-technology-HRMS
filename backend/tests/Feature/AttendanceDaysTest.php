@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceDay;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\AttendanceFixtures;
 use Tests\TestCase;
 
@@ -133,6 +134,31 @@ class AttendanceDaysTest extends TestCase
         $this->putDay($eng, '2026-10-01', ['version' => 1, 'site_id' => $this->site])->assertStatus(409)->assertJsonPath('error.code', 'concurrency_conflict');
         $this->putDay($eng, '2026-10-01', ['version' => null, 'site_id' => $this->site])->assertStatus(409);
         $this->assertSame(20, AttendanceDay::where('employee_id', $eng)->value('late_minutes'));
+    }
+
+    public function test_a_stale_put_or_clear_answers_409_with_its_message_and_no_details(): void
+    {
+        $eng = $this->employee('engineer');
+        $this->putDay($eng, '2026-10-01', ['site_id' => $this->site])->assertOk();
+
+        foreach (self::CONFLICT_MESSAGE as $locale => $message) {
+            $error = ['code' => 'concurrency_conflict', 'message' => $message];
+            $this->withHeader('Accept-Language', $locale);
+            $this->putDay($eng, '2026-10-01', ['version' => 7, 'site_id' => $this->site])->assertStatus(409)->assertJsonPath('error', $error);
+            $this->deleteJson("/api/v1/attendance/days/{$eng}/2026-10-01?version=7")->assertStatus(409)->assertJsonPath('error', $error);
+        }
+    }
+
+    public function test_a_racing_insert_on_put_answers_409_with_no_details(): void
+    {
+        $eng = $this->employee('engineer');
+        // Another request inserts the day between this request's read and its insert.
+        AttendanceDay::creating(function () use ($eng): void {
+            DB::table('attendance_days')->insert(['id' => (string) Str::uuid7(), 'employee_id' => $eng, 'date' => '2026-10-01', 'source' => 'entered']);
+        });
+
+        $this->withHeader('Accept-Language', 'ar')->putDay($eng, '2026-10-01', ['site_id' => $this->site])
+            ->assertStatus(409)->assertJsonPath('error', ['code' => 'concurrency_conflict', 'message' => self::CONFLICT_MESSAGE['ar']]);
     }
 
     public function test_clearing_a_day_soft_deletes_it_and_the_day_is_missing_again(): void

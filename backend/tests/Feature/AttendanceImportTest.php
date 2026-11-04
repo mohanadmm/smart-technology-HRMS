@@ -121,8 +121,11 @@ class AttendanceImportTest extends TestCase
 
         $file = $this->edit($path, [$this->code($this->eng) => ['2026-10-01' => 'Site-1']]);
         foreach (['preview', 'confirm'] as $endpoint) {
-            $this->upload($endpoint, $file)->assertOk()
-                ->assertJsonPath('data.errors.0.error', 'concurrency_conflict')->assertJsonPath('data.errors.0.column', 'H')->assertJsonCount(1, 'data.errors');
+            foreach (self::CONFLICT_MESSAGE as $locale => $message) {
+                $this->upload($endpoint, $file, locale: $locale)->assertOk()
+                    ->assertJsonPath('data.errors.0.error', 'concurrency_conflict')->assertJsonPath('data.errors.0.message', $message)
+                    ->assertJsonPath('data.errors.0.column', 'H')->assertJsonCount(1, 'data.errors');
+            }
         }
         $day = AttendanceDay::where(['employee_id' => $this->eng, 'date' => '2026-10-01'])->sole();
         $this->assertSame([$site2, 2, 'entered'], [$day->site_id, $day->version, $day->source]);

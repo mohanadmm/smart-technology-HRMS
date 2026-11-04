@@ -18,6 +18,7 @@ use App\Modules\Settings\Application\BusinessRules;
 use App\Modules\Sites\Application\SiteService;
 use App\Modules\Sites\Domain\SiteKind;
 use App\Modules\Sites\Infrastructure\Eloquent\Site;
+use App\Support\Database\ConcurrencyConflict;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -89,7 +90,7 @@ final class AttendanceDays
             DB::transaction(fn () => $this->write($employee, $date, $input, $ownerId, $source, false));
         } catch (UniqueConstraintViolationException) {
             // A racing insert of the same employee and date won.
-            throw AttendanceRefused::because(AttendanceRefusal::ConcurrencyConflict);
+            throw new ConcurrencyConflict;
         }
 
         return $this->days->effectiveDay($employeeId, $date);
@@ -117,8 +118,9 @@ final class AttendanceDays
         $order = array_keys($rows);
         usort($order, fn (int $a, int $b) => strcmp((string) $rows[$a]['employee_id'], (string) $rows[$b]['employee_id']));
         $settings = $this->rules->all();
+        $stale = fn (int $i) => ['field' => "rows.{$i}", 'code' => ConcurrencyConflict::CODE, 'message' => (string) __('errors.'.ConcurrencyConflict::CODE)];
         $versions = [];
-        DB::transaction(function () use ($date, $rows, $ownerId, $order, $employees, $settings, &$versions): void {
+        DB::transaction(function () use ($date, $rows, $ownerId, $order, $employees, $settings, $stale, &$versions): void {
             $conflicts = [];
             $errors = [];
             // ponytail: ~6 queries per row; preload sites and locks if 500-row requests get slow
@@ -132,18 +134,16 @@ final class AttendanceDays
                     } else {
                         $versions[$i] = $this->write($employee, $date, $row, $ownerId, 'entered', true, $settings);
                     }
+                } catch (ConcurrencyConflict) {
+                    $conflicts[$i] = $stale($i);
                 } catch (AttendanceRefused $e) {
+                    // A locked period or a future date refuses the whole request, so it names no row.
+                    $named = in_array($e->reason, [AttendanceRefusal::EmployeeNotActive, AttendanceRefusal::SiteNotInReach], true);
                     $detail = ['field' => "rows.{$i}", 'code' => $e->reason->value, 'message' => __('attendance.refusal.'.$e->reason->value, $e->params)];
-                    if ($e->reason !== AttendanceRefusal::ConcurrencyConflict) {
-                        // A locked period or a future date refuses the whole request, so it names no row.
-                        $named = in_array($e->reason, [AttendanceRefusal::EmployeeNotActive, AttendanceRefusal::SiteNotInReach], true);
-                        throw AttendanceRefused::because($e->reason, $e->params, $named ? [$detail] : []);
-                    }
-                    $conflicts[$i] = $detail;
+                    throw AttendanceRefused::because($e->reason, $e->params, $named ? [$detail] : []);
                 } catch (UniqueConstraintViolationException) {
                     // A racing insert of this row's day won; the transaction is aborted, so stop at this row.
-                    $reason = AttendanceRefusal::ConcurrencyConflict;
-                    throw AttendanceRefused::because($reason, [], [['field' => "rows.{$i}", 'code' => $reason->value, 'message' => __('attendance.refusal.'.$reason->value)]]);
+                    throw new ConcurrencyConflict([$stale($i)]);
                 } catch (ValidationException $e) {
                     foreach ($e->errors() as $field => $messages) {
                         $errors[$i]["rows.{$i}.{$field}"] = $messages;
@@ -153,7 +153,7 @@ final class AttendanceDays
             ksort($conflicts);
             ksort($errors);
             if ($conflicts !== []) {
-                throw AttendanceRefused::because(AttendanceRefusal::ConcurrencyConflict, [], array_values($conflicts));
+                throw new ConcurrencyConflict(array_values($conflicts));
             }
             if ($errors !== []) {
                 throw ValidationException::withMessages(array_merge(...array_values($errors)));
@@ -170,14 +170,14 @@ final class AttendanceDays
      * @param  array<string, mixed>  $employee  an EmployeeRoster row
      * @param  array{version: ?int, site_id: ?string}  $input  the Day sheet's bulk row for a site, a leave type or office present
      *
-     * @throws AttendanceRefused|DayRulesViolated
+     * @throws AttendanceRefused|ConcurrencyConflict|DayRulesViolated
      */
     public function writeCell(array $employee, string $date, array $input, ?string $ownerId, string $source, bool $dryRun = false): void
     {
         try {
             DB::transaction(fn () => $this->write($employee, $date, $input, $ownerId, $source, true, dryRun: $dryRun));
         } catch (UniqueConstraintViolationException) {
-            throw AttendanceRefused::because(AttendanceRefusal::ConcurrencyConflict);
+            throw new ConcurrencyConflict;
         }
     }
 
@@ -329,7 +329,7 @@ final class AttendanceDays
     {
         $version = $version === null ? null : (int) $version;
         if ($live === null ? $version !== null : $live->version !== $version) {
-            throw AttendanceRefused::because(AttendanceRefusal::ConcurrencyConflict);
+            throw new ConcurrencyConflict;
         }
     }
 
