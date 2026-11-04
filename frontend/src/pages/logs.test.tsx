@@ -133,3 +133,70 @@ test('with user.view the account filter sends user_id', async () => {
   await user.selectOptions(screen.getByLabelText('الحساب'), 'u1')
   await waitFor(() => expect(lastUrl(fn)).toContain('user_id=u1'))
 })
+
+const err = (over: Record<string, unknown> = {}) => ({
+  id: 'e1', request_id: 'req-1', user_id: 'u1', class: 'Illuminate\\Database\\UniqueConstraintViolationException',
+  message: 'SQLSTATE 23505, constraint employees_national_id_unique\ninsert into "employees"', file: '/var/www/html/vendor/Connection.php', line: 838,
+  trace: '#0 /var/www/html/app/A.php(12): App\\A->b()\n#1 {main}', sqlstate: '23505', occurred_at: '2026-11-04T20:01:03Z', ...over,
+})
+
+test('the logs page renders both tabs, and the bar switches between them', async () => {
+  mockFetch({ 'GET /api/v1/request-log': list([row()]), 'GET /api/v1/error-log': list([err()]) })
+  renderWithAuth(<LogsPage />, ['system_log.view.all'])
+  expect(await screen.findByRole('tab', { name: 'الطلبات', selected: true })).toBeInTheDocument()
+  await user.click(screen.getByRole('tab', { name: 'الأخطاء' }))
+  const table = await screen.findByRole('table', { name: 'الأخطاء' })
+  expect(within(table).getByText('Illuminate\\Database\\UniqueConstraintViolationException')).toHaveAttribute('dir', 'ltr')
+  expect(within(table).getByText(/^SQLSTATE 23505/)).toHaveClass('truncate')
+  expect(within(table).getByText('req-1')).toHaveAttribute('dir', 'ltr')
+})
+
+test('error filters become the query string', async () => {
+  const fn = list([err()])
+  mockFetch({ 'GET /api/v1/error-log': fn })
+  renderWithAuth(<LogsPage />, ['system_log.view.all'], { path: '/console/logs?tab=errors' })
+  await user.type(await screen.findByLabelText('من'), '2026-11-01')
+  await user.type(screen.getByLabelText('إلى'), '2026-11-04')
+  await waitFor(() => expect(lastUrl(fn)).toContain('to=2026-11-04'))
+  expect(lastUrl(fn)).toContain('from=2026-11-01')
+  expect(lastUrl(fn)).toContain('per_page=20')
+})
+
+test("the request sheet's link opens the Errors tab filtered by that request, and the chip clears it", async () => {
+  const errors = list([err()])
+  mockFetch({ 'GET /api/v1/request-log': list([row({ request_id: 'req-7', status: 500 })]), 'GET /api/v1/error-log': errors })
+  renderWithAuth(<LogsPage />, ['system_log.view.all'])
+  await user.click(await screen.findByRole('button', { name: 'عرض التفاصيل' }))
+  await user.click(within(await screen.findByRole('dialog')).getByRole('link', { name: 'عرض أخطاء هذا الطلب' }))
+  expect(await screen.findByRole('tab', { name: 'الأخطاء', selected: true })).toBeInTheDocument()
+  await waitFor(() => expect(lastUrl(errors)).toContain('request_id=req-7'))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.getByText('req-7', { selector: 'bdi' })).toHaveAttribute('dir', 'ltr')
+  await user.click(screen.getByRole('button', { name: 'إلغاء التصفية بمعرّف الطلب' }))
+  await waitFor(() => expect(lastUrl(errors)).not.toContain('request_id'))
+  expect(screen.queryByRole('button', { name: 'إلغاء التصفية بمعرّف الطلب' })).toBeNull()
+})
+
+test('the error sheet shows where it happened and links back to its request', async () => {
+  const requests = list([row()])
+  mockFetch({ 'GET /api/v1/error-log': list([err({ request_id: 'req-3' })]), 'GET /api/v1/request-log': requests })
+  renderWithAuth(<LogsPage />, ['system_log.view.all'], { path: '/console/logs?tab=errors' })
+  await user.click(await screen.findByRole('button', { name: 'عرض التفاصيل' }))
+  const sheet = await screen.findByRole('dialog')
+  expect(within(sheet).getByText('/var/www/html/vendor/Connection.php:838')).toHaveAttribute('dir', 'ltr')
+  expect(within(sheet).getByText('رمز خطأ قاعدة البيانات').nextSibling).toHaveTextContent('23505')
+  expect(within(sheet).getByRole('region', { name: 'الرسالة' })).toHaveTextContent('insert into "employees"')
+  const trace = within(sheet).getByRole('region', { name: 'تتبع الاستدعاءات' })
+  expect(within(trace).getByText(/#0 \/var\/www\/html\/app\/A\.php\(12\)/)).toHaveAttribute('dir', 'ltr')
+  await user.click(within(sheet).getByRole('link', { name: 'عرض الطلب' }))
+  expect(await screen.findByRole('tab', { name: 'الطلبات', selected: true })).toBeInTheDocument()
+  await waitFor(() => expect(lastUrl(requests)).toContain('request_id=req-3'))
+  expect(screen.getByText('req-3', { selector: 'bdi' })).toBeInTheDocument()
+})
+
+test('an error with no request (a queued job) has no request link', async () => {
+  mockFetch({ 'GET /api/v1/error-log': list([err({ request_id: null })]) })
+  renderWithAuth(<LogsPage />, ['system_log.view.all'], { path: '/console/logs?tab=errors' })
+  await user.click(await screen.findByRole('button', { name: 'عرض التفاصيل' }))
+  expect(within(await screen.findByRole('dialog')).queryByRole('link')).toBeNull()
+})

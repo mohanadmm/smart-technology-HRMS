@@ -938,7 +938,7 @@
     }
   },
   "logs": {
-    "subtitle": "Every request the system receives, with its response status, duration and the account that sent it. Sensitive values show masked.",
+    "subtitle": "Every request the system receives, with its response status, duration and the account that sent it, and every error the system reports. Sensitive values show masked.",
     "time": "Date and time",
     "request": "Request",
     "status": "Status",
@@ -959,6 +959,18 @@
     "query": "Query parameters",
     "request_body": "Request body",
     "response_body": "Response body",
-    "userAgent": "User agent"
+    "userAgent": "User agent",
+    "tab": {
+      "requests": "Requests",
+      "errors": "Errors"
+    },
+    "class": "Error class",
+    "message": "Message",
+    "file": "File and line",
+    "sqlstate": "Database error code (SQLSTATE)",
+    "trace": "Stack trace",
+    "viewErrors": "View this request's errors",
+    "viewRequest": "View the request",
+    "clearRequestId": "Clear the request ID filter"
   }
 }
