@@ -73,7 +73,7 @@ Smart Technology runs HR and payroll today on 6 hand-built Excel workbooks (anal
    - Later, separate items:
      - **Manager mobile screen**: the manager enters today, and yesterday until 12:00; older days are HR-only. «زي امبارح» quick fill; the manager's own sites only; the «تم التوقيع» sign-off per employee period, after which only HR edits; HR returns a period with a notification to the manager; an alert to HR when a manager skips a day.
      - **Paste site attendance messages**: HR pastes a site's attendance message in a fixed format, and the system parses it per person.
-6. **Leave**: balances and rules above, recorded by the manager, HR approves or escalates.
+6. **Leave**: balances and rules above, recorded by the manager, HR approves or escalates. Built in 6 slices per `docs/superpowers/plans/2026-11-03-leave.md`.
 7. **Notifications**: in-app, instant + daily digest.
 8. **Migration step 1**: step 1 (master data: employees, sites, rates, fares) is done by `hrms:import-master`; opening leave and advance balances follow their modules.
 

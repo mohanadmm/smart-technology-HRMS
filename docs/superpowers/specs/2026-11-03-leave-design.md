@@ -113,7 +113,7 @@ For each date from..to: skip dates outside employment as a monthly type, the typ
 - **Refuse** (same permission as Approve): reason required (≤ 1000), stored in `decision_reason`; notifies `requested_by` (`leave_decided`, data `status` refused) unless the decider filed it.
 - **Escalate** (`leave.decide.all`, pending only): status `escalated`; HR's optional note goes in `decision_reason` for the CEO to read; notifies holders of `leave.decide_escalated.all` (`leave_escalated`).
 - A stale version, or a request no longer pending/escalated (pending for Escalate), is 409 `concurrency_conflict`. A caller without the permission the status needs is 403; on a decided request, holding either decide permission is enough to learn it is a conflict.
-- **Cancel:** the requester or HR while pending or escalated; HR only when approved. Cancelling an approved request clears the days it wrote that still hold its leave code and source `leave`; a date in a locked period refuses the whole cancel.
+- **Cancel:** the requester or HR while pending or escalated; HR only when approved. Cancelling an approved request clears the days it wrote that still hold its leave code and source `leave`; a date in a locked period refuses the whole cancel. A day to clear that holds a note or an advance refuses the cancel too (409 `leave_cancel_blocked`, the dates listed), so HR changes that day first and no advance is lost (Slice 6). The requester, HR and the CEO holders of an escalated request are notified (`leave_cancelled`). Deleting an employee cancels their pending and escalated requests.
 - HR's own submission can be approved straight away from the same dialog (two calls, no special path).
 
 ### Anniversary alert
