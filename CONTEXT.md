@@ -5,7 +5,7 @@ HR and payroll for Smart Technology's office staff, site engineers, permanent si
 ## People
 
 **Employee** (موظف):
-Anyone the company pays, of any employee type. Employees have no system account.
+Anyone the company pays, of any employee type. Most employees have no system account; a team lead can be both an employee and an account holder, and the account's permissions say nothing about their pay.
 _Avoid_: staff member, worker (as the general term), user
 
 **Employee type**:
@@ -16,10 +16,9 @@ _Avoid_: category, contract type
 Office staff, engineers and permanent workers together: everyone paid a monthly salary.
 _Avoid_: permanent employees, مثبتين (alone; it is ambiguous)
 
-**Manager** (مدير):
-An account holder who covers one or more sites and acts on behalf of the people they reach on a date: the workers whose home site is one of their sites, and the engineers assigned to them. Office staff are in no manager's reach.
-_Avoid_: supervisor, team leader
-_Under revision_: the client asked to rename this role to team lead (مسؤول التيم) and limit it to day laborers. Keep "Manager" until the owner answers R1–R2 in `docs/client-questions.md`.
+**Team lead** (مسؤول التيم):
+An account holder who covers one or more sites and records attendance and absence for the people they reach on a date: the workers whose home site is one of their sites, and the engineers assigned to them. Office staff are in no team lead's reach. A team lead never sees or sets wages; HR owns them.
+_Avoid_: manager, مدير (the old name, decided 2026-11-03), supervisor
 
 **Fingerprint name**:
 The English name an office employee has on the fingerprint device, used to match its export to the employee.
@@ -28,7 +27,7 @@ _Avoid_: English name, device ID
 **Employee ID** (الرقم الوظيفي):
 The number the company gives each employee; stored as the employee's `code`, a whole number from 0. It stays visible. A number is never reissued: a new employee gets the highest ID ever issued + 1, even after renumbering, and a deleted employee's ID stays theirs. HR (permission `employee.edit_code`) may change an ID to any free number from 0 up to the highest issued, or swap it with another employee's. Changing an employee's ID or Arabic name after an attendance template download refuses that employee's rows in the old template; download a fresh one.
 _Avoid_: الكود; code (in the UI)
-_Under revision_: renumbering every employee at once (1…N, CEO = 0) is not built; it waits for the owner (R5 in `docs/client-questions.md`). The hidden key is the UUID `id`.
+0 is the CEO's ID and no one else's. Employees are selected by name; the ID tells two people with the same name apart and keys imports and pasted batches.
 
 **Archive** (الأرشيف):
 The employees whose termination date has passed. The termination day itself is still worked, so an employee leaves the active list the day after. Reactivating an archived employee clears the termination date and reason, which counts the days since as employed again.
@@ -121,6 +120,23 @@ What one recorded day costs the company: day rate plus that day's extras. Summed
 **Advance** (سلفة):
 Money given ahead of pay and recovered in one payment or in installments.
 _Avoid_: loan
+
+**Grace period** (دقائق السماح):
+The first 15 late minutes of a day, which cost nothing. Applied once per day: arriving 08:15 for an 08:00 start costs nothing, 08:20 costs 5 minutes.
+
+**Chargeable late minutes**:
+A day's late minutes minus the grace period, never below zero. Only these are deducted.
+_Avoid_: net late minutes (that is the period's sum after exemptions)
+
+**Lateness multiplier** (معامل التأخير):
+How many minutes of pay one chargeable late minute costs. It belongs to the employee, not to the employee type or job title: 1 for office staff, 1.5 or 2 for monthly site staff, 2 for day laborers in the October Excel.
+_Avoid_: penalty rate, lateness factor
+
+**Lateness deduction** (خصم التأخير):
+Chargeable late minutes × the employee's minute rate × their lateness multiplier. A different thing from the absence deduction, early leave and overtime, which have their own rules.
+
+**Absence deduction** (خصم الغياب):
+The pay lost for a full day absent (غ). Separate from lateness: a lateness multiplier of 1 exempts no one from it.
 
 **Override**:
 A value HR types in place of one the system computed, with a reason.
