@@ -5,7 +5,7 @@ HR and payroll for Smart Technology's office staff, site engineers, permanent si
 ## People
 
 **Employee** (موظف):
-Anyone the company pays, of any employee type. Most employees have no system account; a team lead can be both an employee and an account holder, and the account's permissions say nothing about their pay.
+Anyone the company pays, of any employee type. Most employees have no system account; a site manager can be both an employee and an account holder, and the account's permissions say nothing about their pay.
 _Avoid_: staff member, worker (as the general term), user
 
 **Employee type**:
@@ -16,9 +16,9 @@ _Avoid_: category, contract type
 Office staff, engineers and permanent workers together: everyone paid a monthly salary.
 _Avoid_: permanent employees, مثبتين (alone; it is ambiguous)
 
-**Team lead** (مسؤول التيم):
-An account holder who covers one or more sites and records attendance and absence for the people they reach on a date: the workers whose home site is one of their sites, and the engineers assigned to them. Office staff are in no team lead's reach. A team lead never sees or sets wages; HR owns them.
-_Avoid_: manager, مدير (the old name, decided 2026-11-03), supervisor
+**Site manager** (مدير الموقع):
+An account holder who covers one or more sites and records attendance and absence for the people they reach on a date: the workers whose home site is one of their sites, and the engineers assigned to them. Office staff are in no site manager's reach. A site manager never sees or sets wages; HR owns them.
+_Avoid_: team lead, مسؤول التيم (chosen 2026-11-03, dropped 2026-11-04), supervisor; manager or مدير alone only where the site is obvious
 
 **Fingerprint name**:
 The English name an office employee has on the fingerprint device, used to match its export to the employee.
