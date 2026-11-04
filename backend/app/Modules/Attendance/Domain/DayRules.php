@@ -84,7 +84,7 @@ final class DayRules
         }
 
         return [
-            'late' => max(0, self::minutes($in) - self::minutes($scheduledIn)),
+            'late' => self::lateMinutes($scheduledIn, $in),
             'ot' => max(0, $worked - (int) bcmul($dayHours, '60', 6)),
         ];
     }
@@ -121,6 +121,12 @@ final class DayRules
     }
 
     /** "HH:MM" (or "HH:MM:SS") → minutes after midnight. */
+    /** Raw late minutes: the arrival after the scheduled start, no grace (calculations §0a subtracts it once at payroll). */
+    public static function lateMinutes(string $scheduledIn, string $in): int
+    {
+        return max(0, self::minutes($in) - self::minutes($scheduledIn));
+    }
+
     public static function minutes(string $time): int
     {
         [$h, $m] = explode(':', $time);

@@ -6,6 +6,7 @@ namespace App\Modules\Employees\Application;
 
 use App\Modules\Employees\Domain\EffectiveDated;
 use App\Modules\Employees\Domain\EmployeeType;
+use App\Modules\Employees\Domain\WageProposalStatus;
 use App\Modules\Employees\Infrastructure\Eloquent\DayCrewChange;
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
@@ -16,39 +17,66 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 /**
  * The day-labor crew's writes (owner, 2026-11-04; PR #22 review). A day's crew is the day laborers whose site on that date is the
  * site: that day's crew change, else their home site. Adding, moving or removing someone writes a crew change for that date only, so
  * yesterday's records and tomorrow's roster stay as they were. A new day laborer a site manager adds has no home site and no pay row:
- * they join that day's crew, and their proposed wage waits for HR in employee_wage_proposals. Callers check who may do this.
+ * they join that day's crew, and their proposed wage waits for HR in employee_wage_proposals. Callers check who may do this, and
+ * hold locked() around a check and the write it guards.
  */
 final class DayCrew
 {
     use Paginates;
 
     /**
-     * Day laborers employed on $date matching $search (name, or the exact code), with their home site on $date.
+     * The one day laborer employed on $date whose code is $search, or whose full name is (spaces collapsed, English case ignored):
+     * a site manager adds someone they know, and never browses the company's laborers (owner, 2026-11-05). Two laborers with that
+     * full name are `ambiguous`, and the code tells them apart. Someone on or past their last day is never offered.
      *
-     * @return list<array{id: string, code: int, name_ar: string, name_en: ?string, site_id: ?string}>
+     * @return array{match: ?array{id: string, code: int, name_ar: string, name_en: ?string, site_id: ?string}, ambiguous: bool}
      */
-    public function matching(string $search, string $date, int $limit = 20): array
+    public function find(string $search, string $date): array
     {
+        $search = trim((string) preg_replace('/\s+/u', ' ', $search));
         $rows = Employee::with(['typeChanges', 'siteAssignments', 'crewChanges'])
             ->whereRaw(Employee::TYPE_ON.' = ?', [$date, EmployeeType::DayLaborer->value])
             ->where(fn (Builder $q) => $q->whereNull('hire_date')->orWhere('hire_date', '<=', $date))
-            ->where(fn (Builder $q) => $q->whereNull('termination_date')->orWhere('termination_date', '>=', $date))
-            ->matching($search)
-            ->orderBy('code')->limit($limit)->get();
+            ->where(fn (Builder $q) => $q->whereNull('termination_date')->orWhere('termination_date', '>', $date))
+            ->where(fn (Builder $q) => preg_match('/^(0|[1-9]\d{0,8})$/D', $search) === 1
+                ? $q->where('code', (int) $search)
+                : $q->whereRaw("regexp_replace(btrim(name_ar), '\\s+', ' ', 'g') = ?", [$search])
+                    ->orWhereRaw("lower(regexp_replace(btrim(coalesce(name_en, '')), '\\s+', ' ', 'g')) = lower(?)", [$search]))
+            ->orderBy('code')->limit(2)->get();
+        $e = $rows->count() === 1 ? $rows->first() : null;
 
-        return array_values($rows->map(fn (Employee $e) => [
-            'id' => (string) $e->id,
-            'code' => (int) $e->code,
-            'name_ar' => (string) $e->name_ar,
-            'name_en' => $e->name_en,
-            'site_id' => $this->siteOn($e, $date),
-        ])->all());
+        return [
+            'match' => $e === null ? null : ['id' => (string) $e->id, 'code' => (int) $e->code, 'name_ar' => (string) $e->name_ar, 'name_en' => $e->name_en, 'site_id' => $this->siteOn($e, $date)],
+            'ambiguous' => $rows->count() > 1,
+        ];
+    }
+
+    /**
+     * Runs $fn in one transaction with the employees' rows locked, so a check and the write it guards see the same state: a crew
+     * change and a site-day save of the same person never interleave (PR #22 review B4). Locked by id, so two callers never deadlock.
+     *
+     * @template T
+     *
+     * @param  list<string>  $employeeIds
+     * @param  \Closure(): T  $fn
+     * @return T
+     */
+    public function locked(array $employeeIds, \Closure $fn): mixed
+    {
+        return DB::transaction(function () use ($employeeIds, $fn): mixed {
+            $ids = array_values(array_unique($employeeIds));
+            sort($ids);
+            if ($ids !== []) {
+                Employee::whereKey($ids)->orderBy('id')->lockForUpdate()->get(['id']);
+            }
+
+            return $fn();
+        });
     }
 
     /** The day laborer's site on $date (crew change, else home site), or null; null too for anyone who is not a day laborer employed on $date. */
@@ -59,9 +87,12 @@ final class DayCrew
         return $e === null ? null : $this->siteOn($e, $date);
     }
 
-    public function isLaborerOn(string $employeeId, string $date): bool
+    /** Whether a site manager may add them to a crew on $date: a day laborer employed then, and not on their last day (a refused proposal ends them that day). */
+    public function isAddableOn(string $employeeId, string $date): bool
     {
-        return $this->laborer($employeeId, $date) !== null;
+        $e = $this->laborer($employeeId, $date);
+
+        return $e !== null && ($e->termination_date === null || $e->termination_date > $date);
     }
 
     /**
@@ -97,21 +128,17 @@ final class DayCrew
     /**
      * A new day laborer, hired on $date and on $siteId's crew that day, with no home site and no pay row; $wage waits as a pending proposal.
      *
-     * @param  array{name_ar: string, phone?: ?string}  $identity
+     * @param  array{name_ar: string, gender: string, phone?: ?string}  $identity
      * @return array{id: string, code: int, name_ar: string, proposal_id: string}
      */
     public function propose(array $identity, string $siteId, string $date, string $wage): array
     {
         return DB::transaction(function () use ($identity, $siteId, $date, $wage): array {
-            // The same table lock and counter as EmployeeService::create, so codes are never reused (owner, 2026-11-03).
-            DB::statement('LOCK TABLE employees IN SHARE ROW EXCLUSIVE MODE');
-            $code = (int) DB::scalar('SELECT greatest(last_issued, (SELECT coalesce(max(code), 0) FROM employees)) FROM employee_code_counter') + 1;
-            DB::table('employee_code_counter')->update(['last_issued' => $code]);
-
-            $employee = Employee::create(['name_ar' => $identity['name_ar'], 'phone' => $identity['phone'] ?? null, 'hire_date' => $date, 'code' => $code]);
+            $code = EmployeeCodes::issueNext();
+            $employee = Employee::create(['name_ar' => $identity['name_ar'], 'gender' => $identity['gender'], 'phone' => $identity['phone'] ?? null, 'hire_date' => $date, 'code' => $code]);
             $employee->typeChanges()->create(['type' => EmployeeType::DayLaborer->value, 'effective_from' => $date]);
             $employee->crewChanges()->create(['date' => $date, 'site_id' => $siteId]);
-            $proposal = EmployeeWageProposal::create(['employee_id' => $employee->id, 'daily_wage' => $wage, 'status' => 'pending']);
+            $proposal = EmployeeWageProposal::create(['employee_id' => $employee->id, 'daily_wage' => $wage, 'status' => WageProposalStatus::Pending]);
 
             return ['id' => (string) $employee->id, 'code' => $code, 'name_ar' => (string) $employee->name_ar, 'proposal_id' => (string) $proposal->id];
         });
@@ -139,7 +166,7 @@ final class DayCrew
      */
     public function pending(int $perPage, int $page): array
     {
-        return $this->page(EmployeeWageProposal::with('employee')->where('status', 'pending')->orderBy('id'), $perPage, $page);
+        return $this->page(EmployeeWageProposal::with('employee')->where('status', WageProposalStatus::Pending)->orderBy('id'), $perPage, $page);
     }
 
     /** @return array<string, mixed> a pending proposal as HR's list shows it */
@@ -157,29 +184,27 @@ final class DayCrew
     }
 
     /**
-     * HR decides a proposal. Approving writes the pay row from the hire date, at HR's $wage or else the proposed one, and needs the
-     * employee's gender when it is still empty. A decided or changed proposal is a 409.
+     * HR decides a proposal; a decided or changed proposal is a 409. Approving writes the pay row from the hire date, at HR's $wage or
+     * else the proposed one. Refusing ends the laborer on $today and takes them off every crew from then (owner, 2026-11-05): from the
+     * next day they are on no list, in no search and on no crew. Days already recorded stay; HR decides what to do with them. Audited.
      */
-    public function decide(string $proposalId, int $version, bool $approve, ?string $wage, ?string $gender, string $hrId): void
+    public function decide(string $proposalId, int $version, bool $approve, ?string $wage, string $hrId, string $today): void
     {
-        DB::transaction(function () use ($proposalId, $version, $approve, $wage, $gender, $hrId): void {
+        DB::transaction(function () use ($proposalId, $version, $approve, $wage, $hrId, $today): void {
             $p = EmployeeWageProposal::lockForUpdate()->findOrFail($proposalId);
-            if ($p->status !== 'pending' || $p->version !== $version) {
+            if ($p->status !== WageProposalStatus::Pending || $p->version !== $version) {
                 throw new ConcurrencyConflict;
             }
+            $employee = Employee::lockForUpdate()->findOrFail($p->employee_id);
             if ($approve) {
-                $employee = Employee::lockForUpdate()->findOrFail($p->employee_id);
-                if ($employee->gender === null && $gender === null) {
-                    throw ValidationException::withMessages(['gender' => __('validation.required', ['attribute' => __('validation.attributes.gender')])]);
-                }
-                if ($gender !== null && $employee->gender === null) {
-                    $employee->gender = $gender;
-                    $employee->save();
-                }
                 $from = (string) ($employee->hire_date ?? $p->created_at?->toDateString());
                 $employee->payChanges()->create(['effective_from' => $from, 'daily_wage' => $wage ?? (string) $p->daily_wage]);
+            } else {
+                $employee->termination_date = max($today, (string) $employee->hire_date);
+                $employee->save();
+                DayCrewChange::where('employee_id', $employee->id)->where('date', '>=', $today)->get()->each(fn (DayCrewChange $c) => $c->delete());
             }
-            $p->fill(['status' => $approve ? 'approved' : 'refused', 'decided_by' => $hrId, 'decided_at' => now(), 'version' => $version + 1]);
+            $p->fill(['status' => $approve ? WageProposalStatus::Approved : WageProposalStatus::Refused, 'decided_by' => $hrId, 'decided_at' => now(), 'version' => $version + 1]);
             $p->save();
         });
     }

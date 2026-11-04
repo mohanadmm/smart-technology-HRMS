@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Modules\Employees\Presentation;
 
 use App\Modules\Employees\Application\DayCrew;
-use App\Modules\Employees\Domain\Gender;
+use App\Modules\Employees\Application\EmployeeRules;
+use App\Modules\Employees\Domain\WageProposalStatus;
 use App\Support\Http\ApiEnvelope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 /** HR's review of the daily wages site managers proposed for the day laborers they added (`employee.approve_wage.all`). */
 final class WageProposalController
@@ -28,19 +28,29 @@ final class WageProposalController
     {
         $q = $request->validate([
             'version' => ['required', 'integer', 'min:1'],
-            'daily_wage' => ['nullable', 'string', 'regex:/^\d{1,12}(\.\d{1,6})?$/D', 'not_regex:/^0+(\.0+)?$/D'],
-            'gender' => ['nullable', Rule::enum(Gender::class)],
+            'daily_wage' => ['nullable', 'string', EmployeeRules::MONEY, EmployeeRules::POSITIVE],
         ]);
-        $this->crew->decide($proposal, (int) $q['version'], true, $q['daily_wage'] ?? null, $q['gender'] ?? null, (string) $request->user()?->getAuthIdentifier());
+        $this->crew->decide($proposal, (int) $q['version'], true, $q['daily_wage'] ?? null, $this->hr($request), self::today());
 
-        return ApiEnvelope::single($request, ['id' => $proposal, 'status' => 'approved']);
+        return ApiEnvelope::single($request, ['id' => $proposal, 'status' => WageProposalStatus::Approved->value]);
     }
 
     public function refuse(Request $request, string $proposal): JsonResponse
     {
         $q = $request->validate(['version' => ['required', 'integer', 'min:1']]);
-        $this->crew->decide($proposal, (int) $q['version'], false, null, null, (string) $request->user()?->getAuthIdentifier());
+        $this->crew->decide($proposal, (int) $q['version'], false, null, $this->hr($request), self::today());
 
-        return ApiEnvelope::single($request, ['id' => $proposal, 'status' => 'refused']);
+        return ApiEnvelope::single($request, ['id' => $proposal, 'status' => WageProposalStatus::Refused->value]);
+    }
+
+    private function hr(Request $request): string
+    {
+        return (string) $request->user()?->getAuthIdentifier();
+    }
+
+    /** Cairo's date: a refused laborer's last day */
+    private static function today(): string
+    {
+        return now('Africa/Cairo')->toDateString();
     }
 }
