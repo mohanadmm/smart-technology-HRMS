@@ -23,7 +23,7 @@ import { NotFoundPage } from './pages'
 
 // own scope: the site manager's work sites only
 const MY_SITES = '/sites?kind=work&active=true&per_page=100'
-const LAST_SITE = 'hrms.siteDay.site'
+const WORK_SITES = 'hrms.siteDay.sites'
 const PRESSED: Record<Mark, string> = {
   present: 'bg-success-bg border-success-border text-success',
   absent: 'bg-destructive-bg border-destructive-border text-destructive',
@@ -33,18 +33,20 @@ const PRESSED: Record<Mark, string> = {
 /** One exact path per site and date, so the site tabs and the open day share one cache entry. */
 const dayPath = (siteId: string, date: string | null) => `/attendance/site-day?${new URLSearchParams({ site_id: siteId, ...(date && { date }) })}`
 
-const readLast = () => {
+/** The site manager's last working list on this device (a convenience only: HR owns assignments and the server checks access). */
+const readWorking = (): string[] => {
   try {
-    return localStorage.getItem(LAST_SITE)
+    const v: unknown = JSON.parse(localStorage.getItem(WORK_SITES) ?? '[]')
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
   } catch {
-    return null
+    return []
   }
 }
-const writeLast = (id: string) => {
+const writeWorking = (ids: string[]) => {
   try {
-    localStorage.setItem(LAST_SITE, id)
+    localStorage.setItem(WORK_SITES, JSON.stringify(ids))
   } catch {
-    // a private window: the first site opens next time
+    // a private window: nothing is preselected next time
   }
 }
 
@@ -54,9 +56,10 @@ const omit = (d: Drafts, id: string): Drafts => Object.fromEntries(Object.entrie
 const leaveOf = (d: Draft | null, leave: LeaveSites) => (d ? (Object.entries(leave).find(([, id]) => id === d.site_id)?.[0] ?? null) : null)
 
 /**
- * The site manager's day at one of their sites, URL state `?site=&date=` (design Part 2, mockup A; owner, 2026-11-04).
+ * The site manager's attendance workspace, URL state `?site=&date=` (design Part 2, mockup A; owner, 2026-11-04; PR #22 review).
+ * Entry: choose the sites to work on today (a working list, not an assignment), then one site at a time.
  * Morning: «حضور الكل», fix exceptions, «حفظ اليوم». Evening: «انصراف الكل», fix exceptions, save. Unsaved changes are kept per site and
- * date, so switching sites never mixes rosters. One column on a phone; on a laptop each row puts the status, arrival and departure side by side.
+ * date, so switching sites or changing the working list never loses or mixes them. While a site's day is saving, its rows are read-only.
  */
 export function SiteDayPage() {
   const { t, i18n } = useTranslation()
@@ -65,19 +68,20 @@ export function SiteDayPage() {
   const allowed = can('attendance.record')
   const [params, setParams] = useSearchParams()
   const { data: mine = [], err: sitesErr, loading: sitesLoading } = useApi<Row[]>(allowed ? MY_SITES : null)
-  const site = mine.find((s) => s.id === params.get('site')) ?? mine.find((s) => s.id === readLast()) ?? mine[0]
+  const [working, setWorking] = useState<string[] | null>(null) // null: the picker is open
+  const chosen = working === null ? [] : mine.filter((s) => working.includes(s.id))
+  const site = chosen.find((s) => s.id === params.get('site')) ?? chosen[0]
   const date = params.get('date')
   const path = allowed && site ? dayPath(site.id, date) : null
   const { data, err, loading, reload } = useApi<SiteDay>(path)
   const [all, setAll] = useState<Record<string, Drafts>>({})
   const [filter, setFilter] = useState('')
   const [saveErr, setSaveErr] = useState<unknown>()
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [savingKey, setSavingKey] = useState<string | null>(null)
+  const [savedKey, setSavedKey] = useState<string | null>(null)
   const save = useSave()
   const qc = useQueryClient()
   const siteId: string = site?.id ?? ''
-  useEffect(() => void (siteId && writeLast(siteId)), [siteId])
   const dirty = Object.values(all).some((d) => Object.keys(d).length > 0)
   useEffect(() => {
     if (!dirty) return
@@ -87,17 +91,36 @@ export function SiteDayPage() {
   }, [dirty])
   if (!allowed) return <NotFoundPage />
 
+  const unsavedAt = (id: string) => Object.entries(all).some(([k, d]) => k.startsWith(`${id}|`) && Object.keys(d).length > 0)
+  const pick = (id: string) => {
+    setParams((p) => (p.set('site', id), p), { replace: true })
+    setSaveErr(undefined)
+  }
+
+  if (sitesErr) return <div className="mx-auto w-full max-w-3xl"><ErrorBanner err={sitesErr} shown={[]} /></div>
+  if (sitesLoading) return <div className="mx-auto w-full max-w-3xl"><TableSkeleton rows={4} /></div>
+  if (!mine.length) return <div className="mx-auto w-full max-w-3xl"><EmptyState icon={MapPinOff} title={t('siteDay.noSites')} /></div>
+  if (working === null) {
+    const assigned = mine.map((s) => s.id)
+    const previous = readWorking().filter((id) => assigned.includes(id))
+    return (
+      <SitePicker sites={mine} initial={mine.length === 1 ? assigned : previous} unsavedAt={unsavedAt}
+        onContinue={(ids) => {
+          writeWorking(ids)
+          setWorking(ids)
+          pick(ids[0])
+        }} />
+    )
+  }
+
   const day = data?.site.id === siteId ? data : undefined
   const key = day ? `${day.site.id}|${day.date}` : ''
   const drafts = all[key] ?? {}
+  const locked = savingKey !== null && savingKey === key
   const setDrafts = (d: Drafts) => {
+    if (locked) return
     setAll((a) => ({ ...a, [key]: d }))
-    setSaved(false)
-    setSaveErr(undefined)
-  }
-  const pick = (id: string) => {
-    setParams((p) => (p.set('site', id), p), { replace: true })
-    setSaved(false)
+    setSavedKey(null)
     setSaveErr(undefined)
   }
   const rows = day?.rows ?? []
@@ -106,7 +129,7 @@ export function SiteDayPage() {
   const isToday = !!day && day.date === day.today
 
   const onSave = async () => {
-    if (!day || !path) return
+    if (!day || !path || locked) return
     // a period-less "9:30" must never reach the API, which would read it as a 24-hour time
     if (stopAtMissingPeriod(document.body)) return
     const bad = rows.filter((r) => { const d = drafts[r.employee.id]; return d && [d.in_time, d.out_time].some((v) => v !== null && !isHhmm(v)) })
@@ -114,17 +137,21 @@ export function SiteDayPage() {
       setSaveErr(new Error(t('siteDay.badTime', { names: bad.map((r) => localName(r.employee as Row, lang)).join('، ') })))
       return
     }
-    setSaving(true)
+    const savedPath = path
+    const savedAt = key
+    const sent = drafts // the drafts this request carries; rows stay read-only until it returns
+    setSavingKey(savedAt)
     setSaveErr(undefined)
     try {
-      const fresh = await save<SiteDay>('/attendance/site-day', { body: saveBody(day.site.id, day.date, rows, drafts) }, ['/attendance'])
-      qc.setQueryData(queryKey(path), (old: Row | undefined) => ({ ...old, data: fresh }))
-      setAll((a) => ({ ...a, [key]: {} }))
-      setSaved(true)
+      const fresh = await save<SiteDay>('/attendance/site-day', { body: saveBody(day.site.id, day.date, rows, sent) }, ['/attendance'])
+      qc.setQueryData(queryKey(savedPath), (old: Row | undefined) => ({ ...old, data: fresh }))
+      // clear only what was sent: anything changed since then stays unsaved
+      setAll((a) => ({ ...a, [savedAt]: Object.fromEntries(Object.entries(a[savedAt] ?? {}).filter(([id, d]) => sent[id] !== d)) }))
+      setSavedKey(savedAt)
     } catch (e) {
       setSaveErr(e)
     } finally {
-      setSaving(false)
+      setSavingKey(null)
     }
   }
   const loadLatest = () => {
@@ -144,19 +171,18 @@ export function SiteDayPage() {
   const shown = needle ? rows.filter((r) => `${r.employee.name_ar} ${r.employee.name_en ?? ''} ${r.employee.code}`.toLowerCase().includes(needle)) : rows
   const workers = shown.filter((r) => r.section === 'workers')
   const engineers = shown.filter((r) => r.section === 'engineers')
-  const markN = markAllCount(rows, drafts, siteId)
-  const outN = checkOutCount(rows, drafts, siteId)
+  const markN = locked ? 0 : markAllCount(rows, drafts, siteId)
+  const outN = locked ? 0 : checkOutCount(rows, drafts, siteId)
   const siteName = site ? localName(day?.site ?? site, lang) : ''
   const crewTools = isToday && (can('employee.crew') || can('employee.propose_laborer'))
   const person = (r: SiteDayRow, removable: boolean) => (
-    <PersonRow key={r.employee.id} r={r} draft={current(r, drafts)} siteId={siteId} leave={day?.leave_sites ?? {}} sites={mine} removable={removable} onRemoved={reload}
-      set={(d) => setDrafts(d === null ? omit(drafts, r.employee.id) : { ...drafts, [r.employee.id]: d })} />
+    <PersonRow key={r.employee.id} r={r} draft={current(r, drafts)} siteId={siteId} leave={day?.leave_sites ?? {}} sites={mine} locked={locked}
+      removable={removable && !locked} onRemoved={reload} set={(d) => setDrafts(d === null ? omit(drafts, r.employee.id) : { ...drafts, [r.employee.id]: d })} />
   )
 
   let body
-  if (sitesErr || err) body = <ErrorBanner err={sitesErr ?? err} shown={[]} />
-  else if (sitesLoading || (site && (loading || !day))) body = <TableSkeleton rows={4} />
-  else if (!site) body = <EmptyState icon={MapPinOff} title={t('siteDay.noSites')} />
+  if (err) body = <ErrorBanner err={err} shown={[]} />
+  else if (site && (loading || !day)) body = <TableSkeleton rows={4} />
   else if (!rows.length) body = <EmptyState icon={Users} title={t('siteDay.empty')} />
   else
     body = (
@@ -171,15 +197,19 @@ export function SiteDayPage() {
       </ul>
     )
 
+  let status = ''
+  if (locked) status = t('siteDay.saving')
+  else if (pending > 0) status = t('siteDay.unsaved', { count: pending })
+  else if (savedKey === key) status = t('siteDay.saved')
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 lg:max-w-6xl">
-      {mine.length > 1 && site && (
-        <nav aria-label={t('siteDay.site')} className="flex flex-wrap gap-2">
-          {mine.map((s) => (
-            <SiteTab key={s.id} s={s} active={s.id === siteId} date={date} unsaved={Object.keys(all[`${s.id}|${day?.date ?? ''}`] ?? {}).length > 0} onPick={() => pick(s.id)} />
-          ))}
-        </nav>
-      )}
+      <nav aria-label={t('siteDay.site')} className="flex flex-wrap items-center gap-2">
+        {chosen.length > 1 && chosen.map((s) => (
+          <SiteTab key={s.id} s={s} active={s.id === siteId} date={date} unsaved={unsavedAt(s.id)} onPick={() => pick(s.id)} />
+        ))}
+        <Button type="button" variant="ghost" className="min-h-11" onClick={() => setWorking(null)}>{t('siteDay.changeSites')}</Button>
+      </nav>
       {site && (
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -187,7 +217,7 @@ export function SiteDayPage() {
             {dateLine}
             <p className="mt-1 text-[13px] text-muted-foreground">{t('siteDay.hrOwnsSites')}</p>
           </div>
-          {day && rows.length > 0 && (
+          {day && (
             <div className="flex flex-wrap gap-2" role="group" aria-label={t('siteDay.bulk', { site: siteName })}>
               <Button type="button" className="min-h-11" disabled={!markN} onClick={() => setDrafts(markAllPresent(rows, drafts, siteId))}>
                 {t('siteDay.markAll', { count: markN })}
@@ -220,12 +250,50 @@ export function SiteDayPage() {
             <span className={cn(c.unrecorded > 0 && 'font-semibold text-warning')}>{t('siteDay.count.unrecorded', { count: c.unrecorded })}</span>
             <span className={cn(c.noCheckout > 0 && 'font-semibold text-warning')}>{t('siteDay.count.noCheckout', { count: c.noCheckout })}</span>
           </p>
-          <p role="status" className="text-sm text-muted-foreground sm:ms-auto">
-            {saving ? t('siteDay.saving') : pending > 0 ? t('siteDay.unsaved', { count: pending }) : saved ? t('siteDay.saved') : ''}
-          </p>
-          <Button type="button" className="min-h-11 w-full sm:w-auto" disabled={!pending || saving} onClick={() => void onSave()}>{t('siteDay.save')}</Button>
+          <p role="status" className="text-sm text-muted-foreground sm:ms-auto">{status}</p>
+          <Button type="button" className="min-h-11 w-full sm:w-auto" disabled={!pending || locked} onClick={() => void onSave()}>{t('siteDay.save')}</Button>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * The entry step: which of the site manager's assigned sites they work on now. A working list only; it never changes an assignment.
+ * A site left out keeps its unsaved changes, which come back when it is chosen again.
+ */
+function SitePicker({ sites, initial, unsavedAt, onContinue }: { sites: Row[]; initial: string[]; unsavedAt: (id: string) => boolean; onContinue: (ids: string[]) => void }) {
+  const { t, i18n } = useTranslation()
+  const [picked, setPicked] = useState<string[]>(initial)
+  const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
+  const ordered = sites.map((s) => s.id).filter((id) => picked.includes(id))
+  const leftOut = sites.filter((s) => !picked.includes(s.id) && unsavedAt(s.id)).map((s) => localName(s, i18n.language))
+  return (
+    <div className="mx-auto flex w-full max-w-xl flex-col gap-4">
+      <div>
+        <h1 className="text-page-title text-balance">{t('siteDay.pickTitle')}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t('siteDay.pickHint')}</p>
+      </div>
+      <ul aria-label={t('siteDay.pickTitle')} className="grid gap-2">
+        {sites.map((s) => {
+          const on = picked.includes(s.id)
+          return (
+            <li key={s.id}>
+              <button type="button" role="checkbox" aria-checked={on} onClick={() => toggle(s.id)}
+                className={cn('flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border bg-card px-4 text-start shadow-1 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring', on && 'border-primary bg-primary/10')}>
+                <span className="font-semibold">{localName(s, i18n.language)}</span>
+                <span className="flex items-center gap-2">
+                  {unsavedAt(s.id) && <span className="text-[12px] text-warning">{t('siteDay.unsavedShort')}</span>}
+                  <span aria-hidden className={cn('grid size-6 place-items-center rounded-md border', on && 'border-primary bg-primary text-primary-foreground')}>{on ? '✓' : ''}</span>
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      {leftOut.length > 0 && <Alert tone="warning">{t('siteDay.leftOutUnsaved', { sites: leftOut.join('، ') })}</Alert>}
+      <p className="text-[13px] text-muted-foreground">{t('siteDay.hrOwnsSites')}</p>
+      <Button type="button" className="min-h-11" disabled={!ordered.length} onClick={() => onContinue(ordered)}>{t('siteDay.continue')}</Button>
     </div>
   )
 }
@@ -249,8 +317,8 @@ function SiteTab({ s, active, date, unsaved, onPick }: { s: Row; active: boolean
 }
 
 /** One person: status buttons, then (when present) the arrival and the departure with its difference from the shift end. */
-function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved }: {
-  r: SiteDayRow; draft: Draft | null; siteId: string; leave: LeaveSites; sites: Row[]; set: (d: Draft | null) => void; removable: boolean; onRemoved: () => void
+function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved, locked }: {
+  r: SiteDayRow; draft: Draft | null; siteId: string; leave: LeaveSites; sites: Row[]; set: (d: Draft | null) => void; removable: boolean; onRemoved: () => void; locked: boolean
 }) {
   const { t, i18n } = useTranslation()
   const save = useSave()
@@ -260,7 +328,7 @@ function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved }
   const present = draft?.site_id === siteId
   const code = leaveOf(draft, leave)
   const mark: Mark | null = present ? 'present' : code === 'absent' || code === 'sick' ? code : null
-  const off = !r.can_edit
+  const off = !r.can_edit || locked
   const leaveName = (c: string) => t(`attendance.leaveName.${c}`, { defaultValue: c })
   let note: string | null = null
   if (r.why_not) note = t(`siteDay.why.${r.why_not}`)
@@ -284,6 +352,7 @@ function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved }
   const time = (field: 'in_time' | 'out_time') => (v: string) => set({ ...(draft ?? { site_id: siteId, in_time: null, out_time: null }), [field]: v === '' ? null : v })
   const out = draft?.out_time ?? null
   const diff = present && isHhmm(out) ? departureDiff(out, r.shift.end) : null
+  const missingOut = present && isHhmm(draft?.in_time ?? null) && !out
   const remove = async () => {
     setRemoveErr(undefined)
     try {
@@ -340,6 +409,7 @@ function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved }
             <div className="grid content-start gap-1">
               <span aria-hidden className="text-[12px] text-muted-foreground">{t('siteDay.departure')}</span>
               <TimeInput label={t('siteDay.departure')} aria-label={t('siteDay.departureOf', { name })} value={draft?.out_time ?? ''} disabled={off} onChange={time('out_time')} quietHint />
+              {missingOut && <p className="text-[13px] text-warning">{t('siteDay.missingCheckout')}</p>}
               {diff !== null && diff !== 0 && (
                 <p className={cn('text-[13px]', diff < 0 ? 'text-warning' : 'text-info')}>
                   {diff < 0 ? t('siteDay.early', { count: -diff }) : t('siteDay.later', { count: diff })}

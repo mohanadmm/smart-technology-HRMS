@@ -163,7 +163,7 @@ final class EmployeeService
             'type_changes' => $types,
             'current_manager' => $manager === null ? null : ['id' => $manager['manager_id'], 'name' => $manager['manager_name']],
             'manager_assignments' => $managers,
-            'current_site' => ($site['site_id'] ?? null) === null ? null : ['id' => $site['site_id'], 'name_ar' => $site['site_name_ar'], 'name_en' => $site['site_name_en']],
+            'current_site' => $site === null ? null : ['id' => $site['site_id'], 'name_ar' => $site['site_name_ar'], 'name_en' => $site['site_name_en']],
             'site_assignments' => $sites,
             'documents' => $e->documents->sortBy([
                 fn (EmployeeDocument $a, EmployeeDocument $b) => $kinds[$a->kind] <=> $kinds[$b->kind],

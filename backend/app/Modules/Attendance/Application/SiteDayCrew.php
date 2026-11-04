@@ -13,7 +13,8 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * The site manager's changes to today's day-labor crew on one of their sites (owner, 2026-11-04). Only today, Cairo; only day laborers;
- * a laborer homed on another manager's site is HR's to move. Removing someone keeps their record and their past days.
+ * a laborer on another manager's site that day is HR's to move. Each change holds for today only: past days and
+ * tomorrow's roster are unchanged, and removing someone is not an absence.
  */
 final class SiteDayCrew
 {
@@ -54,7 +55,11 @@ final class SiteDayCrew
         if ($current !== null && ! in_array($current, $mine, true)) {
             throw ValidationException::withMessages(['employee_id' => __('attendance.crew.on_other_site')]);
         }
-        $this->crew->setSite($employeeId, $siteId, $today);
+        // A day already saved at their other site would be left behind there.
+        if ($current !== null && $current !== $siteId && AttendanceDay::where(['employee_id' => $employeeId, 'date' => $today])->exists()) {
+            throw ValidationException::withMessages(['employee_id' => __('attendance.crew.moved_has_day')]);
+        }
+        $this->crew->setCrew($employeeId, $siteId, $today);
     }
 
     public function remove(string $siteId, string $employeeId, string $managerId): void
@@ -67,7 +72,7 @@ final class SiteDayCrew
         if (AttendanceDay::where(['employee_id' => $employeeId, 'date' => $today])->exists()) {
             throw ValidationException::withMessages(['employee_id' => __('attendance.crew.has_day')]);
         }
-        $this->crew->setSite($employeeId, null, $today);
+        $this->crew->setCrew($employeeId, null, $today);
     }
 
     /**

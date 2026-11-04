@@ -22,6 +22,7 @@ return [
     'crew' => [
         'on_other_site' => 'This day laborer is on another site manager\'s site; ask HR to move them.',
         'has_day' => 'They have a day recorded today; clear it first, then remove them from today\'s crew.',
+        'moved_has_day' => 'They have a day recorded today at their other site; clear it there first, then move them.',
     ],
     'rule' => [
         'site_not_allowed_for_manager' => 'Choose this site, or absent, sick, rest or other.',

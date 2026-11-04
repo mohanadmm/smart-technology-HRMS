@@ -850,7 +850,13 @@
     "mobile": "Mobile number (optional)",
     "wageNeedsHr": "HR reviews the proposed wage before it is approved; you can record their attendance from today.",
     "addNewLaborer": "Add the new laborer",
-    "badTime": "A time is not valid for: {{names}}. Type it like 8:30 and choose AM or PM."
+    "badTime": "A time is not valid for: {{names}}. Type it like 8:30 and choose AM or PM.",
+    "pickTitle": "Sites to work on",
+    "pickHint": "Choose one or more of your sites, then open them one at a time. This does not change the sites assigned to you.",
+    "continue": "Continue",
+    "changeSites": "Change sites",
+    "leftOutUnsaved": "{{sites}} has unsaved changes. They are kept and come back if you choose the site again.",
+    "missingCheckout": "Missing check-out"
   },
   "leave": {
     "balance": "Leave balance",

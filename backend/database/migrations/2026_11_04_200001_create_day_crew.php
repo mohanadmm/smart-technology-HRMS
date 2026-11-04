@@ -6,8 +6,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
-// The site manager's day-labor crew (owner, 2026-11-04):
-// - a home-site row may name no site, so "removed from today's crew" is a dated row like any move, and past days keep their site;
+// The site manager's day-labor crew (owner, 2026-11-04; PR #22 review):
+// - a crew change holds for one date only (day_crew_changes): it puts a day laborer on a site, or on none, for that day, and leaves their
+//   home-site history alone, so yesterday's records and tomorrow's roster are unchanged;
 // - a day laborer a site manager adds has no gender until HR completes the record;
 // - their proposed daily wage waits in employee_wage_proposals and is never a pay row until HR approves it.
 return new class extends Migration
@@ -20,8 +21,15 @@ return new class extends Migration
 
     public function up(): void
     {
-        DB::statement('alter table employee_site_assignments alter column site_id drop not null');
         DB::statement('alter table employees alter column gender drop not null');
+
+        Schema::create('day_crew_changes', function (Blueprint $t): void {
+            $t->standardColumns();
+            $t->foreignUuid('employee_id')->constrained('employees')->restrictOnDelete();
+            $t->date('date');
+            $t->foreignUuid('site_id')->nullable()->constrained('sites');   // null: off every crew that day
+        });
+        DB::statement('create unique index day_crew_changes_one_per_day on day_crew_changes (employee_id, date) where deleted_at is null');
 
         Schema::create('employee_wage_proposals', function (Blueprint $t): void {
             $t->standardColumns();
@@ -49,15 +57,15 @@ return new class extends Migration
     public function down(): void
     {
         // Refuse rather than invent data: a removed-from-crew row or a gender HR has not filled in has no value to go back to.
-        if (DB::table('employee_site_assignments')->whereNull('site_id')->exists() || DB::table('employees')->whereNull('gender')->exists()) {
-            throw new RuntimeException('Some home-site rows name no site, or some employees have no gender; fix them, then roll back.');
+        if (DB::table('employees')->whereNull('gender')->exists()) {
+            throw new RuntimeException('Some employees have no gender; HR fills it in, then roll back.');
         }
         foreach (array_keys(self::GRANTS) as $name) {
             [$resource, $action, $scope] = explode('.', $name);
             DB::table('permissions')->where(['resource' => $resource, 'action' => $action, 'scope' => $scope])->delete();
         }
         Schema::dropIfExists('employee_wage_proposals');
+        Schema::dropIfExists('day_crew_changes');
         DB::statement('alter table employees alter column gender set not null');
-        DB::statement('alter table employee_site_assignments alter column site_id set not null');
     }
 };

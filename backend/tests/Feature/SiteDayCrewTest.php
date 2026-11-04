@@ -49,22 +49,50 @@ class SiteDayCrewTest extends TestCase
         $this->assertStringNotContainsString('wage', $this->getJson("/api/v1/attendance/site-day/laborers?site_id={$this->s1}&search=Labor")->getContent());
     }
 
-    public function test_add_and_remove_change_today_only_and_keep_yesterday(): void
+    public function test_add_and_remove_change_today_only_and_keep_yesterday_and_tomorrow(): void
     {
         $this->homeSite($l = $this->employee('day_laborer'), $this->s1, '2026-10-01');
         $this->actingAs($this->m, 'api');
-        $this->postJson('/api/v1/attendance/site-day', ['site_id' => $this->s1, 'date' => '2026-10-21', 'rows' => [['employee_id' => $l, 'site_id' => $this->s1, 'in_time' => '08:00', 'out_time' => '16:00']]]);
-        $this->cairo('2026-10-22 09:00');
+        $this->postJson('/api/v1/attendance/site-day', ['site_id' => $this->s1, 'date' => '2026-10-21', 'rows' => [['employee_id' => $l, 'site_id' => $this->s1, 'in_time' => '08:00', 'out_time' => '16:00']]])->assertOk();
 
         $this->crew($this->s1, $l, 'remove')->assertOk();
         $this->assertNotContains($l, $this->roster($this->s1, '2026-10-22'));
         $this->assertContains($l, $this->roster($this->s1, '2026-10-21'));                            // yesterday's list and day stay
         $this->assertSame('16:00:00', DB::table('attendance_days')->where(['employee_id' => $l, 'date' => '2026-10-21'])->value('out_time'));
+        $this->assertSame(1, DB::table('employee_site_assignments')->where('employee_id', $l)->count());   // the home site is untouched
         $this->assertNull(DB::table('employees')->where('id', $l)->value('deleted_at'));
+        $this->assertSame(0, DB::table('attendance_days')->where(['employee_id' => $l, 'date' => '2026-10-22'])->count());   // not an absence
 
-        $this->crew($this->s1, $l, 'add')->assertOk();                                                // same day: the row changes in place
+        $this->cairo('2026-10-23 09:00');
+        $this->assertContains($l, $this->roster($this->s1, '2026-10-23'));                            // tomorrow: the normal assignment
+        $this->cairo('2026-10-22 09:00');
+
+        $this->crew($this->s1, $l, 'add')->assertOk();                                                // back home: the day's change goes
         $this->assertContains($l, $this->roster($this->s1, '2026-10-22'));
-        $this->assertSame(1, DB::table('employee_site_assignments')->where(['employee_id' => $l, 'effective_from' => '2026-10-22'])->count());
+        $this->assertSame(0, DB::table('day_crew_changes')->where('employee_id', $l)->whereNull('deleted_at')->count());
+    }
+
+    public function test_moving_a_laborer_between_the_managers_sites_holds_for_today_and_their_day_can_be_saved(): void
+    {
+        $this->homeSite($l = $this->employee('day_laborer'), $this->s2, '2026-10-01');
+        $this->actingAs($this->m, 'api');
+        $this->crew($this->s1, $l, 'add')->assertOk();
+        $this->assertContains($l, $this->roster($this->s1, '2026-10-22'));
+        $this->assertNotContains($l, $this->roster($this->s2, '2026-10-22'));
+        $this->postJson('/api/v1/attendance/site-day', ['site_id' => $this->s1, 'date' => '2026-10-22', 'rows' => [['employee_id' => $l, 'site_id' => $this->s1, 'in_time' => '08:00']]])->assertOk();
+
+        $this->cairo('2026-10-23 09:00');
+        $this->assertNotContains($l, $this->roster($this->s1, '2026-10-23'));
+        $this->assertContains($l, $this->roster($this->s2, '2026-10-23'));
+    }
+
+    public function test_a_laborer_with_a_day_saved_at_another_site_is_not_moved(): void
+    {
+        $this->homeSite($l = $this->employee('day_laborer'), $this->s2, '2026-10-01');
+        $this->actingAs($this->m, 'api');
+        $this->postJson('/api/v1/attendance/site-day', ['site_id' => $this->s2, 'date' => '2026-10-22', 'rows' => [['employee_id' => $l, 'site_id' => $this->s2, 'in_time' => '08:00']]])->assertOk();
+        $this->crew($this->s1, $l, 'add')->assertStatus(422)->assertJsonPath('error.details.0.field', 'employee_id');
+        $this->assertContains($l, $this->roster($this->s2, '2026-10-22'));
     }
 
     public function test_the_rules_on_adding_and_removing(): void
@@ -89,6 +117,7 @@ class SiteDayCrewTest extends TestCase
             ->assertCreated()->json('data.id');
         $this->assertContains($id, $this->roster($this->s1, '2026-10-22'));
         $this->assertSame(0, DB::table('employee_pay_changes')->where('employee_id', $id)->count());
+        $this->assertSame(0, DB::table('employee_site_assignments')->where('employee_id', $id)->count());     // today's crew only
         $this->postJson('/api/v1/attendance/site-day', ['site_id' => $this->s1, 'date' => '2026-10-22', 'rows' => [['employee_id' => $id, 'site_id' => $this->s1, 'in_time' => '08:00']]])->assertOk();
 
         $proposal = DB::table('employee_wage_proposals')->where('employee_id', $id)->first();

@@ -20,6 +20,14 @@ class Employee extends Model
     /** The employee's type in force on the bound date `?`. */
     public const TYPE_ON = '(select t.type from employee_type_changes t where t.employee_id = employees.id and t.deleted_at is null and t.effective_from <= ?::date order by t.effective_from desc limit 1)';
 
+    /**
+     * The worker's site on the bound date (three `?`, all that date): that day's crew change when there is one (its site, or null when
+     * taken off every crew), else the home site in force. EmployeeRoster::row's `crew` and `sites` are the same read in PHP.
+     */
+    public const SITE_ON = '(case when exists (select 1 from day_crew_changes c where c.employee_id = employees.id and c.deleted_at is null and c.date = ?::date)
+        then (select c.site_id from day_crew_changes c where c.employee_id = employees.id and c.deleted_at is null and c.date = ?::date)
+        else (select s.site_id from employee_site_assignments s where s.employee_id = employees.id and s.deleted_at is null and s.effective_from <= ?::date order by s.effective_from desc limit 1) end)';
+
     protected $guarded = [];
 
     /**
@@ -67,5 +75,11 @@ class Employee extends Model
     public function siteAssignments(): HasMany
     {
         return $this->hasMany(EmployeeSiteAssignment::class);
+    }
+
+    /** @return HasMany<DayCrewChange, $this> */
+    public function crewChanges(): HasMany
+    {
+        return $this->hasMany(DayCrewChange::class);
     }
 }

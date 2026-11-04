@@ -6,6 +6,7 @@ namespace App\Modules\Employees\Application;
 
 use App\Modules\Employees\Domain\EffectiveDated;
 use App\Modules\Employees\Domain\EmployeeType;
+use App\Modules\Employees\Infrastructure\Eloquent\DayCrewChange;
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeWageProposal;
@@ -15,9 +16,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * The day-labor crew's writes (owner, 2026-11-04). A crew is the day laborers whose dated home site is the site, so adding or
- * removing someone is a home-site row from a date (none, when removed), and past days keep theirs. A new day laborer a site manager
- * adds has no pay row: their proposed wage waits for HR in employee_wage_proposals. Callers check who may do this.
+ * The day-labor crew's writes (owner, 2026-11-04; PR #22 review). A day's crew is the day laborers whose site on that date is the
+ * site: that day's crew change, else their home site. Adding, moving or removing someone writes a crew change for that date only, so
+ * yesterday's records and tomorrow's roster stay as they were. A new day laborer a site manager adds has no home site and no pay row:
+ * they join that day's crew, and their proposed wage waits for HR in employee_wage_proposals. Callers check who may do this.
  */
 final class DayCrew
 {
@@ -28,7 +30,7 @@ final class DayCrew
      */
     public function matching(string $search, string $date, int $limit = 20): array
     {
-        $rows = Employee::with(['typeChanges', 'siteAssignments'])
+        $rows = Employee::with(['typeChanges', 'siteAssignments', 'crewChanges'])
             ->whereRaw(Employee::TYPE_ON.' = ?', [$date, EmployeeType::DayLaborer->value])
             ->where(fn (Builder $q) => $q->whereNull('hire_date')->orWhere('hire_date', '<=', $date))
             ->where(fn (Builder $q) => $q->whereNull('termination_date')->orWhere('termination_date', '>=', $date))
@@ -44,7 +46,7 @@ final class DayCrew
         ])->all());
     }
 
-    /** The day laborer's home site on $date, or null; null too for anyone who is not a day laborer employed on $date. */
+    /** The day laborer's site on $date (crew change, else home site), or null; null too for anyone who is not a day laborer employed on $date. */
     public function laborerSiteOn(string $employeeId, string $date): ?string
     {
         $e = $this->laborer($employeeId, $date);
@@ -57,13 +59,19 @@ final class DayCrew
         return $this->laborer($employeeId, $date) !== null;
     }
 
-    /** Homes the employee on $siteId from $date, or on no site when null; a row already dated $date is changed in place (audited). */
-    public function setSite(string $employeeId, ?string $siteId, string $date): void
+    /**
+     * Puts the employee on $siteId's crew for $date only, or on no crew when null. A change back to their home site removes the day's
+     * change, so the day reads as their normal assignment again. Audited.
+     */
+    public function setCrew(string $employeeId, ?string $siteId, string $date): void
     {
         DB::transaction(function () use ($employeeId, $siteId, $date): void {
-            $row = EmployeeSiteAssignment::where(['employee_id' => $employeeId, 'effective_from' => $date])->lockForUpdate()->first();
-            if ($row === null) {
-                EmployeeSiteAssignment::create(['employee_id' => $employeeId, 'site_id' => $siteId, 'effective_from' => $date]);
+            $row = DayCrewChange::where(['employee_id' => $employeeId, 'date' => $date])->lockForUpdate()->first();
+            $home = $this->homeSiteOn($employeeId, $date);
+            if ($siteId === $home) {
+                $row?->delete();
+            } elseif ($row === null) {
+                DayCrewChange::create(['employee_id' => $employeeId, 'date' => $date, 'site_id' => $siteId]);
             } elseif ($row->site_id !== $siteId) {
                 $row->site_id = $siteId;
                 $row->save();
@@ -72,7 +80,7 @@ final class DayCrew
     }
 
     /**
-     * A new day laborer, hired and homed on $siteId from $date with no pay row; $wage waits as a pending proposal.
+     * A new day laborer, hired on $date and on $siteId's crew that day, with no home site and no pay row; $wage waits as a pending proposal.
      *
      * @param  array{name_ar: string, phone?: ?string}  $identity
      * @return array{id: string, code: int, name_ar: string}
@@ -87,7 +95,7 @@ final class DayCrew
 
             $employee = Employee::create(['name_ar' => $identity['name_ar'], 'phone' => $identity['phone'] ?? null, 'hire_date' => $date, 'code' => $code]);
             $employee->typeChanges()->create(['type' => EmployeeType::DayLaborer->value, 'effective_from' => $date]);
-            $employee->siteAssignments()->create(['site_id' => $siteId, 'effective_from' => $date]);
+            $employee->crewChanges()->create(['date' => $date, 'site_id' => $siteId]);
             EmployeeWageProposal::create(['employee_id' => $employee->id, 'daily_wage' => $wage, 'status' => 'pending']);
 
             return ['id' => (string) $employee->id, 'code' => $code, 'name_ar' => (string) $employee->name_ar];
@@ -146,7 +154,7 @@ final class DayCrew
 
     private function laborer(string $employeeId, string $date): ?Employee
     {
-        $e = Employee::with(['typeChanges', 'siteAssignments'])->find($employeeId);
+        $e = Employee::with(['typeChanges', 'siteAssignments', 'crewChanges'])->find($employeeId);
         if ($e === null || ($e->hire_date !== null && $e->hire_date > $date) || ($e->termination_date !== null && $e->termination_date < $date)) {
             return null;
         }
@@ -157,7 +165,24 @@ final class DayCrew
 
     private function siteOn(Employee $e, string $date): ?string
     {
-        $sites = $e->siteAssignments->map(fn (EmployeeSiteAssignment $s) => ['site_id' => $s->site_id, 'effective_from' => (string) $s->effective_from])->all();
+        $change = $e->crewChanges->first(fn (DayCrewChange $c) => (string) $c->date === $date);
+        if ($change !== null) {
+            return $change->site_id === null ? null : (string) $change->site_id;
+        }
+
+        return $this->homeOf($e, $date);
+    }
+
+    private function homeSiteOn(string $employeeId, string $date): ?string
+    {
+        $e = Employee::with('siteAssignments')->find($employeeId);
+
+        return $e === null ? null : $this->homeOf($e, $date);
+    }
+
+    private function homeOf(Employee $e, string $date): ?string
+    {
+        $sites = $e->siteAssignments->map(fn (EmployeeSiteAssignment $s) => ['site_id' => (string) $s->site_id, 'effective_from' => (string) $s->effective_from])->all();
         $site = EffectiveDated::at($sites, $date)['site_id'] ?? null;
 
         return $site === null ? null : (string) $site;
