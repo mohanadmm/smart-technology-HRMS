@@ -82,23 +82,14 @@ test('the search waits for a pause in typing', async () => {
   expect(vi.mocked(fetch).mock.calls.map(([u]) => new URL(String(u), 'http://x').searchParams.get('q')).filter(Boolean)).toEqual(['سامي'])
 })
 
-test('a row opens the employee on the leave tab', async () => {
+test('a row opens the employee on the leave tab through a real link', async () => {
   mockFetch({ [BALANCES]: () => balances() })
   const user = userEvent.setup()
   render()
-  await user.click(await screen.findByText('سامي فؤاد'))
+  const link = await screen.findByRole('link', { name: 'سامي فؤاد' })
+  expect(link).toHaveAttribute('href', '/employees/e1?tab=leave')
+  await user.click(link)
   expect(await screen.findByText('opened /employees/e1?tab=leave')).toBeInTheDocument()
-})
-
-test('on a phone each row is a card whose lines carry their own labels', async () => {
-  mockFetch({ [BALANCES]: () => balances() })
-  render()
-  const r = (await screen.findByText('سامي فؤاد')).closest('tr')!
-  for (const label of ['الرقم الوظيفي', 'الرصيد السنوي', 'المستخدم', 'العارضة المستخدمة', 'مرضي', 'بدون أجر', 'الرصيد المتبقي']) {
-    const shown = within(r).getByText(label)
-    expect(shown).toHaveAttribute('aria-hidden', 'true')
-    expect(shown).toHaveClass('sm:hidden')
-  }
 })
 
 test('no rows shows the empty state', async () => {

@@ -158,7 +158,7 @@ test('the dialog starts from the stored adjustment and sends it back with its ve
   const user = userEvent.setup()
   renderWithAuth(<Leave emp={emp} />, ADJUSTER, { router: false })
   const dialog = await openAdjust(user)
-  expect(within(dialog).getByLabelText(/الرصيد السنوي/)).toHaveValue('25')
+  expect(within(dialog).getByLabelText(/الرصيد السنوي البديل/)).toHaveValue('25')
   expect(within(dialog).getByLabelText('الأيام المستخدمة قبل النظام')).toHaveValue('2')
   expect(within(dialog).getByLabelText('أيام العارضة المستخدمة قبل النظام')).toHaveValue('1')
   expect(within(dialog).getByLabelText('سبب التعديل')).toHaveValue('رصيد منقول من الدفتر')
@@ -175,7 +175,7 @@ test('a first adjustment sends version null and a blank entitlement as null', as
   const user = userEvent.setup()
   renderWithAuth(<Leave emp={emp} />, ADJUSTER, { router: false })
   const dialog = await openAdjust(user)
-  expect(within(dialog).getByLabelText(/الرصيد السنوي/)).toHaveValue('')
+  expect(within(dialog).getByLabelText(/الرصيد السنوي البديل/)).toHaveValue('')
   await user.type(within(dialog).getByLabelText('الأيام المستخدمة قبل النظام'), '3')
   await user.type(within(dialog).getByLabelText('سبب التعديل'), 'بداية العمل بالنظام')
   await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
@@ -188,15 +188,32 @@ test('a changed value needs a reason before anything is sent', async () => {
   const user = userEvent.setup()
   renderWithAuth(<Leave emp={emp} />, ADJUSTER, { router: false })
   const dialog = await openAdjust(user)
-  await user.type(within(dialog).getByLabelText(/الرصيد السنوي/), '30')
+  await user.type(within(dialog).getByLabelText(/الرصيد السنوي البديل/), '30')
   await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
   expect(await within(dialog).findByText('اكتب سبب التعديل.')).toBeInTheDocument()
   expect(within(dialog).getByLabelText('سبب التعديل')).toHaveAttribute('aria-invalid', 'true')
   expect(puts()).toHaveLength(0)
 })
 
-test('casual days above the days used are refused before anything is sent', async () => {
-  mockFetch({ [LEAVE]: () => leave(), [ADJUST]: () => leave() })
+test('a non-numeric opening value counts as 0, so it needs no reason and the server judges it', async () => {
+  mockFetch({
+    [LEAVE]: () => leave(),
+    [ADJUST]: () => json(422, { error: { code: 'validation_failed', message: 'x', details: [{ field: 'opening_used', code: 'integer', message: 'اكتب عددًا صحيحًا.' }] } }),
+  })
+  const user = userEvent.setup()
+  renderWithAuth(<Leave emp={emp} />, ADJUSTER, { router: false })
+  const dialog = await openAdjust(user)
+  await user.type(within(dialog).getByLabelText('الأيام المستخدمة قبل النظام'), 'x')
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  expect(await within(dialog).findByText('اكتب عددًا صحيحًا.')).toBeInTheDocument()
+  expect(JSON.parse(String(puts()[0][1]!.body))).toMatchObject({ opening_used: 'x', reason: null })
+})
+
+test('the server refusal shows under its field', async () => {
+  mockFetch({
+    [LEAVE]: () => leave(),
+    [ADJUST]: () => json(422, { error: { code: 'validation_failed', message: 'x', details: [{ field: 'opening_casual_used', code: 'lte', message: 'رسالة الخادم عن العارضة.' }] } }),
+  })
   const user = userEvent.setup()
   renderWithAuth(<Leave emp={emp} />, ADJUSTER, { router: false })
   const dialog = await openAdjust(user)
@@ -204,22 +221,68 @@ test('casual days above the days used are refused before anything is sent', asyn
   await user.type(within(dialog).getByLabelText('أيام العارضة المستخدمة قبل النظام'), '3')
   await user.type(within(dialog).getByLabelText('سبب التعديل'), 'تصحيح')
   await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
-  expect(await within(dialog).findByText('لا تزيد أيام العارضة على الأيام المستخدمة.')).toBeInTheDocument()
-  expect(puts()).toHaveLength(0)
+  expect(await within(dialog).findByText('رسالة الخادم عن العارضة.')).toBeInTheDocument()
+  expect(within(dialog).getByLabelText('أيام العارضة المستخدمة قبل النظام')).toHaveAttribute('aria-invalid', 'true')
+  expect(puts()).toHaveLength(1)
 })
 
-test('a stale version shows the server message and reloads the balance', async () => {
-  let loads = 0
+test('after a stale version the dialog reloads the current values, and the retry sends the version now shown', async () => {
+  let stored = adjustment
   mockFetch({
-    [LEAVE]: () => (loads++, withAdjustment(adjustment)),
-    [ADJUST]: () => json(409, { error: { code: 'concurrency_conflict', message: 'غيّر شخص آخر هذا السجل.' } }),
+    [LEAVE]: () => withAdjustment(stored),
+    [ADJUST]: () => (puts().length === 1 ? json(409, { error: { code: 'concurrency_conflict', message: 'غيّر شخص آخر هذا السجل.' } }) : withAdjustment({ ...stored, version: 6 })),
   })
   const user = userEvent.setup()
   renderWithAuth(<Leave emp={emp} />, ADJUSTER, { router: false })
   const dialog = await openAdjust(user)
+  stored = { ...adjustment, opening_used: 7, reason: 'تعديل زميل', version: 5 } // someone else saves meanwhile
   await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
-  expect(await within(dialog).findByText('غيّر شخص آخر هذا السجل.')).toBeInTheDocument()
-  await waitFor(() => expect(loads).toBe(2))
+  expect(await within(dialog).findByText(/عُدِّل هذا السجل/)).toBeInTheDocument()
+  expect(within(dialog).getByLabelText('الأيام المستخدمة قبل النظام')).toHaveValue('7')
+  expect(within(dialog).getByLabelText('سبب التعديل')).toHaveValue('تعديل زميل')
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(JSON.parse(String(puts()[1][1]!.body))).toMatchObject({ opening_used: 7, version: 5 })
+})
+
+test('a saved adjustment seeds the next open even before the balance refetch lands', async () => {
+  let gets = 0
+  mockFetch({
+    // the first load answers; every refetch after the save never does
+    [LEAVE]: () => (gets++ ? (new Promise(() => {}) as unknown as Response) : withAdjustment(adjustment)),
+    [ADJUST]: (_, init) => withAdjustment({ ...adjustment, ...JSON.parse(String(init!.body)), version: 4 }),
+  })
+  const user = userEvent.setup()
+  renderWithAuth(<Leave emp={emp} />, ADJUSTER, { router: false })
+  let dialog = await openAdjust(user)
+  await user.clear(within(dialog).getByLabelText('الأيام المستخدمة قبل النظام'))
+  await user.type(within(dialog).getByLabelText('الأيام المستخدمة قبل النظام'), '4')
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  dialog = await openAdjust(user)
+  expect(within(dialog).getByLabelText('الأيام المستخدمة قبل النظام')).toHaveValue('4')
+  expect(within(dialog).queryByText(/عُدِّل هذا السجل/)).toBeNull()
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  await waitFor(() => expect(puts()).toHaveLength(2))
+  expect(JSON.parse(String(puts()[1][1]!.body)).version).toBe(4)
+})
+
+test('a save refetches the leave balance, not the employee record', async () => {
+  mockFetch({
+    'GET /api/v1/employees/e1': () => json(200, { data: { ...emp, current_site: null, site_assignments: [] } }),
+    'GET /api/v1/residences': () => json(200, { data: [], meta: { pagination } }),
+    [LEAVE]: () => withAdjustment(adjustment),
+    [ADJUST]: () => withAdjustment({ ...adjustment, version: 4 }),
+  })
+  const user = userEvent.setup()
+  renderWithAuth(detail, ADJUSTER, { router: false })
+  const dialog = await openAdjust(user)
+  const records = () => vi.mocked(fetch).mock.calls.filter(([u]) => u === '/api/v1/employees/e1').length
+  const before = records()
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([u]) => String(u).startsWith('/api/v1/employees/e1/leave')).length).toBeGreaterThan(1))
+  expect(records()).toBe(before)
 })
 
 test('a stored adjustment is shown on the card with its reason', async () => {
