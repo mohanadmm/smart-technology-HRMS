@@ -53,6 +53,20 @@ class LogMaskerTest extends TestCase
         $this->assertSame($kept, LogMasker::data($kept));
     }
 
+    public function test_uuids_are_kept_whole(): void
+    {
+        $uuid = 'ad93e478-b02c-4113-9017-2fc1234567fa';
+
+        $this->assertSame($uuid, LogMasker::text($uuid));
+        $this->assertSame(strtoupper($uuid), LogMasker::text(strtoupper($uuid)));
+        $this->assertSame("api/v1/sites/$uuid/fares", LogMasker::text("api/v1/sites/$uuid/fares"));
+        $this->assertSame(['employee_id' => $uuid], LogMasker::data(['employee_id' => $uuid]));
+        $this->assertSame("dup [masked] for $uuid", LogMasker::text("dup 29801011234567 for $uuid"));
+        // A digit run glued to a UUID is not a UUID: it is masked, not passed through.
+        $this->assertSame('[masked]', LogMasker::text('123456789012345678'));
+        $this->assertStringNotContainsString('1234567890', LogMasker::text('ad93e478-b02c-4113-9017-123456789012345678'));
+    }
+
     public function test_arabic_indic_digit_runs_are_masked(): void
     {
         $this->assertSame(['search' => '[masked]'], LogMasker::data(['search' => '٢٩٨٠١٠١١٢٣٤٥٦٧']));

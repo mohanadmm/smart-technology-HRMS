@@ -6,7 +6,8 @@ namespace App\Modules\Audit\Domain;
 
 /**
  * Masks what the request and error logs store: a key rule (secrets by substring, money and IDs by exact name) at any depth,
- * then a shape rule (a run of 7+ digits) on every remaining string, keys included. The spec's "Masking" section is the source.
+ * then a shape rule (a run of 7+ digits) on every remaining string, keys included, and on every int or float. A whole UUID is
+ * kept: its hex groups often hold 7 digits in a row. The spec's "Masking" section is the source.
  */
 final class LogMasker
 {
@@ -20,6 +21,9 @@ final class LogMasker
 
     /** Western, Arabic-Indic and Persian digits, mixed in one run too: HR types on Arabic keyboards. `/u` is safe after mb_scrub. */
     private const DIGIT_RUN = '/[0-9٠-٩۰-۹]{7,}/u';
+
+    /** DIGIT_RUN for text, with a whole UUID (not glued to more hex) matched first so text() can hand it back unchanged. */
+    private const UUID_OR_DIGIT_RUN = '/(?<![0-9a-f])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f])|[0-9٠-٩۰-۹]{7,}/iu';
 
     private const MAX_BYTES = 65536;
 
@@ -47,7 +51,11 @@ final class LogMasker
 
     public static function text(string $text): string
     {
-        return (string) preg_replace(self::DIGIT_RUN, self::MASK, (string) mb_scrub(str_replace("\0", '', $text), 'UTF-8'));
+        return (string) preg_replace_callback(
+            self::UUID_OR_DIGIT_RUN,
+            fn (array $m) => str_contains($m[0], '-') ? $m[0] : self::MASK, // only the UUID branch matches a '-'
+            (string) mb_scrub(str_replace("\0", '', $text), 'UTF-8'),
+        );
     }
 
     /**
