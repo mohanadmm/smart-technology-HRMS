@@ -188,7 +188,8 @@ final class AttendanceDays
      * One day's write; call inside a transaction. $keepUnsent (bulk) applies P28 to the fields absent from $input, else they are stored as null.
      * An unchanged row is not written (P29). $dryRun stops after the last check, before anything is saved. With $ownerId (own scope)
      * the employee must be in that user's reach on $date, and a work site must be one of their sites and, for a worker, the home site
-     * on $date (design Part 1), and a leave type must not be one that needs a leave request. The import takes reach once per period, so
+     * on $date (design Part 1), and a change of the day's site must not be to a leave type that needs a leave request (a day already
+     * stored as one, by HR or the leave workflow, can be resubmitted). The import takes reach once per period, so
      * this is what checks each cell's own date.
      *
      * @param  array<string, mixed>  $employee
@@ -206,7 +207,7 @@ final class AttendanceDays
         $site = $siteId === null ? null : Site::find((string) $siteId);
         if ($ownerId !== null) {
             $this->assertInReach($employee, $type, $date, $site?->kind === SiteKind::Work->value ? (string) $site->id : null, $ownerId);
-            if (in_array(LeaveCode::tryFrom((string) $site?->leave_code), self::NEEDS_REQUEST, true)) {
+            if ($site?->id !== $live?->site_id && in_array(LeaveCode::tryFrom((string) $site?->leave_code), self::NEEDS_REQUEST, true)) {
                 throw AttendanceRefused::because(AttendanceRefusal::LeaveNeedsRequest);
             }
         }

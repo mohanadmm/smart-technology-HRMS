@@ -141,7 +141,8 @@ final class EmployeeRoster
         }
         $rows = [];
         foreach (Employee::withTrashed()->whereKey($ids)->get(['id', 'code', 'name_ar', 'name_en']) as $e) {
-            $rows[(string) $e->id] = ['id' => (string) $e->id, 'code' => (int) $e->code, 'name_ar' => (string) $e->name_ar, 'name_en' => $e->name_en];
+            $id = (string) $e->getKey();
+            $rows[$id] = ['id' => $id, 'code' => (int) $e->code, 'name_ar' => (string) $e->name_ar, 'name_en' => $e->name_en];
         }
 
         return $rows;

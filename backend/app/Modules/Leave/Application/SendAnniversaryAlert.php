@@ -42,7 +42,7 @@ final class SendAnniversaryAlert implements ShouldQueue
     public function handle(EmployeeRoster $roster, Notifier $notifier, PermissionHolders $holders): void
     {
         // A year back without overflow, and the day after for a Feb 29 hire; the exact match is checked below.
-        $from = Carbon::parse($this->date)->subYearNoOverflow();
+        $from = Carbon::parse($this->date)->toImmutable()->subYearNoOverflow();
         $employees = array_filter($roster->hiredBetween($from->toDateString(), $from->addDay()->toDateString()), fn (array $e) => (
             Carbon::parse($e['hire_date'])->addYearNoOverflow()->toDateString() === $this->date
             && substr((string) $e['hire_date'], 5) !== '01-01'

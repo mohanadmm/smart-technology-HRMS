@@ -152,8 +152,8 @@ test('a one-year anniversary is listed with the name, code and hire date, and co
   mockFetch({ 'GET /api/v1/notifications': inbox([anniversary(ahmed), unread]) })
   renderWithAuth(<NotificationBell />, [])
   await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (2 غير مقروء)' }))
-  const line = await screen.findByRole('menuitem', { name: /أحمد علي أكمل سنة خدمة اليوم/ })
-  expect(line).toHaveAccessibleName(/^غير مقروء، أحمد علي أكمل سنة خدمة اليوم 1042،\s*تاريخ التعيين 2025-11-04$/)
+  const line = await screen.findByRole('menuitem', { name: /مرّت سنة على تعيين أحمد علي اليوم/ })
+  expect(line).toHaveAccessibleName(/^غير مقروء، مرّت سنة على تعيين أحمد علي اليوم 1042،\s*تاريخ التعيين 2025-11-04$/)
 })
 
 test('choosing an anniversary marks it read and opens the employee on the Leave tab', async () => {
@@ -161,7 +161,7 @@ test('choosing an anniversary marks it read and opens the employee on the Leave 
   mockFetch({ 'GET /api/v1/notifications': inbox([anniversary(ahmed)]), 'PATCH /api/v1/notifications/a1/read': patch })
   renderWithAuth(<><NotificationBell /><Where /></>, [])
   await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (1 غير مقروء)' }))
-  await user.click(await screen.findByRole('menuitem', { name: /أكمل سنة خدمة اليوم/ }))
+  await user.click(await screen.findByRole('menuitem', { name: /مرّت سنة على تعيين/ }))
   expect(screen.getByRole('status')).toHaveTextContent('/employees/e1?tab=leave')
   await waitFor(() => expect(patch).toHaveBeenCalledTimes(1))
 })
@@ -170,7 +170,7 @@ test('an anniversary whose employee is gone reads as a generic line', async () =
   mockFetch({ 'GET /api/v1/notifications': inbox([anniversary(null, '2026-11-04T09:00:00Z')]) })
   renderWithAuth(<NotificationBell />, [])
   await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (0 غير مقروء)' }))
-  expect(await screen.findByRole('menuitem')).toHaveAccessibleName(/^موظف أكمل سنة خدمة اليوم،\s*تاريخ التعيين 2025-11-04$/)
+  expect(await screen.findByRole('menuitem')).toHaveAccessibleName(/^مرّت سنة على تعيين أحد الموظفين اليوم،\s*تاريخ التعيين 2025-11-04$/)
 })
 
 test('in English an anniversary uses the English name, else the Arabic one', async () => {

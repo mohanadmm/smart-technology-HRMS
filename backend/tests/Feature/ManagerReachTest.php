@@ -124,6 +124,28 @@ class ManagerReachTest extends TestCase
         $this->assertSame(3, AttendanceDay::where('employee_id', $this->e1)->count());
     }
 
+    public function test_an_own_scope_writer_keeps_leave_already_stored_but_cannot_switch_to_it(): void
+    {
+        $leave = $this->leaveTypes();
+        $writer = $this->userWith(null, 'own');
+        DB::table('manager_sites')->insert(['manager_id' => $writer->id, 'site_id' => $this->s1]);
+        $this->assignManager($this->e1, $writer, '2026-10-02');
+        $version = fn (string $date) => AttendanceDay::where('employee_id', $this->e1)->whereDate('date', $date)->value('version');
+        $bulk = fn (string $siteId, string $date, array $extra = []) => $this->postJson('/api/v1/attendance/days/bulk', [
+            'date' => $date, 'rows' => [['employee_id' => $this->e1, 'site_id' => $siteId, 'version' => $version($date), ...$extra]],
+        ]);
+        $this->actingAs($this->makeUser('hr'), 'api');
+        $bulk($leave['annual'], '2026-10-20')->assertOk();
+        $bulk($leave['sick'], '2026-10-21')->assertOk();
+
+        $this->actingAs($writer, 'api');
+        $bulk($leave['annual'], '2026-10-20', ['note' => 'resubmitted'])->assertOk();
+        $this->assertSame('resubmitted', AttendanceDay::where('employee_id', $this->e1)->whereDate('date', '2026-10-20')->value('note'));
+        $bulk($leave['casual'], '2026-10-21')->assertStatus(422)->assertJsonPath('error.code', 'leave_needs_request');
+        $bulk($leave['casual'], '2026-10-20')->assertStatus(422)->assertJsonPath('error.code', 'leave_needs_request');
+        $bulk($this->s1, '2026-10-20')->assertOk();
+    }
+
     private function assignManager(string $employeeId, User $manager, string $from = '2026-10-01'): void
     {
         app(EmployeeService::class)->assignManager($employeeId, ['manager_id' => $manager->id, 'effective_from' => $from]);
