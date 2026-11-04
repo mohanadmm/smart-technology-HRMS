@@ -322,10 +322,10 @@ const requestCalls = () => vi.mocked(fetch).mock.calls.map(([u]) => String(u)).f
 test('the Leave tab lists the year\'s requests under the balance', async () => {
   mockFetch({ [LEAVE]: () => leave(), [REQUESTS]: () => json(200, { data: [request], meta: { pagination } }) })
   const user = userEvent.setup()
-  renderWithAuth(<Leave emp={emp} />, VIEW, { router: false })
+  renderWithAuth(<Leave emp={emp} />, VIEW)
   const list = await screen.findByRole('table', { name: 'طلبات الإجازة' })
   const row = within(list).getAllByRole('row')[1]
-  expect(row).toHaveTextContent('إجازة عارضة')
+  expect(within(row).getByRole('link', { name: 'إجازة عارضة' })).toHaveAttribute('href', '/leave?request=r1')
   expect(row).toHaveTextContent('2026-11-10 – 2026-11-11')
   expect(row).toHaveTextContent('2')
   expect(row).toHaveTextContent('قيد المراجعة')

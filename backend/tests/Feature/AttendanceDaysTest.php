@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Modules\Attendance\Application\AttendanceDays;
+use App\Modules\Attendance\Domain\AttendanceRefusal;
+use App\Modules\Attendance\Domain\AttendanceRefused;
 use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceDay;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -252,5 +255,74 @@ class AttendanceDaysTest extends TestCase
         $this->assertSame(['CREATED', 'UPDATED', 'UPDATED', 'DELETED'], $rows->pluck('event')->all()); // the clear bumps the version, then soft-deletes
         $this->assertEquals(['late_minutes' => 10, 'version' => 1], json_decode($rows[1]->old_values, true));
         $this->assertEquals(['late_minutes' => 20, 'version' => 2], json_decode($rows[1]->new_values, true));
+    }
+
+    public function test_a_leave_day_may_be_stored_in_the_future_while_entry_still_refuses_it(): void
+    {
+        $eng = $this->employee('engineer');
+        $this->putDay($eng, '2026-10-21', ['site_id' => $this->leave['annual']])->assertStatus(422)->assertJsonPath('error.code', 'future_date');
+
+        app(AttendanceDays::class)->writeLeaveDay($eng, '2026-10-21', $this->leave['annual']);
+
+        $this->getJson("/api/v1/attendance/days/{$eng}/2026-10-21")->assertOk()
+            ->assertJsonPath('data.leave_code', 'annual')->assertJsonPath('data.source', 'leave')->assertJsonPath('data.version', 1);
+    }
+
+    public function test_a_leave_day_replaces_a_stored_leave_day_but_never_a_work_day_or_office_present(): void
+    {
+        $eng = $this->employee('engineer');
+        $office = $this->employee('office');
+        $this->putDay($eng, '2026-10-01', ['site_id' => $this->leave['sick'], 'note' => 'n', 'advance_amount' => '200'])->assertOk();
+        $this->putDay($eng, '2026-10-04', ['site_id' => $this->site])->assertOk();
+        $this->putDay($office, '2026-10-01', ['site_id' => null, 'in_time' => '09:00'])->assertOk();
+        $days = app(AttendanceDays::class);
+
+        $days->writeLeaveDay($eng, '2026-10-01', $this->leave['annual']);
+        $this->getJson("/api/v1/attendance/days/{$eng}/2026-10-01")
+            ->assertJsonPath('data.leave_code', 'annual')->assertJsonPath('data.source', 'leave')->assertJsonPath('data.note', 'n')
+            ->assertJsonPath('data.advance_amount', '200.000000')->assertJsonPath('data.version', 2);
+
+        foreach ([[$eng, '2026-10-04'], [$office, '2026-10-01']] as [$employee, $date]) {
+            try {
+                $days->writeLeaveDay($employee, $date, $this->leave['annual']);
+                $this->fail("{$date} was overwritten");
+            } catch (AttendanceRefused $e) {
+                $this->assertSame(AttendanceRefusal::LeaveDaysBlocked, $e->reason);
+            }
+            $this->assertSame(1, AttendanceDay::where(['employee_id' => $employee, 'date' => $date])->value('version'));
+        }
+        $this->assertSame(['2026-10-04'], $days->leaveBlockedDates($eng, ['2026-10-01', '2026-10-04', '2026-10-05']));
+        $this->assertSame(['2026-10-01'], $days->leaveBlockedDates($office, ['2026-10-01']));
+    }
+
+    public function test_a_locked_period_blocks_a_leave_day(): void
+    {
+        $eng = $this->employee('engineer', '2026-09-26');
+        $this->postJson('/api/v1/attendance/locks', ['group' => 'engineer', 'period_start' => '2026-09-26', 'confirm_missing' => true])->assertCreated();
+        $days = app(AttendanceDays::class);
+
+        $this->assertSame(['2026-10-12'], $days->leaveBlockedDates($eng, ['2026-10-12', '2026-10-26']));
+        $this->expectExceptionObject(AttendanceRefused::because(AttendanceRefusal::PeriodLocked));
+        $days->writeLeaveDay($eng, '2026-10-12', $this->leave['annual']);
+    }
+
+    public function test_re_saving_a_leave_written_day_keeps_its_source_until_its_site_changes(): void
+    {
+        $eng = $this->employee('engineer');
+        app(AttendanceDays::class)->writeLeaveDay($eng, '2026-10-01', $this->leave['annual']);
+
+        $this->putDay($eng, '2026-10-01', ['version' => 1, 'site_id' => $this->leave['annual'], 'note' => 'n'])->assertOk()
+            ->assertJsonPath('data.source', 'leave')->assertJsonPath('data.note', 'n');
+        $this->putDay($eng, '2026-10-01', ['version' => 2, 'site_id' => $this->site])->assertOk()->assertJsonPath('data.source', 'entered');
+    }
+
+    public function test_a_leave_day_over_the_same_leave_type_keeps_hrs_source(): void
+    {
+        $eng = $this->employee('engineer');
+        $this->putDay($eng, '2026-10-01', ['site_id' => $this->leave['annual']])->assertOk();
+
+        app(AttendanceDays::class)->writeLeaveDay($eng, '2026-10-01', $this->leave['annual']);
+
+        $this->getJson("/api/v1/attendance/days/{$eng}/2026-10-01")->assertJsonPath('data.source', 'entered')->assertJsonPath('data.version', 1);
     }
 }

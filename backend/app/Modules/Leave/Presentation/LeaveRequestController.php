@@ -53,6 +53,32 @@ final class LeaveRequestController
         return ApiEnvelope::single($request, $this->requests->submit($v, (string) $user->getAuthIdentifier(), RequestScope::ownerId($request)), 201);
     }
 
+    public function show(Request $request, string $id): JsonResponse
+    {
+        return ApiEnvelope::single($request, $this->requests->show($id, RequestScope::ownerId($request)));
+    }
+
+    /** approve, refuse (reason required) or escalate (reason optional); LeaveRequests checks the permission the request's status needs. */
+    public function decide(Request $request, string $id, string $action): JsonResponse
+    {
+        $v = $request->validate([
+            'version' => ['required', 'integer', 'min:1'],
+            'reason' => match ($action) {
+                'refuse' => ['required', 'string', 'max:1000'],
+                'escalate' => ['nullable', 'string', 'max:1000'],
+                default => ['prohibited'],
+            },
+        ]);
+        $user = $request->user() ?? throw new AuthenticationException;
+        $version = (int) $v['version'];
+
+        return ApiEnvelope::single($request, match ($action) {
+            'refuse' => $this->requests->refuse($id, $version, (string) $v['reason'], $user),
+            'escalate' => $this->requests->escalate($id, $version, $v['reason'] ?? null, $user),
+            default => $this->requests->approve($id, $version, $user),
+        });
+    }
+
     /** @return array<string, list<mixed>> */
     private static function range(): array
     {

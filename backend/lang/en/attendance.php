@@ -14,6 +14,7 @@ return [
         'too_many_rows' => 'The file has more than :max rows.',
         'site_not_in_reach' => 'This site is not one of your sites, or it is not the worker\'s home site on this date.',
         'leave_needs_request' => 'Annual, casual and unpaid leave need a leave request.',
+        'leave_days_blocked' => 'A work day or office attendance is already recorded on this date.',
     ],
     'rule' => [
         'field_not_allowed' => 'This field does not apply to this day.',

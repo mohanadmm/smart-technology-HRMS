@@ -1,14 +1,14 @@
 import { CalendarDays, CalendarPlus, ClipboardList, Scale } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { DataList, type Field } from '@/components/common/DataList'
 import { FilterSelect, SearchInput } from '@/components/common/Filters'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { cairoToday, localName, ltrDates, type Row } from '@/components/form'
 import { SegmentedControl } from '@/components/layout/SegmentedControl'
-import { Badge, type BadgeVariant } from '@/components/ui/badge'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -16,7 +16,7 @@ import { useDebounced } from '@/hooks/useDebounced'
 import { useAuth } from '@/lib/auth'
 import { useList } from '@/lib/query'
 import { cn } from '@/lib/utils'
-import { RequestDialog } from './leave-dialogs'
+import { DecideDialog, RequestDialog, STATUS } from './leave-dialogs'
 
 // the monthly types: a day laborer has no leave balance (the server refuses it), so it is not offered
 const MONTHLY_TYPES = ['office', 'engineer', 'permanent_worker']
@@ -37,8 +37,6 @@ export type LeaveRequest = {
   version: number
 }
 
-const STATUS: Record<string, BadgeVariant> = { pending: 'warning', escalated: 'info', approved: 'success', refused: 'danger', cancelled: 'neutral' }
-
 /** The columns a leave request row shows wherever it is listed (`GET /leave/requests`); every number is the server's. */
 export function useRequestColumns() {
   const { t } = useTranslation()
@@ -51,13 +49,17 @@ export function useRequestColumns() {
   return { kind, fields, status }
 }
 
-/** `/leave`: Requests (the default; `?request=` opens it on that row) and Balances (`?tab=balances`), both over the reader's reach. */
+/** `/leave`: Requests (the default; `?request=` opens that request and marks its row) and Balances (`?tab=balances`), both over the reader's reach. */
 export function LeavePage() {
   const { t } = useTranslation()
   const { can } = useAuth()
   const [params, setParams] = useSearchParams()
+  const { key } = useLocation()
   const [asking, setAsking] = useState(false)
-  const tab = params.get('tab') === 'balances' && !params.get('request') ? 'balances' : 'requests'
+  // the navigation whose request dialog was closed: every new link to a request, the same one again included, opens it
+  const [closed, setClosed] = useState<string>()
+  const request = params.get('request')
+  const tab = params.get('tab') === 'balances' && !request ? 'balances' : 'requests'
   const thisYear = Number(cairoToday().slice(0, 4))
   const [year, setYear] = useState(String(thisYear))
 
@@ -69,20 +71,20 @@ export function LeavePage() {
         action={can('leave.request') ? { label: t('leave.request.open'), icon: CalendarPlus, onClick: () => setAsking(true) } : undefined}
       />
       <RequestDialog open={asking} onOpenChange={setAsking} />
+      {request && <DecideDialog id={request} open={closed !== key} onOpenChange={() => setClosed(key)} />}
       <Tabs value={tab} onValueChange={(v) => setParams(v === 'balances' ? { tab: v } : {}, { replace: true })}>
         <TabsList>
           <TabsTrigger value="requests"><ClipboardList className="size-4" aria-hidden /> {t('leave.tab.requests')}</TabsTrigger>
           <TabsTrigger value="balances"><Scale className="size-4" aria-hidden /> {t('leave.tab.balances')}</TabsTrigger>
         </TabsList>
-        {/* keyed by the linked request: a new link starts the list unfiltered on page 1, where that request can be found */}
-        <TabsContent value="requests"><Requests key={params.get('request')} thisYear={thisYear} highlight={params.get('request')} /></TabsContent>
+        <TabsContent value="requests"><Requests thisYear={thisYear} highlight={request} /></TabsContent>
         <TabsContent value="balances"><Balances thisYear={thisYear} year={year} setYear={setYear} /></TabsContent>
       </Tabs>
     </div>
   )
 }
 
-/** `GET /leave/requests`: pending and escalated first (the server's order), every year unless one is chosen. */
+/** `GET /leave/requests`: pending and escalated first (the server's order), every year unless one is chosen; a row opens its request. */
 function Requests({ thisYear, highlight }: { thisYear: number; highlight: string | null }) {
   const { t, i18n } = useTranslation()
   const [status, setStatus] = useState('')
@@ -90,6 +92,16 @@ function Requests({ thisYear, highlight }: { thisYear: number; highlight: string
   const [page, setPage] = useState(1)
   const qs = new URLSearchParams({ page: String(page), per_page: String(PAGE), ...(status && { status }), ...(year && { year }) })
   const { rows, total, err, loading } = useList(`/leave/requests?${qs}`)
+  // a link to a request not on this page (the bell) starts the list unfiltered on page 1, where it can be found; a row's own link keeps the filters
+  const [linked, setLinked] = useState(highlight)
+  if (linked !== highlight) {
+    setLinked(highlight)
+    if (highlight && !rows.some((r) => r.id === highlight)) {
+      setStatus('')
+      setYear('')
+      setPage(1)
+    }
+  }
   const { kind, fields, status: statusCol } = useRequestColumns()
   const filter = (set: (v: string) => void) => (v: string) => {
     set(v)
@@ -106,6 +118,7 @@ function Requests({ thisYear, highlight }: { thisYear: number; highlight: string
         label={t('leave.requests.list')}
         rows={rows as LeaveRequest[]}
         rowKey={(r) => r.id}
+        to={(r) => `/leave?request=${r.id}`}
         current={(r) => r.id === highlight}
         loading={loading}
         error={err}

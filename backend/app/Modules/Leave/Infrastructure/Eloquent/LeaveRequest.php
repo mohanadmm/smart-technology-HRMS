@@ -15,5 +15,5 @@ class LeaveRequest extends Model
 
     protected $guarded = [];
 
-    protected $casts = ['days' => 'integer', 'version' => 'integer'];
+    protected $casts = ['days' => 'integer', 'version' => 'integer', 'decided_at' => 'datetime'];
 }

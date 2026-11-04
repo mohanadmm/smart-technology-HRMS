@@ -764,6 +764,20 @@
       "line": "New leave request: <name/> (<code/>)",
       "unknown": "New leave request",
       "detail": "{{kind}}: {{from}} – {{to}}"
+    },
+    "leaveEscalated": {
+      "line": "Leave request escalated to you: <name/> (<code/>)",
+      "unknown": "Leave request escalated to you"
+    },
+    "leaveDecided": {
+      "approved": {
+        "line": "Leave approved: <name/> (<code/>)",
+        "unknown": "A leave request was approved"
+      },
+      "refused": {
+        "line": "Leave refused: <name/> (<code/>)",
+        "unknown": "A leave request was refused"
+      }
     }
   },
   "time": {
@@ -859,6 +873,38 @@
       "after": ", balance after: <n/>",
       "unpaid_one": "{{count}} day unpaid",
       "unpaid_other": "{{count}} days unpaid"
+    },
+    "decide": {
+      "title": "Leave request details",
+      "requestedBy": "Requested by",
+      "before": "Balance before approval",
+      "casualBefore": "Casual remaining before approval",
+      "after": "Balance after approval",
+      "split": "{{keep}} {{kind}} + {{unpaid}} unpaid",
+      "short": "The balance is short, so the last days of the range are unpaid.",
+      "blocked": "Approval will be refused until these days change: they already hold attendance other than leave, or fall in a locked period:",
+      "decidedBy": "Decided by",
+      "decidedAt": "Decided on",
+      "escalationNote": "Escalation note",
+      "approve": {
+        "action": "Approve",
+        "done": "Request approved."
+      },
+      "refuse": {
+        "action": "Refuse",
+        "title": "Refuse the leave request",
+        "reason": "Reason for refusal",
+        "required": "Write the reason for the refusal.",
+        "submit": "Refuse request",
+        "done": "Request refused."
+      },
+      "escalate": {
+        "action": "Escalate to the CEO",
+        "title": "Escalate the request to the CEO",
+        "reason": "Note for the CEO (optional)",
+        "submit": "Escalate request",
+        "done": "Request escalated to the CEO."
+      }
     }
   }
 }

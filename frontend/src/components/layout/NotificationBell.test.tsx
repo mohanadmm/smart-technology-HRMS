@@ -232,3 +232,31 @@ test('in English a new leave request uses the English name', async () => {
   await user.click(await screen.findByRole('button', { name: 'Open notifications (1 unread)' }))
   expect(await screen.findByRole('menuitem')).toHaveAccessibleName(/^unread, New leave request: Ahmed Ali \(1042\),\s*Annual leave: 2026-11-10 – 2026-11-12$/)
 })
+
+const escalated = (employee: { id: string; code: number; name_ar: string; name_en: string | null } | null) => ({
+  id: 'x1', type: 'leave_escalated', date: '2026-11-04', ref: 'r1', read_at: null, employee,
+  data: { employee_id: 'e1', request_id: 'r1', kind: 'casual', from_date: '2026-11-10', to_date: '2026-11-11', days: 2 },
+})
+const decided = (status: string, employee: { id: string; code: number; name_ar: string; name_en: string | null } | null = ahmed) => ({
+  id: `d-${status}`, type: 'leave_decided', date: '2026-11-04', ref: 'r2', read_at: null, employee,
+  data: { employee_id: 'e1', request_id: 'r2', kind: 'annual', from_date: '2026-11-10', to_date: '2026-11-12', days: 3, status },
+})
+
+test('an escalated leave request is listed for its decider and opens the request', async () => {
+  mockFetch({ 'GET /api/v1/notifications': inbox([escalated(ahmed)]), 'PATCH /api/v1/notifications/x1/read': () => json(200, { data: {} }) })
+  renderWithAuth(<><NotificationBell /><Where /></>, [])
+  await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (1 غير مقروء)' }))
+  const line = await screen.findByRole('menuitem', { name: /أُحيل إليك طلب إجازة/ })
+  expect(line).toHaveAccessibleName(/^غير مقروء، أُحيل إليك طلب إجازة: أحمد علي \(1042\)،\s*إجازة عارضة: 2026-11-10 – 2026-11-11$/)
+  await user.click(line)
+  expect(screen.getByRole('status')).toHaveTextContent('/leave?request=r1')
+})
+
+test('an approved and a refused leave are told apart, and each opens its request', async () => {
+  mockFetch({ 'GET /api/v1/notifications': inbox([decided('approved'), decided('refused', null)]), 'PATCH /api/v1/notifications/d-refused/read': () => json(200, { data: {} }) })
+  renderWithAuth(<><NotificationBell /><Where /></>, [])
+  await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (2 غير مقروء)' }))
+  expect(await screen.findByRole('menuitem', { name: /تمت الموافقة على إجازة أحمد علي \(1042\)/ })).toBeInTheDocument()
+  await user.click(screen.getByRole('menuitem', { name: /رُفض طلب إجازة/ }))
+  expect(screen.getByRole('status')).toHaveTextContent('/leave?request=r2')
+})
