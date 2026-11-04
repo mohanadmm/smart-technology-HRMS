@@ -6,6 +6,8 @@
 
 **Architecture:** D2 is a doc and test check only. D4 replaces the `Employee::deleted` auto-cancel with a `deleting` refusal owned by Leave. A3 adds a `replaced` list to the approval preview and `replace_dates` on approve, rechecked under the row lock. A holiday delete or move soft-deletes that date's stored `derived` holiday days (the period is open by rule), the re-lock stores the current holidays as today, and its reply lists the changes.
 
+**Status:** built on `claude/leave-decisions-4b5673` (2a83d0c, ba49dec, review fix 9e9a236; docs 7ae20f4); its screens were approved by the owner on 2026-11-04.
+
 **Tech Stack:** Laravel 13 / PHP 8.4 / PostgreSQL 17, PHPUnit; React 19 + Vite + TS, vitest, react-i18next.
 
 **Spec:** `docs/superpowers/specs/2026-11-03-leave-design.md` (Workflow), `docs/calculations.md` §2a and §7, and the research note with the owner's decisions (`side-session-notes/local_75e7320c…/leave-open-questions.md`, summarized in each task below).
