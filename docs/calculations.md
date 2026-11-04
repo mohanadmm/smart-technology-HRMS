@@ -96,6 +96,8 @@ Each day records: site, arrival and departure, OT minutes, late minutes, minutes
 
 Outside-Alex minutes are paid at ×1, with no multiplier, as in the Excel.
 
+On the site manager's screen (§2b): an engineer's stored late minutes are the raw minutes after the field shift start, recomputed only when the arrival changes; an open day (arrival, no departure) blocks the next day and the period lock.
+
 ## 2a. Derived off days
 - Weekly off per type: **Friday + Saturday** for office staff, **Friday** for the field types.
 - Each weekly off weekday is derived as the leave day-type with the same code: Friday → «اجازة الجمعة», Saturday → «اجازة السبت».
@@ -125,10 +127,10 @@ Applies to engineers, permanent workers and day laborers recorded on the site ma
 | Late minutes (engineers, day laborers) | **Raw**: max(0, arrival − shift start), with no grace. §0a subtracts the 15-minute grace once at payroll. Recomputed only when the arrival changes. Permanent workers' lateness comes from `scheduled_in` and the arrival at payroll (§3). |
 | Early departure | Not a stored field: payroll reads it from the departure and the shift end (`scheduled_out` for permanent workers). |
 | Overtime | Departure after the shift end is shown as a difference only. Engineers' and day laborers' `ot_minutes` are stored as **0** until HR approves the overtime (Slice 3), and reset to 0 only when a time changes. |
-| Missing departure | A day with an arrival and no departure is **open**. The site manager cannot save a later day for that person until it is completed. After the yesterday window (`manager_yesterday_until`, 12:00) only HR completes it. HR gets the count in the 21:00 bell. Locking a period is refused while any field day in it is open, and payroll counts no open day. |
+| Missing departure | A field day with an arrival and no departure is **open** (office days never are). The site manager cannot save a later day for that person until it is completed. After the yesterday window (`manager_yesterday_until`, 12:00) the site manager may still enter the **departure only**, until the period is locked: the arrival and the status stay, the late minutes stay as stored, and HR hears of each such save at once (owner, 2026-11-05). A day HR recorded, or one outside the site manager's reach that day, is HR's to complete. An open day in a locked period never blocks. HR gets the count of open days in the 21:00 alert. Locking a period is refused while any field day in it is open, and payroll counts no open day. |
 
 **Who changes a day**
-- A day HR recorded, imported or materialized, or one an approved leave request wrote (sick included), is read-only for the site manager.
+- A day HR recorded, imported or materialized, or one an approved leave request wrote (sick included, even over a sick day the site manager wrote first), is read-only for the site manager.
 - The site manager clears only their own days, at the site they are working on or on one of their leave types (absent, sick, rest, other).
 
 Worked example (shift 09:00–16:00, grace 15): arrival 09:25 → 25 late minutes stored, 10 chargeable at payroll; departure 15:00 → 60 minutes early; departure 17:00 → 60 minutes after hours, overtime 0 until HR approves.
@@ -150,6 +152,8 @@ Each day records: scheduled in/out (default: the field shift, §2b), actual in/o
 - Net = salary + Σ OT money + Σ transport − Σ lateness − absence − deduction − insurance − tax − advance installments
 
 The Excel worker template **adds** lateness to the net (Excel error #4) and leaves transport out. The system subtracts lateness and pays transport.
+
+On the site manager's screen (§2b): a permanent worker's open day (arrival, no departure) blocks the next day and the period lock, as for the other field types; their late minutes still come from `scheduled_in` and the arrival.
 
 ## 4. Day laborers (عمال باليومية): 1–15 and 16–end
 Each day records a site, arrival and departure (§2 defaults and hints), OT and late minutes. The worker has a **daily wage** (effective-dated) and a **residence**.

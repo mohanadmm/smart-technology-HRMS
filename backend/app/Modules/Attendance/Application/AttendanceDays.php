@@ -362,7 +362,9 @@ final class AttendanceDays
 
         // A leave-written day re-saved on the same leave code stays `leave`, so cancelling the request still clears it; a leave day written
         // over HR's own day of the same leave code (a since-deactivated type too) keeps HR's source, so that cancel never clears it.
-        if ($live !== null && ($live->site_id === $siteId || $sameCode) && ($live->source === 'leave' || $leaveDay)) {
+        // Over the site manager's own day it becomes `leave`: the approved request now holds it, so the manager can no longer change it
+        // (PR #22 review B1).
+        if ($live !== null && ($live->site_id === $siteId || $sameCode) && ($live->source === 'leave' || ($leaveDay && $live->source !== 'manager'))) {
             $source = (string) $live->source;
         }
         $row ??= new AttendanceDay(['employee_id' => $employee['id'], 'date' => $date, 'version' => 0]);

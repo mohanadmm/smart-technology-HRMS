@@ -24,6 +24,14 @@ enum AttendanceRefusal: string
     case HrDay = 'hr_day';
     case OpenEarlierDay = 'open_earlier_day';
     case OpenDays = 'open_days';
+    // the site manager's day (PR #22 review): stable codes for each business refusal, never a field error
+    case ClearNotAllowed = 'clear_not_allowed';
+    case SiteNotForManager = 'site_not_for_manager';
+    case ArrivalRequired = 'arrival_required';
+    case DepartureOnly = 'departure_only';
+    case CrewOnOtherSite = 'crew_on_other_site';
+    case CrewHasDay = 'crew_has_day';
+    case CrewMovedHasDay = 'crew_moved_has_day';
 
     public function status(): int
     {
@@ -32,7 +40,8 @@ enum AttendanceRefusal: string
             self::PeriodLocked => 423,
             self::FutureDate, self::EmployeeNotActive, self::MissingDaysUnconfirmed, self::PeriodNotLocked, self::LeaveTypeMissing,
             self::TemplateMismatch, self::UnreadableFile, self::TooManyRows, self::SiteNotInReach, self::LeaveNeedsRequest,
-            self::OutsideManagerWindow, self::HrDay, self::OpenEarlierDay, self::OpenDays => 422,
+            self::OutsideManagerWindow, self::HrDay, self::OpenEarlierDay, self::OpenDays, self::ClearNotAllowed, self::SiteNotForManager,
+            self::ArrivalRequired, self::DepartureOnly, self::CrewOnOtherSite, self::CrewHasDay, self::CrewMovedHasDay => 422,
         };
     }
 }

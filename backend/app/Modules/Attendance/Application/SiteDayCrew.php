@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace App\Modules\Attendance\Application;
 
+use App\Modules\Attendance\Domain\AttendanceRefusal;
+use App\Modules\Attendance\Domain\AttendanceRefused;
 use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceDay;
 use App\Modules\Employees\Application\DayCrew;
 use App\Modules\Identity\Application\Rbac\PermissionHolders;
 use App\Modules\Notifications\Application\Notifier;
 use App\Modules\Sites\Application\SiteService;
-use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Validation\ValidationException;
 
 /**
- * The site manager's changes to today's day-labor crew on one of their sites (owner, 2026-11-04). Only today, Cairo; only day laborers;
+ * The site manager's changes to today's day-labor crew on one of their sites (owner, 2026-11-04; approved as built 2026-11-05). Only today, Cairo; only day laborers;
  * a laborer on another manager's site that day is HR's to move. Each change holds for today only: past days and
  * tomorrow's roster are unchanged, and removing someone is not an absence.
  */
@@ -28,78 +28,91 @@ final class SiteDayCrew
     ) {}
 
     /**
-     * Day laborers matching $search, each with where they are today and whether this site manager may add them here.
+     * The one day laborer whose code or full name is $search (DayCrew::find), with where they are today and whether this site
+     * manager may add them here; `ambiguous` when two share that name. A site manager never lists the company's laborers.
      *
-     * @return list<array<string, mixed>>
+     * @return array{match: ?array<string, mixed>, ambiguous: bool}
      */
     public function search(string $siteId, string $search, string $managerId): array
     {
         $mine = $this->mySites($siteId, $managerId);
-        $today = EffectiveDays::today();
-        $matches = $this->crew->matching($search, $today);
-        $names = Site::whereKey(array_filter(array_column($matches, 'site_id')))->get(['id', 'name_ar', 'name_en'])->keyBy('id');
+        $found = $this->crew->find($search, EffectiveDays::today());
+        $m = $found['match'];
+        if ($m === null) {
+            return ['match' => null, 'ambiguous' => $found['ambiguous']];
+        }
+        $at = $m['site_id'];
 
-        return array_map(function (array $m) use ($mine, $siteId, $names): array {
-            $site = $m['site_id'] === null ? null : $names[$m['site_id']] ?? null;
-
-            return [
+        return [
+            'match' => [
                 ...array_diff_key($m, ['site_id' => true]),
-                'site' => $site === null ? null : ['id' => (string) $site->id, 'name_ar' => (string) $site->name_ar, 'name_en' => $site->name_en],
-                'here' => $m['site_id'] === $siteId,
-                'can_add' => $m['site_id'] !== $siteId && ($m['site_id'] === null || in_array($m['site_id'], $mine, true)),
-            ];
-        }, $matches);
+                'site' => $at === null ? null : $this->sites->names([$at])[$at] ?? null,
+                'here' => $at === $siteId,
+                'can_add' => $at !== $siteId && ($at === null || in_array($at, $mine, true)),
+            ],
+            'ambiguous' => false,
+        ];
     }
 
     public function add(string $siteId, string $employeeId, string $managerId): void
     {
         $mine = $this->mySites($siteId, $managerId);
         $today = EffectiveDays::today();
-        if (! $this->crew->isLaborerOn($employeeId, $today)) {
-            throw new ModelNotFoundException;
-        }
-        $current = $this->crew->laborerSiteOn($employeeId, $today);
-        if ($current !== null && ! in_array($current, $mine, true)) {
-            throw ValidationException::withMessages(['employee_id' => __('attendance.crew.on_other_site')]);
-        }
-        // A day already saved at their other site would be left behind there.
-        if ($current !== null && $current !== $siteId && AttendanceDay::where(['employee_id' => $employeeId, 'date' => $today])->exists()) {
-            throw ValidationException::withMessages(['employee_id' => __('attendance.crew.moved_has_day')]);
-        }
-        $this->crew->setCrew($employeeId, $siteId, $today);
+        // The checks and the change in one transaction with the person locked, as SiteDay::save does (PR #22 review B4).
+        $this->crew->locked([$employeeId], function () use ($siteId, $employeeId, $mine, $today): void {
+            if (! $this->crew->isAddableOn($employeeId, $today)) {
+                throw new ModelNotFoundException;
+            }
+            $current = $this->crew->laborerSiteOn($employeeId, $today);
+            if ($current !== null && ! in_array($current, $mine, true)) {
+                throw self::refused(AttendanceRefusal::CrewOnOtherSite);
+            }
+            // A day already saved at their other site would be left behind there.
+            if ($current !== null && $current !== $siteId && AttendanceDay::where(['employee_id' => $employeeId, 'date' => $today])->exists()) {
+                throw self::refused(AttendanceRefusal::CrewMovedHasDay);
+            }
+            $this->crew->setCrew($employeeId, $siteId, $today);
+        });
     }
 
     public function remove(string $siteId, string $employeeId, string $managerId): void
     {
         $this->mySites($siteId, $managerId);
         $today = EffectiveDays::today();
-        if ($this->crew->laborerSiteOn($employeeId, $today) !== $siteId) {
-            throw new ModelNotFoundException;
-        }
-        if (AttendanceDay::where(['employee_id' => $employeeId, 'date' => $today])->exists()) {
-            throw ValidationException::withMessages(['employee_id' => __('attendance.crew.has_day')]);
-        }
-        $this->crew->setCrew($employeeId, null, $today);
+        $this->crew->locked([$employeeId], function () use ($siteId, $employeeId, $today): void {
+            if ($this->crew->laborerSiteOn($employeeId, $today) !== $siteId) {
+                throw new ModelNotFoundException;
+            }
+            if (AttendanceDay::where(['employee_id' => $employeeId, 'date' => $today])->exists()) {
+                throw self::refused(AttendanceRefusal::CrewHasDay);
+            }
+            $this->crew->setCrew($employeeId, null, $today);
+        });
     }
 
     /**
-     * @param  array{name_ar: string, phone?: ?string, daily_wage: string}  $data
+     * @param  array{name_ar: string, gender: string, phone?: ?string, daily_wage: string}  $data
      * @return array{id: string, code: int, name_ar: string, proposal_id: string}
      */
     public function propose(string $siteId, array $data, string $managerId): array
     {
         $this->mySites($siteId, $managerId);
         $today = EffectiveDays::today();
-        $made = $this->crew->propose(['name_ar' => $data['name_ar'], 'phone' => $data['phone'] ?? null], $siteId, $today, $data['daily_wage']);
+        $made = $this->crew->propose(['name_ar' => $data['name_ar'], 'gender' => $data['gender'], 'phone' => $data['phone'] ?? null], $siteId, $today, $data['daily_wage']);
         // A proposed wage is a request, so HR hears of it at once (CLAUDE.md: every manager action notifies HR).
-        $site = Site::find($siteId);
+        $site = $this->sites->names([$siteId])[$siteId] ?? null;
         foreach ($this->holders->userIds('employee.approve_wage.all') as $id) {
             $this->notifier->notifyOnce($id, 'wage_proposed', $today, [
-                'employee_id' => $made['id'], 'daily_wage' => $data['daily_wage'], 'site_name_ar' => (string) $site?->name_ar, 'site_name_en' => $site?->name_en,
+                'employee_id' => $made['id'], 'daily_wage' => $data['daily_wage'], 'site_name_ar' => (string) ($site['name_ar'] ?? ''), 'site_name_en' => $site['name_en'] ?? null,
             ], $made['proposal_id']);
         }
 
         return $made;
+    }
+
+    private static function refused(AttendanceRefusal $reason): AttendanceRefused
+    {
+        return AttendanceRefused::because($reason, [], [['field' => 'employee_id', 'code' => $reason->value, 'message' => __('attendance.refusal.'.$reason->value)]]);
     }
 
     /** @return list<string> the manager's sites; 404 unless $siteId is one of them */
