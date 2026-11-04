@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Route, Routes, useLocation } from 'react-router-dom'
+import { Link, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { json, mockFetch, pagination, renderWithAuth } from '@/test-utils'
 import { LeavePage } from './leave'
@@ -28,7 +28,7 @@ const page = (
     <Route path="employees/:id" element={<Opened />} />
   </Routes>
 )
-const render = () => renderWithAuth(page, ['leave.view.all'], { path: '/leave' })
+const render = () => renderWithAuth(page, ['leave.view.all'], { path: '/leave?tab=balances' })
 const lastQuery = () => new URL(String(vi.mocked(fetch).mock.calls.at(-1)![0]), 'http://x').searchParams
 const cellOf = (r: HTMLElement, header: string) => {
   const i = within(screen.getAllByRole('row')[0]).getAllByRole('columnheader').findIndex((h) => h.textContent === header)
@@ -128,4 +128,108 @@ test('no rows shows the empty state', async () => {
   mockFetch({ [BALANCES]: () => balances([]) })
   render()
   expect(await screen.findByText('لا توجد نتائج')).toBeInTheDocument()
+})
+
+const REQUESTS = 'GET /api/v1/leave/requests'
+const req = (id: string, status: string, p: object = {}) => ({
+  id, employee: { id: 'e1', code: 101, name_ar: 'سامي فؤاد', name_en: 'Sami Fouad' }, kind: 'annual', from_date: '2026-11-10', to_date: '2026-11-12', days: 3,
+  status, note: null, requested_by: { id: 'u2', name: 'مدير' }, created_at: '2026-11-04T08:00:00Z', version: 1, ...p,
+})
+const requests = (rows: object[]) => () => json(200, { data: rows, meta: { pagination: { ...pagination, total: rows.length } } })
+const at = (path: string, perms = ['leave.view.all', 'leave.request.all', 'leave.adjust.all']) => renderWithAuth(page, perms, { path })
+const requestsCall = () => vi.mocked(fetch).mock.calls.map(([u]) => new URL(String(u), 'http://x')).filter((u) => u.pathname === '/api/v1/leave/requests').at(-1)!.searchParams
+
+test('the Requests tab is the default and lists each request in the server order', async () => {
+  mockFetch({ [REQUESTS]: requests([req('r1', 'pending'), req('r2', 'approved', { kind: 'sick', from_date: '2026-10-01', to_date: '2026-10-02', days: 2 })]) })
+  at('/leave')
+  expect(await screen.findByRole('tab', { name: 'الطلبات' })).toHaveAttribute('aria-selected', 'true')
+  const rows = (await screen.findAllByText('سامي فؤاد')).map((n) => n.closest('tr')!)
+  expect(rows[0]).toHaveTextContent('101')
+  expect(rows[0]).toHaveTextContent('إجازة اعتيادية')
+  expect(rows[0]).toHaveTextContent('2026-11-10 – 2026-11-12')
+  expect(cellOf(rows[0], 'الأيام المحسوبة')).toHaveTextContent('3')
+  expect(rows[0]).toHaveTextContent('قيد المراجعة')
+  expect(rows[1]).toHaveTextContent('إجازة مرضية')
+  expect(rows[1]).toHaveTextContent('موافق عليه')
+  expect(requestsCall().get('year')).toBeNull() // every year: a pending request for next year must not hide
+})
+
+test('the status and year filters reach the request', async () => {
+  mockFetch({ [REQUESTS]: requests([req('r1', 'pending')]) })
+  const user = userEvent.setup()
+  at('/leave')
+  await screen.findByText('سامي فؤاد')
+  await user.selectOptions(screen.getByRole('combobox', { name: 'الحالة' }), 'pending')
+  await waitFor(() => expect(requestsCall().get('status')).toBe('pending'))
+  await user.selectOptions(screen.getByRole('combobox', { name: 'السنة' }), '2027')
+  await waitFor(() => expect(requestsCall().get('year')).toBe('2027'))
+  expect(requestsCall().get('status')).toBe('pending')
+})
+
+test('a link to one request opens the Requests tab with that row highlighted', async () => {
+  mockFetch({ [REQUESTS]: requests([req('r1', 'pending'), req('r2', 'pending', { from_date: '2026-12-01', to_date: '2026-12-01', days: 1 })]) })
+  at('/leave?tab=balances&request=r2')
+  expect(await screen.findByRole('tab', { name: 'الطلبات' })).toHaveAttribute('aria-selected', 'true')
+  const rows = (await screen.findAllByText('سامي فؤاد')).map((n) => n.closest('tr')!)
+  expect(rows[1]).toHaveAttribute('aria-current', 'true')
+  expect(rows[0]).not.toHaveAttribute('aria-current')
+})
+
+test('the Balances tab keeps the balances list', async () => {
+  mockFetch({ [BALANCES]: () => balances(), [REQUESTS]: requests([]) })
+  const user = userEvent.setup()
+  at('/leave')
+  await user.click(await screen.findByRole('tab', { name: 'الأرصدة' }))
+  expect(await screen.findByText('E-101')).toBeInTheDocument()
+})
+
+test('a manager with leave.request.own sees the request button', async () => {
+  mockFetch({ [REQUESTS]: requests([req('r1', 'pending')]) })
+  at('/leave', ['leave.view.own', 'leave.request.own', 'employee.view.own'])
+  await screen.findByText('سامي فؤاد')
+  expect(screen.getByRole('button', { name: 'طلب إجازة' })).toBeInTheDocument()
+})
+
+test('a request whose employee was deleted lists with a dash for the name and code', async () => {
+  mockFetch({ [REQUESTS]: requests([req('r1', 'pending', { employee: null })]) })
+  at('/leave')
+  const r = (await screen.findByText('إجازة اعتيادية')).closest('tr')!
+  expect(cellOf(r, 'الموظف')).toHaveTextContent('—')
+  expect(cellOf(r, 'الرقم الوظيفي')).toHaveTextContent('—')
+})
+
+test('a link to one request clears the status, year and page the list was left on', async () => {
+  mockFetch({ [REQUESTS]: () => json(200, { data: [req('r1', 'pending')], meta: { pagination: { ...pagination, total: 45, total_pages: 3, has_next_page: true } } }) })
+  const user = userEvent.setup()
+  renderWithAuth(<>{page}<Link to="/leave?request=r2">go</Link></>, ['leave.view.all'], { path: '/leave' })
+  await screen.findByText('سامي فؤاد')
+  await user.selectOptions(screen.getByRole('combobox', { name: 'الحالة' }), 'refused')
+  await user.selectOptions(screen.getByRole('combobox', { name: 'السنة' }), '2025')
+  await user.click(screen.getByRole('button', { name: 'التالي' }))
+  await waitFor(() => expect(requestsCall().get('page')).toBe('2'))
+  await user.click(screen.getByRole('link', { name: 'go' }))
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'الحالة' })).toHaveValue(''))
+  expect(screen.getByRole('combobox', { name: 'السنة' })).toHaveValue('')
+  expect(await screen.findByRole('button', { name: 'السابق' })).toBeDisabled()
+})
+
+test('without leave.request there is no request button', async () => {
+  mockFetch({ [REQUESTS]: requests([req('r1', 'pending')]) })
+  at('/leave', ['leave.view.all'])
+  await screen.findByText('سامي فؤاد')
+  expect(screen.queryByRole('button', { name: 'طلب إجازة' })).toBeNull()
+})
+
+test('the request button opens the request dialog', async () => {
+  mockFetch({ [REQUESTS]: requests([]), 'GET /api/v1/employees': () => json(200, { data: [], meta: { pagination } }) })
+  const user = userEvent.setup()
+  at('/leave')
+  await user.click(await screen.findByRole('button', { name: 'طلب إجازة' }))
+  expect(await screen.findByRole('dialog', { name: 'طلب إجازة' })).toBeInTheDocument()
+})
+
+test('no requests shows the empty state', async () => {
+  mockFetch({ [REQUESTS]: requests([]) })
+  at('/leave')
+  expect(await screen.findByText('لا توجد طلبات إجازة.')).toBeInTheDocument()
 })

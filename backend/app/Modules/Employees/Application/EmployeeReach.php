@@ -36,6 +36,12 @@ final class EmployeeReach
         );
     }
 
+    /** @return Builder<Employee> the ids of the employees $managerId reaches on $date, as a whereIn subquery */
+    public static function ids(string $managerId, string $date): Builder
+    {
+        return self::apply(Employee::query()->select('employees.id'), $managerId, $date);
+    }
+
     public static function reaches(string $employeeId, string $managerId, string $date): bool
     {
         return self::apply(Employee::query()->whereKey($employeeId), $managerId, $date)->exists();

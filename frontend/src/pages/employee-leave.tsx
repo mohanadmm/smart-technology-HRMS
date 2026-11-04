@@ -1,7 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query'
+import { CalendarPlus, ClipboardList } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Alert } from '@/components/common/Alert'
+import { DataList } from '@/components/common/DataList'
 import { StatRow } from '@/components/common/StatRow'
 import { cairoToday, type Errs, ErrorBanner, Field, FormDialog, type Row, TextField } from '@/components/form'
 import { SegmentedControl } from '@/components/layout/SegmentedControl'
@@ -10,15 +12,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/misc'
 import { useAuth } from '@/lib/auth'
-import { queryKey, useApi, useSave } from '@/lib/query'
+import { queryKey, useApi, useList, useSave } from '@/lib/query'
 import { cn } from '@/lib/utils'
+import { type LeaveRequest, useRequestColumns } from './leave'
+import { RequestDialog } from './leave-dialogs'
 
 /** `GET /employees/{id}/leave`: every number is the server's (docs/calculations.md §7); `balance` is null for a day laborer. */
 type Balance = { entitlement: number | null; casual_cap: number | null; used: number; casual_used: number; remaining: number | null; sick_days: number; unpaid_days: number }
 type Adjustment = { entitlement: number | null; opening_used: number; opening_casual_used: number; reason: string | null; version: number }
 type EmployeeLeave = { balance: Balance | null; adjustment: Adjustment | null }
 
-/** The year's leave balance; the year selector offers the current Cairo year and one either side, and starts on `initialYear` when it is one of them. */
+/** The year's leave balance and requests; the year selector offers the current Cairo year and one either side, and starts on `initialYear` when it is one of them. */
 export function Leave({ emp, initialYear }: { emp: Row; initialYear?: string | null }) {
   const { t } = useTranslation()
   const { can } = useAuth()
@@ -31,48 +35,75 @@ export function Leave({ emp, initialYear }: { emp: Row; initialYear?: string | n
   const b = data?.balance
 
   return (
-    <Card>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="flex-wrap items-center">
+          <CardTitle>{t('leave.balance')}</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <SegmentedControl
+              label={t('leave.year')}
+              value={String(year)}
+              onChange={(y) => setYear(Number(y))}
+              options={years.map((y) => ({ value: y, label: y, content: <span aria-hidden className="px-1.5">{y}</span> }))}
+            />
+            {can('leave.adjust') && ready && b && <AdjustDialog empId={emp.id} year={year} path={path} adjustment={data.adjustment} />}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <ErrorBanner err={err} shown={[]} />
+          {!(ready && data) ? (
+            !err && <Skeleton className="h-48" />
+          ) : (
+            b && (
+              <>
+                {b.entitlement === null && <Alert tone="warning">{t('leave.noHireDate')}</Alert>}
+                <StatRow
+                  layout="strip"
+                  label={t('leave.balance')}
+                  hero={{
+                    label: t('leave.remaining'),
+                    // ltr: in Arabic text a leading minus would otherwise land after the digits
+                    value: b.remaining === null ? '—' : <bdi dir="ltr" className={cn(b.remaining < 0 && 'text-destructive')}>{b.remaining}</bdi>,
+                    detail: data.adjustment?.reason && t('leave.adjusted', { reason: data.adjustment.reason }),
+                  }}
+                  stats={[
+                    { label: t('leave.entitlement'), value: b.entitlement ?? '—' },
+                    { label: t('leave.used'), value: b.used },
+                    { label: t('leave.casualUsed'), value: b.casual_cap === null ? b.casual_used : <span className={cn(b.casual_used > b.casual_cap && 'text-destructive')}>{t('leave.ofCap', { used: b.casual_used, cap: b.casual_cap })}</span> },
+                    { label: t('leave.sickDays'), value: b.sick_days },
+                    { label: t('leave.unpaidDays'), value: b.unpaid_days },
+                  ]}
+                />
+              </>
+            )
+          )}
+        </CardContent>
+      </Card>
+      <Requests emp={emp} year={year} />
+    </div>
+  )
+}
+
+/** `GET /leave/requests?employee_id=&year=`: one employee's requests of the year, and «طلب إجازة» for this employee. */
+function Requests({ emp, year }: { emp: Row; year: number }) {
+  const { t } = useTranslation()
+  const { can } = useAuth()
+  const [asking, setAsking] = useState(false)
+  // ponytail: one page of 100; a year holds far fewer requests for one employee
+  const { rows, err, loading } = useList(`/leave/requests?${new URLSearchParams({ employee_id: emp.id, year: String(year), per_page: '100' })}`)
+  const { kind, fields, status } = useRequestColumns()
+  return (
+    <Card className="overflow-hidden">
       <CardHeader className="flex-wrap items-center">
-        <CardTitle>{t('leave.balance')}</CardTitle>
-        <div className="flex flex-wrap items-center gap-2">
-          <SegmentedControl
-            label={t('leave.year')}
-            value={String(year)}
-            onChange={(y) => setYear(Number(y))}
-            options={years.map((y) => ({ value: y, label: y, content: <span aria-hidden className="px-1.5">{y}</span> }))}
-          />
-          {can('leave.adjust') && ready && b && <AdjustDialog empId={emp.id} year={year} path={path} adjustment={data.adjustment} />}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <ErrorBanner err={err} shown={[]} />
-        {!(ready && data) ? (
-          !err && <Skeleton className="h-48" />
-        ) : (
-          b && (
-            <>
-              {b.entitlement === null && <Alert tone="warning">{t('leave.noHireDate')}</Alert>}
-              <StatRow
-                layout="strip"
-                label={t('leave.balance')}
-                hero={{
-                  label: t('leave.remaining'),
-                  // ltr: in Arabic text a leading minus would otherwise land after the digits
-                  value: b.remaining === null ? '—' : <bdi dir="ltr" className={cn(b.remaining < 0 && 'text-destructive')}>{b.remaining}</bdi>,
-                  detail: data.adjustment?.reason && t('leave.adjusted', { reason: data.adjustment.reason }),
-                }}
-                stats={[
-                  { label: t('leave.entitlement'), value: b.entitlement ?? '—' },
-                  { label: t('leave.used'), value: b.used },
-                  { label: t('leave.casualUsed'), value: b.casual_cap === null ? b.casual_used : <span className={cn(b.casual_used > b.casual_cap && 'text-destructive')}>{t('leave.ofCap', { used: b.casual_used, cap: b.casual_cap })}</span> },
-                  { label: t('leave.sickDays'), value: b.sick_days },
-                  { label: t('leave.unpaidDays'), value: b.unpaid_days },
-                ]}
-              />
-            </>
-          )
+        <CardTitle>{t('leave.requests.list')}</CardTitle>
+        {can('leave.request') && (
+          <Button type="button" variant="outline" onClick={() => setAsking(true)}>
+            <CalendarPlus aria-hidden /> {t('leave.request.open')}
+          </Button>
         )}
-      </CardContent>
+      </CardHeader>
+      <RequestDialog open={asking} onOpenChange={setAsking} employee={emp} />
+      <DataList<LeaveRequest> label={t('leave.requests.list')} rows={rows as LeaveRequest[]} rowKey={(r) => r.id} loading={loading} error={err} empty={{ icon: ClipboardList, title: t('leave.requests.empty') }} title={kind} fields={fields} status={status} />
     </Card>
   )
 }

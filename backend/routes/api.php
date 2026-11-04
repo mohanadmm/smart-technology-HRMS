@@ -11,6 +11,7 @@ use App\Modules\Identity\Presentation\AuthController;
 use App\Modules\Identity\Presentation\RoleController;
 use App\Modules\Identity\Presentation\UserController;
 use App\Modules\Leave\Presentation\LeaveBalanceController;
+use App\Modules\Leave\Presentation\LeaveRequestController;
 use App\Modules\Notifications\Presentation\NotificationController;
 use App\Modules\Settings\Presentation\SettingController;
 use App\Modules\Sites\Presentation\FareController;
@@ -156,4 +157,10 @@ Route::middleware('auth')->group(function (): void {
     Route::put('employees/{employee}/leave/{year}', [LeaveBalanceController::class, 'adjust'])->middleware(['permission:leave.adjust', 'employee.scope'])
         ->whereUuid('employee')->where('year', '[0-9]{4}');
     Route::get('leave/balances', [LeaveBalanceController::class, 'index'])->middleware('permission:leave.view');
+
+    Route::prefix('leave/requests')->controller(LeaveRequestController::class)->group(function (): void {
+        Route::get('/', 'index')->middleware('permission:leave.view');
+        Route::get('preview', 'preview')->middleware('permission:leave.request');
+        Route::post('/', 'store')->middleware('permission:leave.request');
+    });
 });

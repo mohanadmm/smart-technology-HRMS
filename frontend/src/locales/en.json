@@ -759,6 +759,11 @@
       "line": "One year since <name/> (<code/>) was hired",
       "unknown": "One year since an employee was hired",
       "hired": "Hired {{date}}"
+    },
+    "leaveRequested": {
+      "line": "New leave request: <name/> (<code/>)",
+      "unknown": "New leave request",
+      "detail": "{{kind}}: {{from}} – {{to}}"
     }
   },
   "time": {
@@ -815,6 +820,45 @@
       "openingCasualUsed": "Casual days used before the system",
       "reason": "Reason for the adjustment",
       "reasonRequired": "Write the reason for the adjustment."
+    },
+    "tab": {
+      "requests": "Requests",
+      "balances": "Balances"
+    },
+    "status": {
+      "pending": "Pending",
+      "escalated": "Escalated to the CEO",
+      "approved": "Approved",
+      "refused": "Refused",
+      "cancelled": "Cancelled"
+    },
+    "requests": {
+      "description": "Leave requests, those awaiting a decision first",
+      "list": "Leave requests",
+      "empty": "No leave requests.",
+      "kind": "Leave type",
+      "dates": "Dates",
+      "range": "{{from}} – {{to}}",
+      "days": "Counted days",
+      "allStatuses": "All statuses",
+      "allYears": "All years"
+    },
+    "request": {
+      "open": "Request leave",
+      "title": "Leave request",
+      "pick": "Choose the employee",
+      "kind": "Leave type",
+      "from": "From",
+      "to": "To",
+      "note": "Note",
+      "submit": "Send request",
+      "sent": "Leave request sent.",
+      "days_one": "{{count}} day counted",
+      "days_other": "{{count}} days counted",
+      "excluded": "(weekly days off and official holidays are not counted)",
+      "after": ", balance after: <n/>",
+      "unpaid_one": "{{count}} day unpaid",
+      "unpaid_other": "{{count}} days unpaid"
     }
   }
 }
