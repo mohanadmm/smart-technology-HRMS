@@ -296,7 +296,7 @@ function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved }
 
   return (
     <li className={cn('rounded-xl border bg-card p-3 shadow-1', draft !== null && changed(r, draft) && 'border-s-4 border-s-warning')}>
-      <div role="group" aria-label={name} className="grid gap-2 lg:grid-cols-[minmax(10rem,1fr)_minmax(16rem,20rem)_minmax(10rem,13rem)_minmax(10rem,13rem)] lg:items-center lg:gap-3">
+      <div role="group" aria-label={name} className="grid gap-2 xl:grid-cols-[minmax(10rem,1fr)_minmax(16rem,20rem)_minmax(10rem,13rem)_minmax(10rem,13rem)] xl:items-center xl:gap-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="font-semibold"><bdi>{name}</bdi></div>
@@ -332,7 +332,7 @@ function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved }
           </DropdownMenu>
         </div>
         {present ? (
-          <div className="grid grid-cols-2 gap-2 lg:col-span-2 lg:gap-3">
+          <div className="grid grid-cols-2 gap-2 xl:col-span-2 xl:gap-3">
             <div className="grid content-start gap-1">
               <span aria-hidden className="text-[12px] text-muted-foreground">{t('siteDay.arrival')}</span>
               <TimeInput label={t('siteDay.arrival')} aria-label={t('siteDay.arrivalOf', { name })} value={draft?.in_time ?? ''} disabled={off} onChange={time('in_time')} quietHint />
@@ -347,7 +347,7 @@ function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved }
               )}
             </div>
           </div>
-        ) : <div className="hidden lg:col-span-2 lg:block" />}
+        ) : <div className="hidden xl:col-span-2 xl:block" />}
       </div>
       {removeErr !== undefined && <div className="mt-2"><ErrorBanner err={removeErr} shown={[]} /></div>}
     </li>
