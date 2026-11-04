@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/** @property string|null $gender null only for a day laborer a site manager added, until HR completes the record */
 class Employee extends Model
 {
     use Audited;

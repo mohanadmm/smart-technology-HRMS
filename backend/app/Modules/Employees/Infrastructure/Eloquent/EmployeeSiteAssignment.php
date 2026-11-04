@@ -10,6 +10,7 @@ use App\Support\Database\HasStandardColumns;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/** @property string|null $site_id null: on no site from effective_from (removed from a day-labor crew) */
 class EmployeeSiteAssignment extends Model
 {
     use Audited;

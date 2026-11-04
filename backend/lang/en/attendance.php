@@ -19,6 +19,10 @@ return [
         'leave_from_request' => 'This day is annual, casual or unpaid leave; only HR can change it.',
         'leave_days_blocked' => 'A work day or office attendance is already recorded on this date.',
     ],
+    'crew' => [
+        'on_other_site' => 'This day laborer is on another site manager\'s site; ask HR to move them.',
+        'has_day' => 'They have a day recorded today; clear it first, then remove them from today\'s crew.',
+    ],
     'rule' => [
         'site_not_allowed_for_manager' => 'Choose this site, or absent, sick, rest or other.',
         'field_not_allowed' => 'This field does not apply to this day.',

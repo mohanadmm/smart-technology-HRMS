@@ -15,7 +15,7 @@ final class EmployeeRules
     private const MONEY = ['nullable', 'regex:/^\d{1,12}(\.\d{1,6})?$/D'];
 
     /** An Egyptian mobile number, kept as text so its leading 0 survives (owner, 2026-11-03). */
-    private const MOBILE = 'regex:/^01[0125]\d{8}$/D';
+    public const MOBILE = 'regex:/^01[0125]\d{8}$/D';
 
     /** @return array<string, array<mixed>> */
     public static function store(): array
