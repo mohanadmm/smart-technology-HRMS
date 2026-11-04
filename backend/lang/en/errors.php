@@ -11,6 +11,7 @@ return [
     'pay_field_required' => ':field is required for :type.',
     'no_type_on_date' => 'The employee has no type in force on this date.',
     'duplicate_date' => 'A record already exists on this date.',
+    'no_leave_balance' => 'Day laborers have no leave balance.',
     'not_a_worker' => 'Only workers have a home site; the employee is not a worker on this date.',
     'no_previous_site' => 'There is no previous site to return to.',
     'later_move_inside' => 'Another move lies between the move date and the return date.',
