@@ -351,6 +351,25 @@ test('an engineer at another site shows that site', async () => {
   expect(within(group('Engineer-2')).getByText('في موقع آخر')).toBeInTheDocument()
 })
 
+test('request-only leave is never offered; a day already stored with it shows its name and nothing pressed', async () => {
+  // annual, casual and unpaid come from an approved leave request: a site manager's write to them is 422 leave_needs_request
+  routes([S1], { s1: [
+    row('w1', 'Worker-1', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 'leave-annual', leave_code: 'annual' }),
+    row('w2', 'Worker-2', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 'leave-casual', leave_code: 'casual' }),
+    row('w3', 'Worker-3', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 'leave-unpaid', leave_code: 'unpaid' }),
+  ] })
+  render('/site-day?site=s1')
+  await enter()
+  const list = await screen.findByRole('list', { name: 'العاملون بالموقع' })
+  for (const [name, leave] of [['Worker-1', 'إجازة اعتيادية'], ['Worker-2', 'إجازة عارضة'], ['Worker-3', 'إجازة بدون أجر']]) {
+    const g = within(list).getByRole('group', { name })
+    expect(within(g).getByText(leave)).toBeInTheDocument()
+    expect(within(g).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['حاضر', 'غياب', 'مرضي', 'أنواع إجازات أخرى']) // «أنواع إجازات أخرى» is disabled until the day editor lands; it must leave these three out too
+    expect(g.querySelector('[aria-pressed="true"]')).toBeNull()
+  }
+  expect(screen.queryByRole('button', { name: /اعتيادية|عارضة|بدون أجر/ })).toBeNull()
+})
+
 test('no sites shows the empty state with HR as the contact', async () => {
   const { siteDay } = routes([], {})
   render()
