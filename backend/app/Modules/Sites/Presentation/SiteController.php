@@ -60,11 +60,16 @@ final class SiteController
         return ApiEnvelope::single($request, $this->sites->addRule($site, $data), 201);
     }
 
+    public function managerCandidates(Request $request): JsonResponse
+    {
+        return ApiEnvelope::single($request, $this->sites->managerCandidates());
+    }
+
     public function managers(Request $request, string $site): JsonResponse
     {
         $data = $request->validate([
             'manager_ids' => ['present', 'array'],
-            'manager_ids.*' => ['uuid', Rule::exists('users', 'id')->where('is_active', true)->whereNull('deleted_at')],
+            'manager_ids.*' => ['uuid', Rule::in($this->sites->managerCandidateIds())],
         ]);
 
         return ApiEnvelope::single($request, $this->sites->setManagers($site, $data['manager_ids']));

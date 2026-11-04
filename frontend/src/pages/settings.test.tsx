@@ -273,7 +273,7 @@ test('site managers dialog pre-checks current managers and saves the ticked ids'
   mockFetch({
     'GET /api/v1/sites': list([sites[0]]),
     'GET /api/v1/sites/s1': () => json(200, { data: { ...sites[0], managers: [{ id: 'u1', name: 'خالد' }], allowance_rules: [] } }),
-    'GET /api/v1/users': list([{ id: 'u1', name: 'خالد', is_active: true }, { id: 'u2', name: 'سامي', is_active: true }, { id: 'u3', name: 'معطل', is_active: false }]),
+    'GET /api/v1/sites/manager-candidates': () => json(200, { data: [{ id: 'u1', name: 'خالد' }, { id: 'u2', name: 'سامي' }] }),
     'PUT /api/v1/sites/s1/managers': put,
   })
   renderWithAuth(<SettingsPage />, [...MANAGE, 'site.assign_manager.all'])
@@ -284,8 +284,9 @@ test('site managers dialog pre-checks current managers and saves the ticked ids'
   await user.click(screen.getByRole('checkbox', { name: 'سامي' }))
   await user.click(screen.getByRole('button', { name: 'حفظ' }))
   expect(body(put)).toEqual({ manager_ids: ['u1', 'u2'] })
-  expect(screen.queryByRole('checkbox', { name: 'معطل' })).toBeNull() // only active accounts can manage a site
-  expect(urlWith('/users')).toBe('/api/v1/users?per_page=100') // the lookup every page shares
+  // The server offers only the accounts that can manage a site (their role sees its own sites), never the whole users list.
+  expect(urlWith('/manager-candidates')).toBe('/api/v1/sites/manager-candidates')
+  expect(vi.mocked(fetch).mock.calls.some(([u]) => String(u).includes('/users'))).toBe(false)
 })
 
 test('a work site lists its workers today', async () => {
@@ -476,7 +477,7 @@ test('the managers dialog ticks the managers as they are now, not as cached', as
   mockFetch({
     'GET /api/v1/sites': list([sites[0]]),
     'GET /api/v1/sites/s1': () => json(200, { data: { ...sites[0], managers, allowance_rules: [] } }),
-    'GET /api/v1/users': list([{ id: 'u1', name: 'خالد', is_active: true }, { id: 'u2', name: 'سامي', is_active: true }]),
+    'GET /api/v1/sites/manager-candidates': () => json(200, { data: [{ id: 'u1', name: 'خالد' }, { id: 'u2', name: 'سامي' }] }),
   })
   renderWithAuth(<SettingsPage />, [...MANAGE, 'site.assign_manager.all'])
   const open = async () => { await rowMenu('موقع أ'); await user.click(await screen.findByRole('menuitem', { name: 'مديرو الموقع' })) }
