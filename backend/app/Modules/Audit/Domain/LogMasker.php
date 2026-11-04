@@ -42,7 +42,8 @@ final class LogMasker
 
     public static function text(string $text): string
     {
-        return (string) preg_replace('/\d{7,}/', self::MASK, (string) mb_scrub(str_replace("\0", '', $text), 'UTF-8'));
+        // Western, Arabic-Indic and Persian digits, mixed in one run too: HR types on Arabic keyboards. `/u` is safe after mb_scrub.
+        return (string) preg_replace('/[0-9٠-٩۰-۹]{7,}/u', self::MASK, (string) mb_scrub(str_replace("\0", '', $text), 'UTF-8'));
     }
 
     /**

@@ -47,6 +47,13 @@ class LogMaskerTest extends TestCase
         $this->assertSame($kept, LogMasker::data($kept));
     }
 
+    public function test_arabic_indic_digit_runs_are_masked(): void
+    {
+        $this->assertSame(['search' => '[masked]'], LogMasker::data(['search' => '٢٩٨٠١٠١١٢٣٤٥٦٧']));
+        $this->assertSame(['q' => 'id [masked]'], LogMasker::data(['q' => 'id ۰۱٠12345']));
+        $this->assertSame(['code' => '١٢٣٤٥٦'], LogMasker::data(['code' => '١٢٣٤٥٦']));
+    }
+
     public function test_keys_are_cleaned_and_shape_masked(): void
     {
         // PHP turns the numeric key into an int; it must still not reach the log.
