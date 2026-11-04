@@ -45,7 +45,8 @@
     "settings": "Settings",
     "attendance": "Attendance",
     "siteDay": "Site attendance",
-    "leave": "Leave"
+    "leave": "Leave",
+    "logs": "System logs"
   },
   "toggle": {
     "language": "Language",
@@ -57,7 +58,8 @@
     "employees": "Employees",
     "accounts": "User accounts",
     "roles": "Roles and permissions",
-    "audit": "Audit log"
+    "audit": "Audit log",
+    "logs": "System logs"
   },
   "notFound": {
     "title": "Page not found",
@@ -341,7 +343,8 @@
       "attendance": "Attendance",
       "holiday": "Official holidays",
       "employee_document": "Employee documents",
-      "leave": "Leave"
+      "leave": "Leave",
+      "system_log": "System logs"
     },
     "action": {
       "view": "View",
@@ -378,6 +381,9 @@
       "decide": "Leave: decide requests",
       "decide_escalated": "Leave: decide requests escalated to the CEO",
       "adjust": "Leave: adjust balance"
+    },
+    "system_log": {
+      "view": "System logs: view"
     }
   },
   "audit": {
@@ -930,5 +936,28 @@
         "done": "Request escalated to the CEO."
       }
     }
+  },
+  "logs": {
+    "subtitle": "Every request the system receives, with its response status, duration and the account that sent it. Sensitive values show masked.",
+    "time": "Date and time",
+    "request": "Request",
+    "status": "Status",
+    "duration": "Duration (ms)",
+    "account": "Account",
+    "from": "From",
+    "to": "To",
+    "method": "Method",
+    "path": "Path",
+    "statusFilter": {
+      "failed": "Failed (400 and above)",
+      "server": "Server errors (500 and above)"
+    },
+    "details": "View details",
+    "ms": "{{n}} ms",
+    "requestId": "Request ID",
+    "route": "Route",
+    "query": "Query parameters",
+    "request_body": "Request body",
+    "response_body": "Response body"
   }
 }

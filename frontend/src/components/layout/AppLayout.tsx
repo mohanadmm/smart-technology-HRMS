@@ -1,4 +1,5 @@
 import {
+  Activity,
   CalendarCheck,
   CalendarDays,
   ChevronDown,
@@ -51,6 +52,7 @@ export const NAV: { group: string; items: { path: string; key: string; icon: Luc
       { path: '/console/accounts', key: 'nav.accounts', icon: UserCog, abilities: ['user.view'] },
       { path: '/console/roles', key: 'nav.roles', icon: ShieldCheck, abilities: ['role.view'] },
       { path: '/console/audit', key: 'nav.audit', icon: ScrollText, abilities: ['audit_log.view'] },
+      { path: '/console/logs', key: 'nav.logs', icon: Activity, abilities: ['system_log.view'] },
     ],
   },
 ]

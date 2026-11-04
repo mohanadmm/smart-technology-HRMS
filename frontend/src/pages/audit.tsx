@@ -21,7 +21,7 @@ const PER_PAGE = 20
 const EVENT_VARIANT: Record<string, BadgeVariant> = { CREATED: 'success', UPDATED: 'info', DELETED: 'danger' }
 
 /** A string shows as is (an empty one as ""), a missing side or null as a dash, anything else (objects, arrays, numbers) as indented JSON text. */
-const show = (v: unknown) => (v == null ? '—' : typeof v === 'string' ? v || '""' : JSON.stringify(v, null, 2))
+export const show = (v: unknown) => (v == null ? '—' : typeof v === 'string' ? v || '""' : JSON.stringify(v, null, 2))
 
 function useLabels() {
   const { t } = useTranslation()
@@ -72,7 +72,7 @@ function Details({ entry, onClose }: { entry: Row; onClose: () => void }) {
   )
 }
 
-function Actor({ user }: { user?: Row | null }) {
+export function Actor({ user }: { user?: Row | null }) {
   return user ? (
     <span className="inline-flex items-center gap-2">
       <UserAvatar name={user.name} size="sm" />
