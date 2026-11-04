@@ -183,8 +183,8 @@ final class AttendanceDays
 
     /**
      * The leave workflow's write (leave spec, Workflow Approve): source `leave`, a future date allowed, the period lock and row lock kept,
-     * no reach check (deciders hold `.all`). A stored leave day is replaced, keeping its note and advance (P28); a work day or office
-     * present refuses (`leave_days_blocked`).
+     * no reach check (deciders hold `.all`). A stored leave day is replaced, keeping its note and advance (P28), and its source when it
+     * already holds this leave type; a work day or office present refuses (`leave_days_blocked`).
      */
     public function writeLeaveDay(string $employeeId, string $date, string $leaveSiteId): void
     {
@@ -299,9 +299,10 @@ final class AttendanceDays
             $values[$m] = $values[$m] === null ? null : (int) $values[$m];
         }
 
-        // A leave-written day re-saved on the same leave type stays `leave`, so cancelling the request still clears it.
-        if ($live?->source === 'leave' && $live->site_id === $siteId) {
-            $source = 'leave';
+        // A leave-written day re-saved on the same leave type stays `leave`, so cancelling the request still clears it; a leave day written
+        // over HR's own day of the same leave type keeps HR's source, so that cancel never clears it.
+        if ($live !== null && $live->site_id === $siteId && ($live->source === 'leave' || $leaveDay)) {
+            $source = (string) $live->source;
         }
         $row ??= new AttendanceDay(['employee_id' => $employee['id'], 'date' => $date, 'version' => 0]);
         $row->fill([...$values, 'site_id' => $siteId, 'source' => $source, 'deleted_at' => null]);

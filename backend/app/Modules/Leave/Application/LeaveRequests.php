@@ -59,7 +59,7 @@ final class LeaveRequests
     public function preview(string $employeeId, LeaveKind $kind, string $from, string $to, ?string $ownerId): array
     {
         $dates = $this->check($employeeId, $from, $to, $ownerId);
-        $balance = $this->balances->forEmployee($employeeId, (int) substr($from, 0, 4))['balance'];
+        $balance = $this->balances->forEmployee($employeeId, (int) substr($from, 0, 4), $dates)['balance'];
 
         return ['dates' => $dates, 'days' => count($dates), 'balance' => $balance, ...LeaveBalance::split($kind, count($dates), $balance)];
     }
@@ -171,7 +171,7 @@ final class LeaveRequests
         return $this->detail(DB::transaction(function () use ($id, $version, $reason, $by): LeaveRequest {
             $request = $this->forDecision($id, $version, $by, true);
             $request->fill(['status' => LeaveStatus::Escalated->value, 'decision_reason' => $reason, 'version' => $request->version + 1])->save();
-            foreach ($this->holders->userIds('leave.decide_escalated.all') as $userId) {
+            foreach (array_diff($this->holders->userIds('leave.decide_escalated.all'), [(string) $by->getAuthIdentifier()]) as $userId) {
                 $this->notifier->notifyOnce($userId, 'leave_escalated', now('Africa/Cairo')->toDateString(), $this->notice($request), (string) $request->id);
             }
 
@@ -182,13 +182,13 @@ final class LeaveRequests
     /**
      * The request locked for a decision. Permission follows its status: pending (or any escalate) needs leave.decide, escalated needs
      * leave.decide_escalated, and a decided request needs either, so only a decider learns it is a conflict. Both are `.all` only.
+     * The permission is checked on the unlocked status, so a caller without it never waits on or takes the locks; a status changed
+     * before the lock is a conflict.
      */
     private function forDecision(string $id, int $version, Authenticatable $by, bool $pendingOnly): LeaveRequest
     {
-        $employeeId = LeaveRequest::whereKey($id)->value('employee_id') ?? throw new ModelNotFoundException;
-        LeaveRequestLock::forEmployee((string) $employeeId);
-        $request = LeaveRequest::whereKey($id)->lockForUpdate()->firstOrFail();
-        $status = LeaveStatus::from((string) $request->status);
+        $read = LeaveRequest::whereKey($id)->first(['employee_id', 'status']) ?? throw new ModelNotFoundException;
+        $status = LeaveStatus::from((string) $read->status);
         $abilities = match (true) {
             $pendingOnly, $status === LeaveStatus::Pending => ['leave.decide'],
             $status === LeaveStatus::Escalated => ['leave.decide_escalated'],
@@ -197,8 +197,10 @@ final class LeaveRequests
         if (array_filter($abilities, fn (string $a) => $this->authorize->decide($by, $a)->allows(Scope::All)) === []) {
             throw AuthorizationRefused::of($abilities[0]);
         }
+        LeaveRequestLock::forEmployee((string) $read->employee_id);
+        $request = LeaveRequest::whereKey($id)->lockForUpdate()->firstOrFail();
         $open = $pendingOnly ? [LeaveStatus::Pending] : [LeaveStatus::Pending, LeaveStatus::Escalated];
-        if (! in_array($status, $open, true) || $request->version !== $version) {
+        if ($request->status !== $status->value || ! in_array($status, $open, true) || $request->version !== $version) {
             throw new ConcurrencyConflict;
         }
 
@@ -241,7 +243,10 @@ final class LeaveRequests
         $employee = $this->roster->find($employeeId) ?? throw new ModelNotFoundException;
         $from = (string) $request->from_date;
         $dates = $this->days->dates($employee, $from, (string) $request->to_date);
-        $balance = $this->balances->forEmployee($employeeId, (int) substr($from, 0, 4))['balance'];
+        // The request's own dates are left out: approval overwrites whatever leave day they hold.
+        // ponytail: nothing serializes this read against a grid, sheet or import write of annual/casual days (only the employee's leave
+        // request lock is held), so a racing write can overbook by its days; take an employee-wide attendance lock if HR reports one.
+        $balance = $this->balances->forEmployee($employeeId, (int) substr($from, 0, 4), $dates)['balance'];
 
         return [
             'dates' => $dates, 'days' => count($dates), 'balance' => $balance, ...LeaveBalance::split(LeaveKind::from((string) $request->kind), count($dates), $balance),

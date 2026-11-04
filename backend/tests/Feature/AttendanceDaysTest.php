@@ -315,4 +315,14 @@ class AttendanceDaysTest extends TestCase
             ->assertJsonPath('data.source', 'leave')->assertJsonPath('data.note', 'n');
         $this->putDay($eng, '2026-10-01', ['version' => 2, 'site_id' => $this->site])->assertOk()->assertJsonPath('data.source', 'entered');
     }
+
+    public function test_a_leave_day_over_the_same_leave_type_keeps_hrs_source(): void
+    {
+        $eng = $this->employee('engineer');
+        $this->putDay($eng, '2026-10-01', ['site_id' => $this->leave['annual']])->assertOk();
+
+        app(AttendanceDays::class)->writeLeaveDay($eng, '2026-10-01', $this->leave['annual']);
+
+        $this->getJson("/api/v1/attendance/days/{$eng}/2026-10-01")->assertJsonPath('data.source', 'entered')->assertJsonPath('data.version', 1);
+    }
 }

@@ -27,11 +27,17 @@ final class LeaveBalances
 
     public function __construct(private readonly EmployeeRoster $roster, private readonly BusinessRules $rules) {}
 
-    /** @return array{employee_id: string, year: int, type: ?string, hire_date: ?string, balance: ?array<string, ?int>, adjustment: ?array<string, mixed>} */
-    public function forEmployee(string $employeeId, int $year): array
+    /**
+     * $exceptDates leaves the days stored on those dates out of the counts: a leave request's split reads the balance without its own dates,
+     * which its approval overwrites.
+     *
+     * @param  list<string>  $exceptDates
+     * @return array{employee_id: string, year: int, type: ?string, hire_date: ?string, balance: ?array<string, ?int>, adjustment: ?array<string, mixed>}
+     */
+    public function forEmployee(string $employeeId, int $year, array $exceptDates = []): array
     {
         $employee = $this->roster->find($employeeId) ?? throw new ModelNotFoundException;
-        $read = $this->read([$employee], $year)[$employeeId];
+        $read = $this->read([$employee], $year, $exceptDates)[$employeeId];
 
         return ['employee_id' => $employeeId, 'year' => $year, 'type' => $read['type'], 'hire_date' => $employee['hire_date'], 'balance' => $read['balance'], 'adjustment' => $read['adjustment']];
     }
@@ -100,12 +106,13 @@ final class LeaveBalances
      * One counts query and one adjustments query whatever the number of employees.
      *
      * @param  list<array<string, mixed>>  $employees  EmployeeRoster rows
+     * @param  list<string>  $exceptDates
      * @return array<string, array{type: ?string, balance: ?array<string, ?int>, adjustment: ?array<string, mixed>}> keyed by employee id
      */
-    private function read(array $employees, int $year): array
+    private function read(array $employees, int $year, array $exceptDates = []): array
     {
         $ids = array_map(fn (array $e) => (string) $e['id'], $employees);
-        $counts = $this->counts($ids, $year);
+        $counts = $this->counts($ids, $year, $exceptDates);
         $adjustments = LeaveYearAdjustment::whereIn('employee_id', $ids)->where('year', $year)->get()->keyBy('employee_id');
         $rules = $this->rules->all();
 
@@ -145,13 +152,14 @@ final class LeaveBalances
 
     /**
      * @param  list<string>  $ids
+     * @param  list<string>  $exceptDates
      * @return array<string, array{annual: int, casual: int, sick: int, unpaid: int}> keyed by employee id
      */
-    private function counts(array $ids, int $year): array
+    private function counts(array $ids, int $year, array $exceptDates): array
     {
         $found = DB::table('attendance_days as d')->join('sites as s', 's.id', '=', 'd.site_id')
             ->whereIn('d.employee_id', $ids)->whereNull('d.deleted_at')
-            ->whereBetween('d.date', ["{$year}-01-01", "{$year}-12-31"])
+            ->whereBetween('d.date', ["{$year}-01-01", "{$year}-12-31"])->whereNotIn('d.date', $exceptDates)
             ->where('s.kind', SiteKind::Leave->value)->whereIn('s.leave_code', array_map(fn (LeaveCode $c) => $c->value, self::COUNTED))
             ->groupBy('d.employee_id', 's.leave_code')->selectRaw("d.employee_id || ':' || s.leave_code as k, count(*) as n")->pluck('n', 'k');
         $n = fn (string $id, LeaveCode $code) => (int) ($found["{$id}:{$code->value}"] ?? 0);

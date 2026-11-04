@@ -439,6 +439,33 @@ class LeaveRequestsTest extends TestCase
         $this->assertSame(['2026-11-02' => 'sick/leave', '2026-11-03' => 'sick/leave', '2026-11-04' => 'sick/leave'], $this->stored($new));
     }
 
+    public function test_the_split_leaves_out_leave_days_already_stored_on_the_requests_own_dates(): void
+    {
+        $e = $this->employee('engineer', '2026-07-01');   // pro-rata entitlement 5
+        $annual = $this->leaveTypes()['annual'];
+        foreach (['2026-10-01', '2026-10-03', '2026-10-04', '2026-10-12', '2026-10-13'] as $date) {
+            app(AttendanceDays::class)->save($e, $date, ['site_id' => $annual]);
+        }
+        $this->preview($e, '2026-10-12', '2026-10-15')->assertOk()
+            ->assertJsonPath('data.balance.remaining', 2)->assertJsonPath('data.keep', 2)->assertJsonPath('data.unpaid', 2)->assertJsonPath('data.remaining_after', 0);
+        $id = $this->submit($e, '2026-10-12', '2026-10-15')->json('data.id');
+        $this->getJson("/api/v1/leave/requests/{$id}")->assertOk()
+            ->assertJsonPath('data.approval.balance.remaining', 2)->assertJsonPath('data.approval.keep', 2)->assertJsonPath('data.approval.remaining_after', 0);
+
+        $this->decide($id, 'approve')->assertOk();
+        $this->assertSame(
+            ['2026-10-12' => 'annual/entered', '2026-10-13' => 'annual/entered', '2026-10-14' => 'unpaid/leave', '2026-10-15' => 'unpaid/leave'],
+            array_slice($this->stored($e), 3),
+        );
+
+        $c = $this->employee('engineer', '2020-01-01');
+        foreach (['2026-10-01', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-12'] as $date) {
+            app(AttendanceDays::class)->save($c, $date, ['site_id' => $this->leaveTypes()['casual']]);
+        }
+        $this->preview($c, '2026-10-12', '2026-10-14', 'casual')->assertOk()
+            ->assertJsonPath('data.balance.casual_remaining', 2)->assertJsonPath('data.keep', 2)->assertJsonPath('data.unpaid', 1);
+    }
+
     public function test_a_worked_day_blocks_approval_names_the_date_and_writes_nothing(): void
     {
         $e = $this->employee('engineer', '2020-01-01');
@@ -449,7 +476,7 @@ class LeaveRequestsTest extends TestCase
 
         $this->getJson("/api/v1/leave/requests/{$id}")->assertOk()->assertJsonPath('data.approval.blocked', ['2026-10-13']);
         $this->decide($id, 'approve')->assertStatus(409)->assertJsonPath('error.code', 'leave_days_blocked')
-            ->assertJsonPath('error.dates', ['2026-10-13'])->assertJsonPath('error.message', '1 of the requested days already holds a work day or is in a locked period.');
+            ->assertJsonPath('error.dates', ['2026-10-13'])->assertJsonPath('error.message', 'Requested days that already hold a work day or are in a locked period: 1.');
         $this->withHeader('Accept-Language', 'ar')->decide($id, 'approve')->assertStatus(409)
             ->assertJsonPath('error.message', 'عدد الأيام المحجوزة بحضور مسجّل أو في فترة مقفلة: 1.');
         $this->assertSame(['2026-10-13' => '/entered', '2026-10-14' => 'sick/entered'], $this->stored($e));
@@ -517,6 +544,33 @@ class LeaveRequestsTest extends TestCase
         $this->assertSame(['pending', 1], [DB::table('leave_requests')->where('id', $id)->value('status'), DB::table('leave_requests')->where('id', $id)->value('version')]);
     }
 
+    public function test_the_escalator_is_not_told_of_their_own_escalation(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $developer = $this->makeUser('developer');
+        $this->actingAs($developer, 'api');
+        $id = $this->submit($e, '2026-11-02', '2026-11-03')->json('data.id');
+
+        $this->decide($id, 'escalate')->assertOk();
+        $this->assertSame([$this->ceo->id], Notification::where('type', 'leave_escalated')->pluck('user_id')->all());
+    }
+
+    public function test_a_caller_without_the_decide_permission_never_takes_the_employees_locks(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-11-02', '2026-11-03')->json('data.id');
+        $locks = 0;
+        DB::listen(function ($query) use (&$locks): void {
+            $locks += (int) (str_contains($query->sql, 'pg_advisory_xact_lock') || str_contains($query->sql, 'for update'));
+        });
+
+        $this->actingAs($this->makeUser('manager'), 'api');
+        $this->decide($id, 'approve')->assertForbidden();
+        $this->actingAs($this->ceo, 'api');
+        $this->decide($id, 'escalate')->assertForbidden();
+        $this->assertSame(0, $locks);
+    }
+
     public function test_refusal_needs_a_reason_and_writes_no_day(): void
     {
         $e = $this->employee('engineer', '2020-01-01');
@@ -578,6 +632,15 @@ class LeaveRequestsTest extends TestCase
         $this->assertSame(['CREATED', 'UPDATED', 'UPDATED'], $audit->pluck('event')->all());
         $this->assertSame(['pending', 'escalated'], [json_decode((string) $audit[1]->old_values, true)['status'], json_decode((string) $audit[1]->new_values, true)['status']]);
         $this->assertSame(['escalated', 'refused'], [json_decode((string) $audit[2]->old_values, true)['status'], json_decode((string) $audit[2]->new_values, true)['status']]);
+
+        $this->actingAs($this->hr[0], 'api');
+        $approved = $this->submit($e, '2026-11-09', '2026-11-10')->json('data.id');
+        $this->decide($approved, 'approve')->assertOk();
+        $update = DB::table('audit_log')->where(['entity_type' => 'leave_requests', 'entity_id' => $approved, 'event' => 'UPDATED'])->sole();
+        $this->assertSame(['pending', 'approved'], [json_decode((string) $update->old_values, true)['status'], json_decode((string) $update->new_values, true)['status']]);
+        $days = DB::table('audit_log')->where(['entity_type' => 'attendance_days', 'event' => 'CREATED'])->pluck('new_values')
+            ->map(fn ($v) => json_decode((string) $v, true))->filter(fn (array $v) => $v['employee_id'] === $e)->values();
+        $this->assertSame([['2026-11-09', 'leave'], ['2026-11-10', 'leave']], $days->map(fn (array $v) => [substr((string) $v['date'], 0, 10), $v['source']])->sortBy(0)->values()->all());
     }
 
     public function test_show_carries_the_approval_preview_while_pending_and_only_within_reach(): void
