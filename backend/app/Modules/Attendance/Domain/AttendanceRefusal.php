@@ -21,7 +21,8 @@ enum AttendanceRefusal: string
     case LeaveNeedsRequest = 'leave_needs_request';
     case LeaveDaysBlocked = 'leave_days_blocked';
     case OutsideManagerWindow = 'outside_manager_window';
-    case LeaveFromRequest = 'leave_from_request';
+    case HrDay = 'hr_day';
+    case OpenEarlierDay = 'open_earlier_day';
     case OpenDays = 'open_days';
 
     public function status(): int
@@ -31,7 +32,7 @@ enum AttendanceRefusal: string
             self::PeriodLocked => 423,
             self::FutureDate, self::EmployeeNotActive, self::MissingDaysUnconfirmed, self::PeriodNotLocked, self::LeaveTypeMissing,
             self::TemplateMismatch, self::UnreadableFile, self::TooManyRows, self::SiteNotInReach, self::LeaveNeedsRequest,
-            self::OutsideManagerWindow, self::LeaveFromRequest, self::OpenDays => 422,
+            self::OutsideManagerWindow, self::HrDay, self::OpenEarlierDay, self::OpenDays => 422,
         };
     }
 }

@@ -135,6 +135,37 @@ class SiteDayCrewTest extends TestCase
         $this->postJson("/api/v1/employees/wage-proposals/{$proposal->id}/approve", ['version' => 1, 'gender' => 'male'])->assertStatus(409);
     }
 
+    public function test_hr_hears_of_a_proposed_wage_at_once_and_reads_the_list_a_page_at_a_time(): void
+    {
+        $hr = $this->makeUser('hr');
+        $this->actingAs($this->m, 'api');
+        $made = $this->postJson('/api/v1/attendance/site-day/laborers', ['site_id' => $this->s1, 'name_ar' => 'عامل جديد', 'daily_wage' => '350'])->assertCreated()->json('data');
+        $n = DB::table('notifications')->where(['user_id' => $hr->id, 'type' => 'wage_proposed'])->first();
+        $this->assertNotNull($n);
+        $this->assertSame($made['proposal_id'], $n->ref);
+        $this->assertSame([$made['id'], '350', 'Site-1'], [json_decode($n->data, true)['employee_id'], json_decode($n->data, true)['daily_wage'], json_decode($n->data, true)['site_name_ar']]);
+        $this->postJson('/api/v1/attendance/site-day/laborers', ['site_id' => $this->s1, 'name_ar' => 'عامل آخر', 'daily_wage' => '300'])->assertCreated();
+
+        $this->actingAs($hr, 'api');
+        $this->getJson('/api/v1/employees/wage-proposals?per_page=1')->assertOk()
+            ->assertJsonCount(1, 'data')->assertJsonPath('meta.pagination.total', 2)->assertJsonPath('meta.pagination.has_next_page', true);
+    }
+
+    public function test_the_evening_digest_tells_hr_of_the_days_crew_changes(): void
+    {
+        $hr = $this->makeUser('hr');
+        $this->homeSite($l = $this->employee('day_laborer'), $this->s1, '2026-10-01');
+        $this->homeSite($k = $this->employee('day_laborer'), $this->s2, '2026-10-01');
+        $this->actingAs($this->m, 'api');
+        $this->crew($this->s1, $l, 'remove')->assertOk();
+        $this->crew($this->s1, $k, 'add')->assertOk();
+
+        $this->artisan('attendance:alert-missing', ['date' => '2026-10-22'])->assertSuccessful();
+        $n = DB::table('notifications')->where(['user_id' => $hr->id, 'type' => 'crew_changes'])->first();
+        $this->assertNotNull($n);
+        $this->assertEquals(['date' => '2026-10-22', 'sites' => [['site_name_ar' => 'Site-1', 'added' => 1]], 'removed' => 1], json_decode($n->data, true));
+    }
+
     public function test_a_site_manager_cannot_create_engineers_or_permanent_workers_or_set_pay(): void
     {
         $this->actingAs($this->m, 'api');

@@ -16,7 +16,8 @@ return [
         'site_not_in_reach' => 'This site is not one of your sites, or it is not the worker\'s home site on this date.',
         'leave_needs_request' => 'Annual, casual and unpaid leave need a leave request.',
         'outside_manager_window' => 'You can record today only, or yesterday until :until.',
-        'leave_from_request' => 'This day is annual, casual or unpaid leave; only HR can change it.',
+        'hr_day' => 'HR recorded or approved this day; only HR can change it.',
+        'open_earlier_day' => 'The departure on :date is missing; enter it first, or HR completes it once the window has passed.',
         'leave_days_blocked' => 'A work day or office attendance is already recorded on this date.',
     ],
     'crew' => [
@@ -25,6 +26,8 @@ return [
         'moved_has_day' => 'They have a day recorded today at their other site; clear it there first, then move them.',
     ],
     'rule' => [
+        'clear_not_allowed_for_manager' => 'You can clear only the days you recorded at this site.',
+        'arrival_required' => 'Enter the arrival time.',
         'site_not_allowed_for_manager' => 'Choose this site, or absent, sick, rest or other.',
         'field_not_allowed' => 'This field does not apply to this day.',
         'out_of_bounds' => 'The value is outside the allowed range.',

@@ -84,7 +84,7 @@ test('morning: «حضور الكل» fills the shift start, keeps a typed arriva
       row('a', 'Laborer-A', 'day_laborer', 'workers'),
       row('b', 'Laborer-B', 'day_laborer', 'workers'),
       row('c', 'Worker-C', 'permanent_worker', 'workers', { state: 'stored', version: 2, site_id: 'leave-absent', leave_code: 'absent' }),
-      row('d', 'Worker-D', 'permanent_worker', 'workers', { state: 'stored', version: 3, site_id: 'leave-annual', leave_code: 'annual' }, { can_edit: false, why_not: 'leave_request' }),
+      row('d', 'Worker-D', 'permanent_worker', 'workers', { state: 'stored', version: 3, site_id: 'leave-annual', leave_code: 'annual' }, { can_edit: false, why_not: 'hr_day' }),
       row('e', 'Engineer-E', 'engineer', 'engineers'),
     ],
   })
@@ -103,7 +103,7 @@ test('morning: «حضور الكل» fills the shift start, keeps a typed arriva
   expect(within(group('Laborer-A')).getByRole('textbox', { name: 'انصراف Laborer-A' })).toHaveValue('')
   expect(within(group('Laborer-A')).getByText('بلا انصراف')).toBeInTheDocument()
   expect(within(group('Worker-C')).getByRole('button', { name: 'غياب' })).toHaveAttribute('aria-pressed', 'true')
-  expect(within(group('Worker-D')).getByText(/إجازة من طلب؛ تعدّلها الموارد البشرية/)).toBeInTheDocument()
+  expect(within(group('Worker-D')).getByText(/سجّلته الموارد البشرية؛ تعدّله هي فقط/)).toBeInTheDocument()
   for (const b of within(group('Worker-D')).getAllByRole('button')) expect(b).toBeDisabled()
   expect(screen.getByText('تغييرات غير محفوظة: 3')).toBeInTheDocument()
 
@@ -383,4 +383,19 @@ test('a time that is not a time stops the save and names the person', async () =
   await user.click(screen.getByRole('button', { name: 'حفظ اليوم' }))
   expect(await screen.findByText(/وقت غير صحيح عند: Laborer-A/)).toBeInTheDocument()
   expect(post).not.toHaveBeenCalled()
+})
+
+test('an earlier day without a departure locks the row, says why, and opens that day', async () => {
+  const { siteDay } = routes([S1], { s1: [row('e1', 'Engineer-1', 'engineer', 'engineers', {}, { can_edit: false, why_not: 'open_day', open_date: '2026-10-21', open_editable: true }), row('e2', 'Engineer-2', 'engineer', 'engineers', {}, { can_edit: false, why_not: 'open_day', open_date: '2026-10-20', open_editable: false })] })
+  render()
+  await enter()
+  const g = await screen.findByRole('group', { name: 'Engineer-1' })
+  expect(within(g).getByText(/انصراف يوم 2026-10-21 ناقص/)).toBeInTheDocument()
+  expect(within(g).getByRole('button', { name: 'حاضر' })).toBeDisabled()
+  const g2 = screen.getByRole('group', { name: 'Engineer-2' })
+  expect(within(g2).getByText(/انصراف يوم 2026-10-20 ناقص؛ تكمّله الموارد البشرية/)).toBeInTheDocument()
+  expect(within(g2).queryByRole('button', { name: /افتح يوم/ })).toBeNull()
+  await user.click(within(g).getByRole('button', { name: 'افتح يوم 2026-10-21 وسجّل الانصراف' }))
+  expect(screen.getByTestId('url')).toHaveTextContent('date=2026-10-21')
+  await waitFor(() => expect(siteDay.mock.calls.some(([u]) => String(u).includes('date=2026-10-21'))).toBe(true))
 })

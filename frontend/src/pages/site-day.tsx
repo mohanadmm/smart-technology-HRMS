@@ -96,6 +96,10 @@ export function SiteDayPage() {
     setParams((p) => (p.set('site', id), p), { replace: true })
     setSaveErr(undefined)
   }
+  const openDate = (d: string | null) => {
+    setParams((p) => (d === null ? p.delete('date') : p.set('date', d), p))
+    setSaveErr(undefined)
+  }
 
   if (sitesErr) return <div className="mx-auto w-full max-w-3xl"><ErrorBanner err={sitesErr} shown={[]} /></div>
   if (sitesLoading) return <div className="mx-auto w-full max-w-3xl"><TableSkeleton rows={4} /></div>
@@ -164,6 +168,7 @@ export function SiteDayPage() {
     <p className="mt-1 text-sm text-muted-foreground">
       <time dateTime={day.date}>{new Intl.DateTimeFormat(intlLocale(lang), { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${day.date}T00:00:00Z`))}</time>
       {isToday && ` · ${t('siteDay.today')}`}
+      {!isToday && <Button type="button" variant="link" className="ms-2 h-auto px-0 text-sm" onClick={() => openDate(null)}>{t('siteDay.backToToday')}</Button>}
     </p>
   )
 
@@ -176,7 +181,7 @@ export function SiteDayPage() {
   const siteName = site ? localName(day?.site ?? site, lang) : ''
   const crewTools = isToday && (can('employee.crew') || can('employee.propose_laborer'))
   const person = (r: SiteDayRow, removable: boolean) => (
-    <PersonRow key={r.employee.id} r={r} draft={current(r, drafts)} siteId={siteId} leave={day?.leave_sites ?? {}} sites={mine} locked={locked}
+    <PersonRow key={r.employee.id} r={r} draft={current(r, drafts)} siteId={siteId} leave={day?.leave_sites ?? {}} sites={mine} locked={locked} onOpenDate={openDate}
       removable={removable && !locked} onRemoved={reload} set={(d) => setDrafts(d === null ? omit(drafts, r.employee.id) : { ...drafts, [r.employee.id]: d })} />
   )
 
@@ -318,8 +323,9 @@ function SiteTab({ s, active, date, unsaved, onPick }: { s: Row; active: boolean
 }
 
 /** One person: status buttons, then (when present) the arrival and the departure with its difference from the shift end. */
-function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved, locked }: {
+function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved, locked, onOpenDate }: {
   r: SiteDayRow; draft: Draft | null; siteId: string; leave: LeaveSites; sites: Row[]; set: (d: Draft | null) => void; removable: boolean; onRemoved: () => void; locked: boolean
+  onOpenDate: (date: string) => void
 }) {
   const { t, i18n } = useTranslation()
   const save = useSave()
@@ -332,7 +338,7 @@ function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved, 
   const off = !r.can_edit || locked
   const leaveName = (c: string) => t(`attendance.leaveName.${c}`, { defaultValue: c })
   let note: string | null = null
-  if (r.why_not) note = t(`siteDay.why.${r.why_not}`)
+  if (r.why_not) note = t(`siteDay.why.${r.why_not === 'open_day' && !r.open_editable ? 'open_day_hr' : r.why_not}`, { date: r.open_date ?? '' })
   else if (code && mark === null) note = leaveName(code)                       // rest or other
   else if (!draft && r.day.leave_code) note = leaveName(r.day.leave_code)       // a weekly off or holiday
   else if (draft && !present && !code) {
@@ -376,6 +382,11 @@ function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved, 
               {t(`enum.type.${r.employee.type}`)}
               {note && <> · <span>{note}</span></>}
             </div>
+            {r.why_not === 'open_day' && r.open_date && r.open_editable && (
+              <Button type="button" variant="link" className="h-auto min-h-11 px-0 text-[13px]" onClick={() => onOpenDate(r.open_date!)}>
+                {t('siteDay.openDay', { date: r.open_date })}
+              </Button>
+            )}
           </div>
           {removable && (
             <Button type="button" variant="ghost" size="icon" className="size-11 shrink-0" aria-label={t('siteDay.removeFromToday', { name })} title={t('siteDay.removeFromToday', { name })} onClick={() => void remove()}>

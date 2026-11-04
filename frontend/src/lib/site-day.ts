@@ -6,7 +6,11 @@ export type SiteDayRow = {
   shift: { start: string; end: string }
   day: { state: 'stored' | 'derived' | 'missing' | 'future'; version: number | null; site_id: string | null; leave_code: string | null; in_time: string | null; out_time: string | null; note: string | null }
   can_edit: boolean
-  why_not: 'locked' | 'window' | 'leave_request' | null
+  why_not: 'locked' | 'window' | 'hr_day' | 'open_day' | null
+  /** with why_not open_day: the earlier day that has an arrival and no departure */
+  open_date?: string | null
+  /** whether the site manager can still complete that day (inside the yesterday window); otherwise only HR */
+  open_editable?: boolean
 }
 
 /** The leave types a site manager may store (P11), by code. */

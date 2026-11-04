@@ -18,7 +18,10 @@ final class WageProposalController
 
     public function index(Request $request): JsonResponse
     {
-        return ApiEnvelope::single($request, $this->crew->pending());
+        $q = $request->validate(['per_page' => ['sometimes', 'integer', 'min:1', 'max:100'], 'page' => ['sometimes', 'integer', 'min:1']]);
+        $page = $this->crew->pending((int) ($q['per_page'] ?? 20), (int) ($q['page'] ?? 1));
+
+        return ApiEnvelope::collection($request, $page['data'], $page['pagination']);
     }
 
     public function approve(Request $request, string $proposal): JsonResponse

@@ -19,7 +19,10 @@ type RequestData = { employee_id: string; request_id: string; kind: string; from
 type LeaveRequested = Base & { type: 'leave_requested'; data: RequestData; employee: Named }
 type LeaveEscalated = Base & { type: 'leave_escalated'; data: RequestData; employee: Named }
 type LeaveDecided = Base & { type: 'leave_decided'; data: RequestData & { status: 'approved' | 'refused' }; employee: Named }
-type Notification = MissingDays | LeaveAnniversary | LeaveRequested | LeaveEscalated | LeaveDecided
+type WageProposed = Base & { type: 'wage_proposed'; data: { employee_id: string; daily_wage: string; site_name_ar: string; site_name_en: string | null }; employee: Named }
+type OpenDays = Base & { type: 'attendance_open_days'; data: { date: string; count: number } }
+type CrewChanges = Base & { type: 'crew_changes'; data: { date: string; sites: { site_name_ar: string; added: number }[]; removed: number } }
+type Notification = MissingDays | LeaveAnniversary | LeaveRequested | LeaveEscalated | LeaveDecided | WageProposed | OpenDays | CrewChanges
 
 /** One clickable line: what it says, the muted line under it, and where it opens (null: it only marks the notification read). */
 type Line = { key: string; text: ReactNode; detail: string; to: string | null }
@@ -63,6 +66,26 @@ const VIEWS: { [K in Notification['type']]: (n: Extract<Notification, { type: K 
   leave_requested: (n, ctx) => requestLine('notifications.leaveRequested', n, ctx),
   leave_escalated: (n, ctx) => requestLine('notifications.leaveEscalated', n, ctx),
   leave_decided: (n, ctx) => requestLine(`notifications.leaveDecided.${n.data.status}`, n, ctx),
+  // a site manager's new day laborer: HR reviews the proposed wage on the employee's page (its approval screen is a follow-up)
+  wage_proposed: (n, ctx) => ({
+    lines: [{
+      key: n.id,
+      text: named('notifications.wageProposed', n.employee, ctx),
+      detail: ctx.t('notifications.wageProposed.detail', { amount: n.data.daily_wage, site: ctx.lang === 'en' ? n.data.site_name_en || n.data.site_name_ar : n.data.site_name_ar }),
+      to: n.employee && `/employees/${n.employee.id}`,
+    }],
+  }),
+  attendance_open_days: (n, { t }) => ({
+    title: t('notifications.openDays.title', { date: n.data.date }),
+    lines: [{ key: n.id, text: t('notifications.openDays.line', { count: n.data.count }), detail: '', to: '/attendance' }],
+  }),
+  crew_changes: (n, { t }) => ({
+    title: t('notifications.crewChanges.title', { date: n.data.date }),
+    lines: [
+      ...n.data.sites.map((s) => ({ key: `${n.id}-${s.site_name_ar}`, text: t('notifications.crewChanges.added', { site: s.site_name_ar, count: s.added }), detail: '', to: null })),
+      ...(n.data.removed > 0 ? [{ key: `${n.id}-removed`, text: t('notifications.crewChanges.removed', { count: n.data.removed }), detail: '', to: null }] : []),
+    ],
+  }),
 }
 const view = (n: Notification, ctx: Ctx) => (VIEWS[n.type] as (n: Notification, ctx: Ctx) => View)(n, ctx)
 

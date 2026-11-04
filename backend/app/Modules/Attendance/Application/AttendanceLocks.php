@@ -43,8 +43,8 @@ final class AttendanceLocks
                     }
                 }
             }
-            // An arrival with no departure (the site manager's morning save) must be completed first; no confirmation skips it.
-            if ($open > 0 && $p->group === EmployeeType::PermanentWorker) {
+            // An arrival with no departure must be completed first, for every field type (owner, 2026-11-04); no confirmation skips it.
+            if ($open > 0 && $p->group !== EmployeeType::Office) {
                 throw AttendanceRefused::because(AttendanceRefusal::OpenDays, ['count' => (string) $open]);
             }
             if ($missing > 0 && ! $confirmMissing) {

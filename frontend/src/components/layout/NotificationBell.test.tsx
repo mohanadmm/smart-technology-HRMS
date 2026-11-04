@@ -260,3 +260,21 @@ test('an approved and a refused leave are told apart, and each opens its request
   await user.click(screen.getByRole('menuitem', { name: /رُفض طلب إجازة/ }))
   expect(screen.getByRole('status')).toHaveTextContent('/leave?request=r2')
 })
+
+test('a proposed wage, open days and the crew digest each have a line', async () => {
+  mockFetch({
+    'GET /api/v1/notifications': inbox([
+      { id: 'w1', type: 'wage_proposed', date: '2026-11-04', ref: 'p1', read_at: null, data: { employee_id: 'e1', daily_wage: '350', site_name_ar: 'Site-1', site_name_en: null }, employee: ahmed },
+      { id: 'o1', type: 'attendance_open_days', date: '2026-11-04', ref: null, read_at: null, data: { date: '2026-11-04', count: 2 } },
+      { id: 'c1', type: 'crew_changes', date: '2026-11-04', ref: null, read_at: null, data: { date: '2026-11-04', sites: [{ site_name_ar: 'Site-1', added: 1 }], removed: 1 } },
+    ]),
+  })
+  renderWithAuth(<><NotificationBell /><Where /></>, [])
+  await user.click(await screen.findByRole('button', { name: /فتح الإشعارات/ }))
+  const items = (await screen.findAllByRole('menuitem')).map((i) => i.textContent)
+  expect(items[0]).toContain('أجر يومي مقترح لـ أحمد علي (1042)')
+  expect(items[0]).toContain('350 · Site-1')
+  expect(items[1]).toContain('2 يوم بلا انصراف')
+  expect(items[2]).toContain('أُضيف إلى Site-1: 1')
+  expect(items[3]).toContain('أُخرج من طاقم اليوم: 1')
+})

@@ -780,6 +780,20 @@
         "line": "Leave refused: <name/> (<code/>)",
         "unknown": "A leave request was refused"
       }
+    },
+    "wageProposed": {
+      "line": "Proposed daily wage for <name/> (<code/>)",
+      "unknown": "Proposed daily wage for a day laborer",
+      "detail": "{{amount}} · {{site}}"
+    },
+    "openDays": {
+      "title": "Arrivals with no departure up to {{date}}",
+      "line": "Days with no departure: {{count}}"
+    },
+    "crewChanges": {
+      "title": "Day-labor crew changes on {{date}}",
+      "added": "Added to {{site}}: {{count}}",
+      "removed": "Taken off the day’s crew: {{count}}"
     }
   },
   "time": {
@@ -827,7 +841,9 @@
     "why": {
       "locked": "The period is locked",
       "window": "The time to edit this day has passed",
-      "leave_request": "Leave from a request; HR changes it"
+      "hr_day": "HR recorded it; only HR changes it",
+      "open_day": "The departure on {{date}} is missing; enter it first",
+      "open_day_hr": "The departure on {{date}} is missing; HR completes it"
     },
     "arrival": "Check-in",
     "departure": "Check-out",
@@ -858,7 +874,9 @@
     "leftOutUnsaved": "{{sites}} has unsaved changes. They are kept and come back if you choose the site again.",
     "missingCheckout": "Missing check-out",
     "late": "{{count}} min late",
-    "lateCount": "Late: {{count}}"
+    "lateCount": "Late: {{count}}",
+    "openDay": "Open {{date}} and enter the departure",
+    "backToToday": "Back to today"
   },
   "leave": {
     "balance": "Leave balance",

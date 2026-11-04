@@ -6,6 +6,8 @@ namespace App\Modules\Attendance\Application;
 
 use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceDay;
 use App\Modules\Employees\Application\DayCrew;
+use App\Modules\Identity\Application\Rbac\PermissionHolders;
+use App\Modules\Notifications\Application\Notifier;
 use App\Modules\Sites\Application\SiteService;
 use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -18,7 +20,12 @@ use Illuminate\Validation\ValidationException;
  */
 final class SiteDayCrew
 {
-    public function __construct(private readonly DayCrew $crew, private readonly SiteService $sites) {}
+    public function __construct(
+        private readonly DayCrew $crew,
+        private readonly SiteService $sites,
+        private readonly Notifier $notifier,
+        private readonly PermissionHolders $holders,
+    ) {}
 
     /**
      * Day laborers matching $search, each with where they are today and whether this site manager may add them here.
@@ -77,13 +84,22 @@ final class SiteDayCrew
 
     /**
      * @param  array{name_ar: string, phone?: ?string, daily_wage: string}  $data
-     * @return array{id: string, code: int, name_ar: string}
+     * @return array{id: string, code: int, name_ar: string, proposal_id: string}
      */
     public function propose(string $siteId, array $data, string $managerId): array
     {
         $this->mySites($siteId, $managerId);
+        $today = EffectiveDays::today();
+        $made = $this->crew->propose(['name_ar' => $data['name_ar'], 'phone' => $data['phone'] ?? null], $siteId, $today, $data['daily_wage']);
+        // A proposed wage is a request, so HR hears of it at once (CLAUDE.md: every manager action notifies HR).
+        $site = Site::find($siteId);
+        foreach ($this->holders->userIds('employee.approve_wage.all') as $id) {
+            $this->notifier->notifyOnce($id, 'wage_proposed', $today, [
+                'employee_id' => $made['id'], 'daily_wage' => $data['daily_wage'], 'site_name_ar' => (string) $site?->name_ar, 'site_name_en' => $site?->name_en,
+            ], $made['proposal_id']);
+        }
 
-        return $this->crew->propose(['name_ar' => $data['name_ar'], 'phone' => $data['phone'] ?? null], $siteId, EffectiveDays::today(), $data['daily_wage']);
+        return $made;
     }
 
     /** @return list<string> the manager's sites; 404 unless $siteId is one of them */

@@ -6,9 +6,11 @@ namespace App\Modules\Attendance\Application;
 
 use App\Modules\Attendance\Domain\AttendanceRefusal;
 use App\Modules\Attendance\Domain\AttendanceRefused;
+use App\Modules\Attendance\Domain\DayRules;
 use App\Modules\Attendance\Domain\Employment;
 use App\Modules\Attendance\Domain\ManagerWindow;
 use App\Modules\Attendance\Domain\Period;
+use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceDay;
 use App\Modules\Attendance\Infrastructure\PeriodGuard;
 use App\Modules\Employees\Application\EmployeeRoster;
 use App\Modules\Employees\Domain\EmployeeType;
@@ -56,8 +58,9 @@ final class SiteDay
 
     /**
      * Each row carries the person's scheduled shift (their pay-row override, else the field shift setting) for the bulk fills,
-     * and whether the site manager may change the day now: `why_not` is locked, window or leave_request. `leave_sites` are the
-     * leave types the site manager may store (P11), by code.
+     * and whether the site manager may change the day now: `why_not` is locked, window, hr_day (HR recorded it, or it came from an
+     * approved request: only HR changes it, owner 2026-11-04) or open_day (an earlier day has an arrival and no departure; `open_date`
+     * names it). `leave_sites` are the leave types the site manager may store (P11), by code.
      *
      * @return array{site: array{id: string, name_ar: string, name_en: ?string}, date: string, today: string, leave_sites: array<string, string>, rows: list<array<string, mixed>>}
      */
@@ -67,13 +70,14 @@ final class SiteDay
         $settings = $this->rules->all();
         $window = $this->windowAllows($date, $settings);
         $locked = [];
+        $open = $this->openDays(array_map(fn (array $l) => (string) $l[0]['id'], $listed), $date);
 
         return [
             'site' => ['id' => (string) $site->getKey(), 'name_ar' => (string) $site->name_ar, 'name_en' => $site->name_en],
             'date' => $date,
             'today' => EffectiveDays::today(),
             'leave_sites' => $this->managerLeaveSites(),
-            'rows' => array_map(function (array $l) use ($days, $date, $settings, $window, &$locked): array {
+            'rows' => array_map(function (array $l) use ($days, $date, $settings, $window, $open, &$locked): array {
                 [$e, $section] = $l;
                 $day = $days[$e['id']][$date];
                 $type = (string) $day['type'];
@@ -81,7 +85,8 @@ final class SiteDay
                 $whyNot = match (true) {
                     $locked[$type] => 'locked',
                     ! $window => 'window',
-                    self::fromRequest($day) => 'leave_request',
+                    self::hrDay($day) => 'hr_day',
+                    isset($open[$e['id']]) => 'open_day',
                     default => null,
                 };
 
@@ -92,16 +97,24 @@ final class SiteDay
                     'day' => array_intersect_key($day, array_flip(self::DAY)),
                     'can_edit' => $whyNot === null,
                     'why_not' => $whyNot,
+                    'open_date' => $open[$e['id']] ?? null,
+                    // whether the site manager can still complete it, or only HR (after the yesterday window)
+                    'open_editable' => isset($open[$e['id']]) && $this->windowAllows($open[$e['id']], $settings),
                 ];
             }, $listed),
         ];
     }
 
     /**
-     * The site manager's save, all or nothing. A row outside the day's list is 404; then the window, the approved-leave rule (R30
-     * default) and the leave types (P11) are checked, and AttendanceDays::bulk writes with source `manager` and the manager's reach.
-     * Engineers' and day laborers' late minutes are the raw minutes after the shift start (R18 default: the grace is taken once at
-     * payroll, calculations §0a); their overtime is held at 0 until HR approves it (Slice 3).
+     * The site manager's save, all or nothing (owner, 2026-11-04). A row outside the day's list is 404. Then, per row:
+     * - a day HR recorded (or an approved request wrote) is HR's to change or clear: `hr_day`;
+     * - an earlier day of the same person with an arrival and no departure must be completed first: `open_earlier_day`
+     *   (after the yesterday window only HR can complete it);
+     * - a present day needs its arrival (`rows.N.in_time`); a clear removes only the site manager's own day here or on one of their leave types;
+     * - the leave types are absent, sick, rest and other (P11).
+     * AttendanceDays::bulk writes with source `manager` and the manager's reach. Late minutes are raw (calculations §2b) and are
+     * recomputed only when the arrival changes; overtime is set to 0 (held until HR approves it) only when a time changes, so an
+     * unchanged time keeps what is stored.
      *
      * @param  array{site_id: string, date: string, rows: list<array<string, mixed>>}  $body  validated against FORMAT
      * @return array<string, mixed> the day after the save, as read() returns it
@@ -119,6 +132,7 @@ final class SiteDay
             throw AttendanceRefused::because(AttendanceRefusal::OutsideManagerWindow, ['until' => $settings['manager_yesterday_until']], [$this->detail(0, AttendanceRefusal::OutsideManagerWindow, $settings)]);
         }
         $allowedLeave = array_values($this->managerLeaveSites());
+        $open = $this->openDays(array_map(fn (array $r) => (string) $r['employee_id'], $rows), $date);
 
         $errors = [];
         $out = [];
@@ -127,18 +141,34 @@ final class SiteDay
             $stored = $days[$e['id']][$date];
             $clear = isset($row['clear']);
             $target = $clear ? null : ($row['site_id'] === null ? null : (string) $row['site_id']);
-            if (self::fromRequest($stored) && ($clear || $target !== $stored['site_id'])) {
-                throw AttendanceRefused::because(AttendanceRefusal::LeaveFromRequest, [], [$this->detail($i, AttendanceRefusal::LeaveFromRequest)]);
+            if (self::hrDay($stored)) {
+                throw AttendanceRefused::because(AttendanceRefusal::HrDay, [], [$this->detail($i, AttendanceRefusal::HrDay)]);
             }
-            $unchanged = $stored['state'] === 'stored' && $target === $stored['site_id'];
-            if (! $clear && $target !== $siteId && ! in_array($target, $allowedLeave, true) && ! $unchanged) {
+            if (isset($open[$e['id']])) {
+                $params = ['date' => $open[$e['id']]];
+                throw AttendanceRefused::because(AttendanceRefusal::OpenEarlierDay, $params, [$this->detail($i, AttendanceRefusal::OpenEarlierDay, $settings, $params)]);
+            }
+            if ($clear) {
+                if ($stored['state'] !== 'stored' || ($stored['site_id'] !== $siteId && ! in_array($stored['site_id'], $allowedLeave, true))) {
+                    $errors["rows.{$i}.site_id"] = [__('attendance.rule.clear_not_allowed_for_manager')];
+
+                    continue;
+                }
+                $out[] = ['employee_id' => $e['id'], 'version' => $row['version'], 'clear' => true];
+
+                continue;
+            }
+            if ($target !== $siteId && ! in_array($target, $allowedLeave, true)) {
                 $errors["rows.{$i}.site_id"] = [__('attendance.rule.site_not_allowed_for_manager')];
 
                 continue;
             }
-            $out[] = $clear
-                ? ['employee_id' => $e['id'], 'version' => $row['version'], 'clear' => true]
-                : ['employee_id' => $e['id'], 'version' => $row['version'] ?? null, 'site_id' => $target, ...$this->values($e, $date, $row, $target === $siteId, $settings)];
+            if ($target === $siteId && ($row['in_time'] ?? null) === null) {
+                $errors["rows.{$i}.in_time"] = [__('attendance.rule.arrival_required')];
+
+                continue;
+            }
+            $out[] = ['employee_id' => $e['id'], 'version' => $row['version'] ?? null, 'site_id' => $target, ...$this->values($e, $date, $row, $stored, $target === $siteId, $settings)];
         }
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
@@ -158,24 +188,45 @@ final class SiteDay
     }
 
     /**
-     * An annual, casual or unpaid day: only HR changes it (R30 default, manager-attendance plan Task 8 note).
+     * A day HR recorded, imported or materialized, or that an approved leave request wrote (sick included): only HR changes it
+     * (owner, 2026-11-04). The site manager's own days have source `manager`.
      *
      * @param  array<string, mixed>  $day
      */
-    private static function fromRequest(array $day): bool
+    private static function hrDay(array $day): bool
     {
-        return $day['state'] === 'stored' && LeaveCode::tryFrom((string) $day['leave_code'])?->needsRequest() === true;
+        return $day['state'] === 'stored' && $day['source'] !== 'manager';
+    }
+
+    /**
+     * Per employee, the latest day before $date with an arrival and no departure (any source): it is completed before a later day is saved.
+     *
+     * @param  list<string>  $employeeIds
+     * @return array<string, string> employee id → that date
+     */
+    private function openDays(array $employeeIds, string $date): array
+    {
+        if ($employeeIds === []) {
+            return [];
+        }
+
+        return AttendanceDay::whereIn('employee_id', $employeeIds)->where('date', '<', $date)
+            ->whereNotNull('in_time')->whereNull('out_time')
+            ->selectRaw('employee_id, max(date) as date')->groupBy('employee_id')
+            ->pluck('date', 'employee_id')->map(fn ($d) => (string) $d)->all();
     }
 
     /**
      * @param  array<string, mixed>  $e
      * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $stored  the day as read
      * @param  array<string, string>  $settings
-     * @return array<string, mixed> what the row stores besides the site; a leave day stores the note only
+     * @return array<string, mixed> what the row stores besides the site. A note is written only when the row sends one, so HR's note
+     *                              stays (P28 keeps an unsent field); a leave day sends no times.
      */
-    private function values(array $e, string $date, array $row, bool $work, array $settings): array
+    private function values(array $e, string $date, array $row, array $stored, bool $work, array $settings): array
     {
-        $note = ['note' => $row['note'] ?? null];
+        $note = array_key_exists('note', $row) ? ['note' => $row['note']] : [];
         if (! $work) {
             return $note;
         }
@@ -184,9 +235,14 @@ final class SiteDay
         $values = ['in_time' => $in, 'out_time' => $outTime, ...$note];
         $type = Employment::typeOn($e, $date);
         if ($type === EmployeeType::Engineer || $type === EmployeeType::DayLaborer) {
-            $start = EffectiveDays::fieldShift($e, $date, $settings)['start'];
-            $values['late_minutes'] = $in === null ? null : max(0, self::minutes($in) - self::minutes($start));
-            $values['ot_minutes'] = $in !== null && $outTime !== null ? 0 : null;
+            $was = $stored['state'] === 'stored' && $stored['site_id'] !== null && $stored['leave_code'] === null;
+            if (! $was || $stored['in_time'] !== $in) {
+                $start = EffectiveDays::fieldShift($e, $date, $settings)['start'];
+                $values['late_minutes'] = $in === null ? null : max(0, DayRules::minutes($in) - DayRules::minutes($start));
+            }
+            if (! $was || $stored['in_time'] !== $in || $stored['out_time'] !== $outTime) {
+                $values['ot_minutes'] = $in !== null && $outTime !== null ? 0 : null;
+            }
         }
 
         return $values;
@@ -200,18 +256,12 @@ final class SiteDay
 
     /**
      * @param  array<string, string>  $settings
+     * @param  array<string, string>  $params
      * @return array{field: string, code: string, message: string}
      */
-    private function detail(int $i, AttendanceRefusal $reason, array $settings = []): array
+    private function detail(int $i, AttendanceRefusal $reason, array $settings = [], array $params = []): array
     {
-        return ['field' => "rows.{$i}", 'code' => $reason->value, 'message' => __('attendance.refusal.'.$reason->value, ['until' => $settings['manager_yesterday_until'] ?? ''])];
-    }
-
-    private static function minutes(string $hhmm): int
-    {
-        [$h, $m] = array_map('intval', explode(':', $hhmm));
-
-        return $h * 60 + $m;
+        return ['field' => "rows.{$i}", 'code' => $reason->value, 'message' => __('attendance.refusal.'.$reason->value, ['until' => $settings['manager_yesterday_until'] ?? '', ...$params])];
     }
 
     /** @return array{0: Site, 1: list<array{0: array<string, mixed>, 1: string}>, 2: array<string, array<string, array<string, mixed>>>} */

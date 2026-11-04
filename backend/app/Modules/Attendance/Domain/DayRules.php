@@ -120,7 +120,8 @@ final class DayRules
         return false;
     }
 
-    private static function minutes(string $time): int
+    /** "HH:MM" (or "HH:MM:SS") → minutes after midnight. */
+    public static function minutes(string $time): int
     {
         [$h, $m] = explode(':', $time);
 

@@ -11,7 +11,10 @@ use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeWageProposal;
 use App\Support\Database\ConcurrencyConflict;
+use App\Support\Http\Paginates;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -23,6 +26,8 @@ use Illuminate\Validation\ValidationException;
  */
 final class DayCrew
 {
+    use Paginates;
+
     /**
      * Day laborers employed on $date matching $search (name, or the exact code), with their home site on $date.
      *
@@ -65,6 +70,16 @@ final class DayCrew
      */
     public function setCrew(string $employeeId, ?string $siteId, string $date): void
     {
+        try {
+            $this->writeCrew($employeeId, $siteId, $date);
+        } catch (UniqueConstraintViolationException) {
+            // Two requests changed the same person's day at once and the other one's row won: the screen is out of date.
+            throw new ConcurrencyConflict;
+        }
+    }
+
+    private function writeCrew(string $employeeId, ?string $siteId, string $date): void
+    {
         DB::transaction(function () use ($employeeId, $siteId, $date): void {
             $row = DayCrewChange::where(['employee_id' => $employeeId, 'date' => $date])->lockForUpdate()->first();
             $home = $this->homeSiteOn($employeeId, $date);
@@ -83,7 +98,7 @@ final class DayCrew
      * A new day laborer, hired on $date and on $siteId's crew that day, with no home site and no pay row; $wage waits as a pending proposal.
      *
      * @param  array{name_ar: string, phone?: ?string}  $identity
-     * @return array{id: string, code: int, name_ar: string}
+     * @return array{id: string, code: int, name_ar: string, proposal_id: string}
      */
     public function propose(array $identity, string $siteId, string $date, string $wage): array
     {
@@ -96,32 +111,49 @@ final class DayCrew
             $employee = Employee::create(['name_ar' => $identity['name_ar'], 'phone' => $identity['phone'] ?? null, 'hire_date' => $date, 'code' => $code]);
             $employee->typeChanges()->create(['type' => EmployeeType::DayLaborer->value, 'effective_from' => $date]);
             $employee->crewChanges()->create(['date' => $date, 'site_id' => $siteId]);
-            EmployeeWageProposal::create(['employee_id' => $employee->id, 'daily_wage' => $wage, 'status' => 'pending']);
+            $proposal = EmployeeWageProposal::create(['employee_id' => $employee->id, 'daily_wage' => $wage, 'status' => 'pending']);
 
-            return ['id' => (string) $employee->id, 'code' => $code, 'name_ar' => (string) $employee->name_ar];
+            return ['id' => (string) $employee->id, 'code' => $code, 'name_ar' => (string) $employee->name_ar, 'proposal_id' => (string) $proposal->id];
         });
     }
 
     /**
-     * HR's pending proposals, oldest first.
+     * The day's crew changes by site, for HR's evening digest: who was added to a site, and who was taken off every crew.
      *
-     * @return list<array<string, mixed>>
+     * @return array{added: array<string, int>, removed: int}
      */
-    public function pending(): array
+    public function changesOn(string $date): array
     {
-        $rows = [];
-        foreach (EmployeeWageProposal::with('employee')->where('status', 'pending')->orderBy('id')->get() as $p) {
-            $rows[] = [
-                'id' => $p->id,
-                'version' => $p->version,
-                'daily_wage' => $p->daily_wage,
-                'proposed_by' => $p->created_by,
-                'created_at' => $p->created_at?->toIso8601String(),
-                'employee' => ['id' => $p->employee_id, 'code' => (int) $p->employee?->code, 'name_ar' => (string) $p->employee?->name_ar, 'gender' => $p->employee?->gender],
-            ];
-        }
+        $rows = DayCrewChange::where('date', $date)->get(['site_id']);
 
-        return $rows;
+        return [
+            'added' => $rows->whereNotNull('site_id')->countBy(fn (DayCrewChange $c) => (string) $c->site_id)->all(),
+            'removed' => $rows->whereNull('site_id')->count(),
+        ];
+    }
+
+    /**
+     * HR's pending proposals, oldest first, a page at a time.
+     *
+     * @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}}
+     */
+    public function pending(int $perPage, int $page): array
+    {
+        return $this->page(EmployeeWageProposal::with('employee')->where('status', 'pending')->orderBy('id'), $perPage, $page);
+    }
+
+    /** @return array<string, mixed> a pending proposal as HR's list shows it */
+    private function row(Model $m): array
+    {
+        /** @var EmployeeWageProposal $m */
+        return [
+            'id' => $m->id,
+            'version' => $m->version,
+            'daily_wage' => $m->daily_wage,
+            'proposed_by' => $m->created_by,
+            'created_at' => $m->created_at?->toIso8601String(),
+            'employee' => ['id' => $m->employee_id, 'code' => (int) $m->employee?->code, 'name_ar' => (string) $m->employee?->name_ar, 'gender' => $m->employee?->gender],
+        ];
     }
 
     /**

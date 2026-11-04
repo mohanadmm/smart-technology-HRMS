@@ -54,6 +54,14 @@ class AttendanceLockTest extends TestCase
         $lock()->assertSuccessful();
     }
 
+    public function test_lock_refuses_an_engineers_day_with_an_arrival_and_no_departure(): void
+    {
+        $this->putDay($this->eng, '2026-10-01', ['site_id' => $this->site, 'in_time' => '08:00'])->assertOk();
+        $this->lock(['confirm_missing' => true])->assertStatus(422)->assertJsonPath('error.code', 'open_days');
+        $this->putDay($this->eng, '2026-10-01', ['version' => 1, 'site_id' => $this->site, 'in_time' => '08:00', 'out_time' => '16:00'])->assertOk();
+        $this->lock(['confirm_missing' => true])->assertSuccessful();
+    }
+
     public function test_lock_lists_missing_days_and_needs_confirmation(): void
     {
         $this->putDay($this->eng, '2026-10-01', ['site_id' => $this->site]);

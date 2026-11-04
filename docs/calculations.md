@@ -103,6 +103,30 @@ Outside-Alex minutes are paid at ×1, with no multiplier, as in the Excel.
 - Reopening keeps the stored days. ⚠️ (owner) A later holiday or weekly-off change does not refresh them when the period is locked again; is that right?
 - A derived day is never an absence.
 
+## 2b. Field shift and the site manager's day — decided 2026-11-04
+
+Applies to engineers, permanent workers and day laborers recorded on the site manager's screen (`/site-day`). Minutes only; money is §0a and §2–§4.
+
+**Shift**
+- The field shift is **09:00–16:00** (owner, 2026-11-04). It lives in Settings → Rules (`worker_shift_start`, `worker_shift_end`), which HR sets at rollout; no migration changes it. An employee's own shift on their pay row wins.
+- «حضور الكل» fills the shift start as the arrival and leaves the departure empty. «انصراف الكل» fills the shift end for everyone present with an arrival and no departure. Typed times are kept.
+
+**What a day stores**
+
+| | Rule |
+|---|---|
+| Arrival | Required on a present day. A departure without an arrival, or before it, is refused. |
+| Late minutes (engineers, day laborers) | **Raw**: max(0, arrival − shift start), with no grace. §0a subtracts the 15-minute grace once at payroll. Recomputed only when the arrival changes. Permanent workers' lateness comes from `scheduled_in` and the arrival at payroll (§3). |
+| Early departure | Not a stored field: payroll reads it from the departure and the shift end (`scheduled_out` for permanent workers). |
+| Overtime | Departure after the shift end is shown as a difference only. Engineers' and day laborers' `ot_minutes` are stored as **0** until HR approves the overtime (Slice 3), and reset to 0 only when a time changes. |
+| Missing departure | A day with an arrival and no departure is **open**. The site manager cannot save a later day for that person until it is completed. After the yesterday window (`manager_yesterday_until`, 12:00) only HR completes it. HR gets the count in the 21:00 bell. Locking a period is refused while any field day in it is open, and payroll counts no open day. |
+
+**Who changes a day**
+- A day HR recorded, imported or materialized, or one an approved leave request wrote (sick included), is read-only for the site manager.
+- The site manager clears only their own days, at the site they are working on or on one of their leave types (absent, sick, rest, other).
+
+Worked example (shift 09:00–16:00, grace 15): arrival 09:25 → 25 late minutes stored, 10 chargeable at payroll; departure 15:00 → 60 minutes early; departure 17:00 → 60 minutes after hours, overtime 0 until HR approves.
+
 ## 3. Permanent workers (عمال مثبتين): 26th → 25th
 Each day records: scheduled in/out (default **08:00–17:00**), actual in/out, site, outside-Alex money, transport (full / half / none), advance. Weekly off **Friday**.
 

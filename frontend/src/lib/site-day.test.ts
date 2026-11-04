@@ -15,7 +15,7 @@ const row = (id: string, day: Partial<SiteDayRow['day']> = {}, extra: Partial<Si
 const empty = row('empty')
 const typed = row('typed')
 const absent = row('absent', { state: 'stored', version: 1, site_id: 'leave-absent', leave_code: 'absent' })
-const annual = row('annual', { state: 'stored', version: 2, site_id: 'leave-annual', leave_code: 'annual' }, { can_edit: false, why_not: 'leave_request' })
+const annual = row('annual', { state: 'stored', version: 2, site_id: 'leave-annual', leave_code: 'annual' }, { can_edit: false, why_not: 'hr_day' })
 const friday = row('friday', { state: 'derived', site_id: 'leave-friday', leave_code: 'friday' })
 const rows = [empty, typed, absent, annual, friday]
 
