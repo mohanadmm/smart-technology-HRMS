@@ -159,7 +159,7 @@ const shown = (p: object = {}, approval: object | null = {}) => ({
   id: 'r1', employee: { id: 'e1', code: 101, name_ar: 'سامي فؤاد', name_en: 'Sami Fouad' }, kind: 'annual', from_date: '2026-11-10', to_date: '2026-11-15', days: 4,
   status: 'pending', note: 'سفر عائلي', requested_by: { id: 'u2', name: 'كريم حسن' }, created_at: '2026-11-04T08:00:00Z', version: 3,
   decision_reason: null, decided_by: null, decided_at: null,
-  approval: approval && { dates: ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-15'], days: 4, balance, keep: 4, unpaid: 0, remaining_after: -2, blocked: [], ...approval },
+  approval: approval && { dates: ['2026-11-10', '2026-11-11', '2026-11-12', '2026-11-15'], days: 4, balance, keep: 4, unpaid: 0, remaining_after: -2, blocked: [], replaced: [], ...approval },
   ...p,
 })
 const decide = (perms: string[], onOpenChange = vi.fn()) => renderWithAuth(<DecideDialog id="r1" open onOpenChange={onOpenChange} />, perms)
@@ -256,6 +256,50 @@ test('blocked dates are listed before the click, and approve stays available', a
   decide(HR)
   expect(await screen.findByText('2026-11-11')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'موافقة' })).toBeEnabled()
+})
+
+const replaced = [{ date: '2026-11-11', leave_code: 'sick' }, { date: '2026-11-12', leave_code: 'casual' }]
+const replacedItem = (text: string) => screen.findByText((_, el) => el?.tagName === 'LI' && el.textContent === text)
+const replaceBox = () => screen.getByRole('checkbox', { name: 'استبدال هذه الأيام' })
+
+test('days of another leave type are listed with their type, and approve waits for the replace tick', async () => {
+  const post = vi.fn(() => json(200, { data: shown({ status: 'approved' }, null) }))
+  mockFetch({ [SHOW]: () => json(200, { data: shown({}, { replaced }) }), 'POST /api/v1/leave/requests/r1/approve': post })
+  decide(HR)
+  const alert = (await screen.findByText('هذه الأيام مسجّل عليها نوع إجازة آخر. الموافقة تستبدلها، وتبقى الملاحظة والسلفة.')).parentElement!
+  expect(within(alert).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['2026-11-11 إجازة مرضية', '2026-11-12 إجازة عارضة'])
+  expect(within(alert).getByText('2026-11-11')).toHaveAttribute('dir', 'ltr')
+  const approve = screen.getByRole('button', { name: 'موافقة' })
+  expect(approve).toBeDisabled()
+  await user.click(replaceBox())
+  expect(approve).toBeEnabled()
+  await user.click(approve)
+  await waitFor(() => expect(post).toHaveBeenCalled())
+  expect(bodyOf(post)).toEqual({ version: 3, replace_dates: ['2026-11-11', '2026-11-12'] })
+})
+
+test('the replace tick resets when the listed days change', async () => {
+  let days = [replaced[0]]
+  mockFetch({
+    [SHOW]: () => json(200, { data: shown({}, { replaced: days }) }),
+    'POST /api/v1/leave/requests/r1/approve': () => {
+      days = replaced
+      return json(409, { error: { code: 'leave_days_replaced', message: 'عدد الأيام المسجّلة بنوع إجازة آخر: 1.', dates: ['2026-11-12'] } })
+    },
+  })
+  decide(HR)
+  await user.click(await screen.findByRole('checkbox', { name: 'استبدال هذه الأيام' }))
+  await user.click(screen.getByRole('button', { name: 'موافقة' }))
+  expect(await replacedItem('2026-11-12 إجازة عارضة')).toBeInTheDocument()
+  expect(replaceBox()).not.toBeChecked()
+  expect(screen.getByRole('button', { name: 'موافقة' })).toBeDisabled()
+})
+
+test('a reader who cannot approve sees the replaced days without the tick', async () => {
+  mockFetch({ [SHOW]: () => json(200, { data: shown({ status: 'escalated' }, { replaced }) }) })
+  decide(HR)
+  expect(await replacedItem('2026-11-11 إجازة مرضية')).toBeInTheDocument()
+  expect(screen.queryByRole('checkbox')).toBeNull()
 })
 
 test('approve posts the version, says so, and closes', async () => {

@@ -529,6 +529,12 @@
     "lockBody": "Once locked, nobody can edit this period's days until it is reopened.",
     "lockMissing": "These days are still missing:",
     "lockConfirmMissing": "Lock anyway, with missing days",
+    "relock": {
+      "done": "Period locked",
+      "removed": "No longer official holidays (their stored days were removed):",
+      "added": "Official holidays added or changed since the last lock:",
+      "leaveOnHoliday": "Leave days on an official holiday (not changed; review them):"
+    },
     "reopenTitle": "Reopen this period's attendance",
     "reopenReason": "Reason for reopening",
     "lockedBy": "Locked by {{name}} at {{time}}",
@@ -887,6 +893,8 @@
       "split": "{{keep}} {{kind}} + {{unpaid}} unpaid",
       "short": "The balance is short, so the last days of the range are unpaid.",
       "blocked": "Approval will be refused until these days change: they already hold attendance other than leave, or fall in a locked period:",
+      "replaced": "These days already hold another leave type. Approving replaces them; their note and advance stay.",
+      "replace": "Replace these days",
       "decidedBy": "Decided by",
       "decidedAt": "Decided on",
       "escalationNote": "Escalation note",
