@@ -278,7 +278,7 @@ test('site managers dialog pre-checks current managers and saves the ticked ids'
   })
   renderWithAuth(<SettingsPage />, [...MANAGE, 'site.assign_manager.all'])
   await rowMenu('موقع أ')
-  await user.click(await screen.findByRole('menuitem', { name: 'المديرون' }))
+  await user.click(await screen.findByRole('menuitem', { name: 'مديرو الموقع' }))
   expect(await screen.findByRole('checkbox', { name: 'خالد' })).toBeChecked()
   expect(screen.getByRole('checkbox', { name: 'سامي' })).not.toBeChecked()
   await user.click(screen.getByRole('checkbox', { name: 'سامي' }))
@@ -355,7 +355,7 @@ test('site.manage alone shows no managers action', async () => {
   renderWithAuth(<SettingsPage />, MANAGE)
   await rowMenu('موقع أ')
   expect(await screen.findByRole('menuitem', { name: 'تعديل' })).toBeInTheDocument()
-  expect(screen.queryByRole('menuitem', { name: 'المديرون' })).toBeNull()
+  expect(screen.queryByRole('menuitem', { name: 'مديرو الموقع' })).toBeNull()
 })
 
 const rules = {
@@ -479,7 +479,7 @@ test('the managers dialog ticks the managers as they are now, not as cached', as
     'GET /api/v1/users': list([{ id: 'u1', name: 'خالد', is_active: true }, { id: 'u2', name: 'سامي', is_active: true }]),
   })
   renderWithAuth(<SettingsPage />, [...MANAGE, 'site.assign_manager.all'])
-  const open = async () => { await rowMenu('موقع أ'); await user.click(await screen.findByRole('menuitem', { name: 'المديرون' })) }
+  const open = async () => { await rowMenu('موقع أ'); await user.click(await screen.findByRole('menuitem', { name: 'مديرو الموقع' })) }
   await open()
   expect(await screen.findByRole('checkbox', { name: 'سامي' })).not.toBeChecked()
   await user.keyboard('{Escape}')

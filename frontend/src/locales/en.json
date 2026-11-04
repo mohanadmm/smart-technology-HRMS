@@ -236,7 +236,7 @@
     "value": "Value",
     "addRule": "Add rule",
     "yes": "Yes",
-    "managers": "Managers",
+    "managers": "Site managers",
     "addLeaveType": "Add leave type",
     "home": "Home site",
     "homeNone": "No home site",
@@ -309,7 +309,7 @@
     "site": {
       "view": "Sites: view",
       "manage": "Sites: manage",
-      "assign_manager": "Sites: assign managers"
+      "assign_manager": "Sites: assign site managers"
     },
     "user": {
       "view": "User accounts: view",
