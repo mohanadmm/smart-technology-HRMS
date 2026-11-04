@@ -190,3 +190,45 @@ test('in English an anniversary uses the English name, else the Arabic one', asy
   expect(en).toHaveAccessibleName(/^unread, One year since Ahmed Ali \(1042\) was hired,\s*Hired 2025-11-04$/)
   expect(ar).toHaveTextContent('One year since أحمد علي (1042) was hired')
 })
+
+const requested = (employee: { id: string; code: number; name_ar: string; name_en: string | null } | null, read_at: string | null = null) => ({
+  id: 'q1', type: 'leave_requested', date: '2026-11-04', ref: 'r1', read_at, employee,
+  data: { employee_id: 'e1', request_id: 'r1', kind: 'annual', from_date: '2026-11-10', to_date: '2026-11-12', days: 3 },
+})
+
+test('a new leave request is listed with the name, code, kind and dates, and counted', async () => {
+  mockFetch({ 'GET /api/v1/notifications': inbox([requested(ahmed), read]) })
+  renderWithAuth(<NotificationBell />, [])
+  await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (1 غير مقروء)' }))
+  const line = await screen.findByRole('menuitem', { name: /طلب إجازة جديد/ })
+  expect(line).toHaveAccessibleName(/^غير مقروء، طلب إجازة جديد: أحمد علي \(1042\)،\s*إجازة اعتيادية: 2026-11-10 – 2026-11-12$/)
+  expect(within(line).getByText('1042')).toHaveAttribute('dir', 'ltr')
+})
+
+test('choosing a new leave request marks it read and opens it on the leave page', async () => {
+  const patch = vi.fn(() => json(200, { data: { ...requested(ahmed), read_at: '2026-11-04T09:00:00Z' } }))
+  mockFetch({ 'GET /api/v1/notifications': inbox([requested(ahmed)]), 'PATCH /api/v1/notifications/q1/read': patch })
+  renderWithAuth(<><NotificationBell /><Where /></>, [])
+  await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (1 غير مقروء)' }))
+  await user.click(await screen.findByRole('menuitem', { name: /طلب إجازة جديد/ }))
+  expect(screen.getByRole('status')).toHaveTextContent('/leave?request=r1')
+  await waitFor(() => expect(patch).toHaveBeenCalledTimes(1))
+})
+
+test('a leave request about someone the reader cannot name still opens the request', async () => {
+  mockFetch({ 'GET /api/v1/notifications': inbox([requested(null, '2026-11-04T09:00:00Z')]) })
+  renderWithAuth(<><NotificationBell /><Where /></>, [])
+  await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (0 غير مقروء)' }))
+  const line = await screen.findByRole('menuitem')
+  expect(line).toHaveAccessibleName(/^طلب إجازة جديد،\s*إجازة اعتيادية: 2026-11-10 – 2026-11-12$/)
+  await user.click(line)
+  expect(screen.getByRole('status')).toHaveTextContent('/leave?request=r1')
+})
+
+test('in English a new leave request uses the English name', async () => {
+  await i18n.changeLanguage('en')
+  mockFetch({ 'GET /api/v1/notifications': inbox([requested(ahmed)]) })
+  renderWithAuth(<NotificationBell />, [])
+  await user.click(await screen.findByRole('button', { name: 'Open notifications (1 unread)' }))
+  expect(await screen.findByRole('menuitem')).toHaveAccessibleName(/^unread, New leave request: Ahmed Ali \(1042\),\s*Annual leave: 2026-11-10 – 2026-11-12$/)
+})

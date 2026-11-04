@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
+import type { TFunction } from 'i18next'
 import { Bell } from 'lucide-react'
-import { useId } from 'react'
+import { type ReactNode, useId } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -10,19 +11,56 @@ import { Skeleton } from '@/components/ui/misc'
 import { queryKey, useList, useSave } from '@/lib/query'
 import { cn, FOCUS } from '@/lib/utils'
 
-type Base = { id: string; date: string; read_at: string | null }
+type Named = { id: string; code: number; name_ar: string; name_en: string | null } | null
+type Base = { id: string; date: string; ref: string | null; read_at: string | null }
 type MissingDays = Base & { type: 'attendance_missing_days'; data: { date: string; groups: { group: string; period_start: string; period_end: string; missing: number }[] } }
-type LeaveAnniversary = Base & {
-  type: 'leave_anniversary'
-  data: { employee_id: string; hire_date: string }
-  employee: { id: string; code: number; name_ar: string; name_en: string | null } | null
+type LeaveAnniversary = Base & { type: 'leave_anniversary'; data: { employee_id: string; hire_date: string }; employee: Named }
+type LeaveRequested = Base & { type: 'leave_requested'; data: { employee_id: string; request_id: string; kind: string; from_date: string; to_date: string; days: number }; employee: Named }
+type Notification = MissingDays | LeaveAnniversary | LeaveRequested
+
+/** One clickable line: what it says, the muted line under it, and where it opens (null: it only marks the notification read). */
+type Line = { key: string; text: ReactNode; detail: string; to: string | null }
+/** A notification with a `title` is a group of lines under that title; without one it is a single line. */
+type View = { title?: string; lines: Line[] }
+type Ctx = { t: TFunction; lang: string }
+
+const named = (key: string, employee: Named, { t, lang }: Ctx) =>
+  employee ? <Trans i18nKey={`${key}.line`} components={{ name: <bdi>{localName(employee, lang)}</bdi>, code: <bdi dir="ltr">{employee.code}</bdi> }} /> : t(`${key}.unknown`)
+
+/** Every type the bell shows, keyed by type; a type missing here is neither counted nor shown. */
+const VIEWS: { [K in Notification['type']]: (n: Extract<Notification, { type: K }>, ctx: Ctx) => View } = {
+  attendance_missing_days: (n, { t }) => ({
+    title: t('notifications.missingDays.title', { date: n.data.date }),
+    lines: n.data.groups.map((g) => ({
+      key: `${g.group}-${g.period_start}`,
+      text: t('notifications.missingDays.line', { group: t(`attendance.group.${g.group}`), count: g.missing }),
+      detail: t('notifications.missingDays.period', { start: g.period_start, end: g.period_end }),
+      to: `/attendance?${new URLSearchParams({ group: g.group, period: g.period_start, tab: 'grid' })}`,
+    })),
+  }),
+  leave_anniversary: (n, ctx) => ({
+    lines: [{
+      key: n.id,
+      text: named('notifications.leaveAnniversary', n.employee, ctx),
+      detail: ctx.t('notifications.leaveAnniversary.hired', { date: n.data.hire_date }),
+      // a deleted employee (employee null) has no page to open; the year is the anniversary's, not today's
+      to: n.employee && `/employees/${n.employee.id}?tab=leave&year=${n.date.slice(0, 4)}`,
+    }],
+  }),
+  leave_requested: (n, ctx) => ({
+    lines: [{
+      key: n.id,
+      text: named('notifications.leaveRequested', n.employee, ctx),
+      detail: ctx.t('notifications.leaveRequested.detail', { kind: ctx.t(`attendance.leaveName.${n.data.kind}`), from: n.data.from_date, to: n.data.to_date }),
+      to: `/leave?request=${n.ref}`,
+    }],
+  }),
 }
-type Notification = MissingDays | LeaveAnniversary
-const KNOWN = new Set<string>(['attendance_missing_days', 'leave_anniversary'] satisfies Notification['type'][])
+const view = (n: Notification, ctx: Ctx) => (VIEWS[n.type] as (n: Notification, ctx: Ctx) => View)(n, ctx)
 
 const PATH = '/notifications?per_page=10'
 
-/** The header bell: the latest 10 notifications, the badge counting the unread among them; a line opens what it is about (a group's grid for its period, an employee's Leave tab). */
+/** The header bell: the latest 10 notifications, the badge counting the unread among them; a line opens what it is about (a group's grid for its period, an employee's Leave tab, a leave request). */
 export function NotificationBell() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
@@ -32,15 +70,12 @@ export function NotificationBell() {
   // useList drops its rows on an error; a failed refetch keeps the last good answer in the cache, so the bell keeps showing it
   const kept = useQueryClient().getQueryData<{ data: Notification[] }>(queryKey(PATH))?.data
   const list = ((err ? kept : rows) ?? []) as { type: string }[]
-  const known = list.filter((n): n is Notification => KNOWN.has(n.type)) // an unknown type is neither counted nor shown
+  const known = list.filter((n): n is Notification => Object.hasOwn(VIEWS, n.type)) // an unknown type is neither counted nor shown
   const unread = known.filter((n) => !n.read_at).length
   const open = (n: Notification, to: string | null) => {
     if (!n.read_at) save(`/notifications/${n.id}/read`, { method: 'PATCH' }).catch((e: Error) => toast.error(e.message))
     if (to) navigate(to)
   }
-  const unreadWord = (n: Notification) => !n.read_at && <><span className="sr-only">{t('notifications.unread')}</span> </>
-  // without it, screen readers other than Chromium's run the line into the date that follows
-  const pause = <><span className="sr-only">{t('notifications.pause')}</span>{' '}</>
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
@@ -69,40 +104,41 @@ export function NotificationBell() {
           </div>
         )}
         {!loading && !err && known.length === 0 && <p className="px-2.5 py-3 text-sm text-muted-foreground">{t('notifications.empty')}</p>}
-        {known.map((n) => n.type === 'leave_anniversary' ? (
-          // a deleted employee (employee null) has no page to open; the year is the anniversary's, not today's
-          <DropdownMenuItem key={n.id} onSelect={() => open(n, n.employee && `/employees/${n.employee.id}?tab=leave&year=${n.date.slice(0, 4)}`)} className={cn('flex-col items-start gap-0.5', !n.read_at && 'font-semibold')}>
-            <span className="flex items-baseline gap-2">
-              {!n.read_at && <span aria-hidden className="size-2 shrink-0 self-center rounded-full bg-primary" />}
-              <span>
-                {unreadWord(n)}
-                {n.employee
-                  ? <Trans i18nKey="notifications.leaveAnniversary.line" components={{ name: <bdi>{localName(n.employee, i18n.language)}</bdi>, code: <bdi dir="ltr">{n.employee.code}</bdi> }} />
-                  : t('notifications.leaveAnniversary.unknown')}
-                {pause}
-              </span>
-            </span>
-            <span className="text-xs font-normal text-muted-foreground">{ltrDates(t('notifications.leaveAnniversary.hired', { date: n.data.hire_date }))}</span>
-          </DropdownMenuItem>
-        ) : (
-          <DropdownMenuGroup key={n.id} aria-labelledby={`${id}-${n.id}`} className="py-1">
-            <p id={`${id}-${n.id}`} className={cn('flex items-center gap-2 px-2.5 py-1.5 text-xs', n.read_at ? 'text-muted-foreground' : 'text-foreground')}>
-              {!n.read_at && <span aria-hidden className="size-2 shrink-0 rounded-full bg-primary" />}
-              <span className={cn(!n.read_at && 'font-semibold')}>{ltrDates(t('notifications.missingDays.title', { date: n.data.date }))}</span>
-            </p>
-            {n.data.groups.map((g) => (
-              <DropdownMenuItem key={`${g.group}-${g.period_start}`} onSelect={() => open(n, `/attendance?${new URLSearchParams({ group: g.group, period: g.period_start, tab: 'grid' })}`)} className={cn('flex-col items-start gap-0.5', !n.read_at && 'font-semibold')}>
-                <span>
-                  {unreadWord(n)}
-                  {t('notifications.missingDays.line', { group: t(`attendance.group.${g.group}`), count: g.missing })}
-                  {pause}
-                </span>
-                <span className="text-xs font-normal text-muted-foreground">{ltrDates(t('notifications.missingDays.period', { start: g.period_start, end: g.period_end }))}</span>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuGroup>
-        ))}
+        {known.map((n) => {
+          const { title, lines } = view(n, { t, lang: i18n.language })
+          const items = lines.map((l) => <Item key={l.key} line={l} unread={!n.read_at} dot={!title} onSelect={() => open(n, l.to)} />)
+          return title ? (
+            <DropdownMenuGroup key={n.id} aria-labelledby={`${id}-${n.id}`} className="py-1">
+              <p id={`${id}-${n.id}`} className={cn('flex items-center gap-2 px-2.5 py-1.5 text-xs', n.read_at ? 'text-muted-foreground' : 'text-foreground')}>
+                {!n.read_at && <span aria-hidden className="size-2 shrink-0 rounded-full bg-primary" />}
+                <span className={cn(!n.read_at && 'font-semibold')}>{ltrDates(title)}</span>
+              </p>
+              {items}
+            </DropdownMenuGroup>
+          ) : (
+            items
+          )
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/** One line of the menu. Unread: bold, "unread" first for screen readers, and the dot here when no group title carries it. */
+function Item({ line, unread, dot, onSelect }: { line: Line; unread: boolean; dot: boolean; onSelect: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <DropdownMenuItem onSelect={onSelect} className={cn('flex-col items-start gap-0.5', unread && 'font-semibold')}>
+      <span className="flex items-baseline gap-2">
+        {dot && unread && <span aria-hidden className="size-2 shrink-0 self-center rounded-full bg-primary" />}
+        <span>
+          {unread && <><span className="sr-only">{t('notifications.unread')}</span> </>}
+          {line.text}
+          {/* without it, screen readers other than Chromium's run the line into the date that follows */}
+          <span className="sr-only">{t('notifications.pause')}</span>{' '}
+        </span>
+      </span>
+      <span className="text-xs font-normal text-muted-foreground">{ltrDates(line.detail)}</span>
+    </DropdownMenuItem>
   )
 }

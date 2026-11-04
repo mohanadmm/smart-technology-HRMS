@@ -45,6 +45,8 @@ export type DataListProps<T> = DataColumns<T> & {
   to?: (row: T) => string
   /** Pagination shows only when total > pageSize. */
   page?: { page: number; pageSize: number; total: number; onPageChange: (p: number) => void }
+  /** The row a link pointed at (aria-current, accent background). */
+  current?: (row: T) => boolean
 }
 
 // literal classes so Tailwind sees them
@@ -58,9 +60,9 @@ const CARD = 'max-sm:grid max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:items-cen
  * separated by hairlines inside the page's Card (not a card in a card). Each field cell carries its header as an
  * aria-hidden visible label; explicit roles keep the table semantics Safari drops when display changes.
  * States in order: loading → skeleton, error → Alert, no rows → EmptyState, else rows + Pagination.
- * No selection or sorting; `to` is the only row click. Matrices and the day sheet use ui/table directly.
+ * No selection or sorting; `to` is the only row click; `current` only marks a row. Matrices and the day sheet use ui/table directly.
  */
-export function DataList<T>({ label, rows, rowKey, title, fields = [], status, actions, hero, to, loading, error, empty, page }: DataListProps<T>) {
+export function DataList<T>({ label, rows, rowKey, title, fields = [], status, actions, hero, to, loading, error, empty, page, current }: DataListProps<T>) {
   const { t } = useTranslation()
   if (loading) return <TableSkeleton rows={8} />
   return (
@@ -91,7 +93,7 @@ export function DataList<T>({ label, rows, rowKey, title, fields = [], status, a
           </TableHeader>
           <TableBody role="rowgroup" className="max-sm:block">
             {rows.map((r) => (
-              <TableRow role="row" key={rowKey(r)} className={cn(CARD, to && 'relative')}>
+              <TableRow role="row" key={rowKey(r)} aria-current={current?.(r) || undefined} className={cn(CARD, to && 'relative', current?.(r) && 'bg-accent hover:bg-accent')}>
                 <td role="cell" className={cn(CELL, 'sm:whitespace-normal max-sm:col-start-1 max-sm:row-start-1 max-sm:font-medium')}>
                   {to ? (
                     <Link to={to(r)} className="outline-none after:absolute after:inset-0 hover:underline focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring">

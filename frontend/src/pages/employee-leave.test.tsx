@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -34,7 +34,7 @@ test('the card shows the balance the server computed', async () => {
   expect(tile('العارضة المستخدمة')).toHaveTextContent('3 من 6')
   expect(tile('أيام الإجازة المرضية')).toHaveTextContent('4')
   expect(tile('أيام الإجازة بدون أجر')).toHaveTextContent('1')
-  expect(vi.mocked(fetch).mock.calls[0][0]).toBe('/api/v1/employees/e1/leave?year=2026')
+  expect(leaveCalls()).toEqual(['/api/v1/employees/e1/leave?year=2026'])
 })
 
 test('an overdrawn balance shows in the destructive colour', async () => {
@@ -100,7 +100,7 @@ test('the year selector loads the previous and next year', async () => {
   expect(screen.getByRole('button', { name: '2026' })).toHaveAttribute('aria-pressed', 'true')
   await user.click(screen.getByRole('button', { name: '2025' }))
   await user.click(screen.getByRole('button', { name: '2027' }))
-  expect(vi.mocked(fetch).mock.calls.map(([u]) => u)).toEqual(['/api/v1/employees/e1/leave?year=2026', '/api/v1/employees/e1/leave?year=2025', '/api/v1/employees/e1/leave?year=2027'])
+  expect(leaveCalls()).toEqual(['/api/v1/employees/e1/leave?year=2026', '/api/v1/employees/e1/leave?year=2025', '/api/v1/employees/e1/leave?year=2027'])
 })
 
 const detail = (
@@ -313,4 +313,49 @@ test('a stored adjustment is shown on the card with its reason', async () => {
   renderWithAuth(<Leave emp={emp} />, VIEW, { router: false })
   await remainingTile()
   expect(screen.getByText(/رصيد منقول من الدفتر/)).toBeInTheDocument()
+})
+
+const REQUESTS = 'GET /api/v1/leave/requests'
+const request = { id: 'r1', employee: { id: 'e1', code: 101, name_ar: 'سامي فؤاد', name_en: null }, kind: 'casual', from_date: '2026-11-10', to_date: '2026-11-11', days: 2, status: 'pending', note: null, requested_by: { id: 'u1', name: 'منى' }, created_at: '2026-11-04T08:00:00Z', version: 1 }
+const requestCalls = () => vi.mocked(fetch).mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith('/api/v1/leave/requests?'))
+
+test('the Leave tab lists the year\'s requests under the balance', async () => {
+  mockFetch({ [LEAVE]: () => leave(), [REQUESTS]: () => json(200, { data: [request], meta: { pagination } }) })
+  const user = userEvent.setup()
+  renderWithAuth(<Leave emp={emp} />, VIEW, { router: false })
+  const list = await screen.findByRole('table', { name: 'طلبات الإجازة' })
+  const row = within(list).getAllByRole('row')[1]
+  expect(row).toHaveTextContent('إجازة عارضة')
+  expect(row).toHaveTextContent('2026-11-10 – 2026-11-11')
+  expect(row).toHaveTextContent('2')
+  expect(row).toHaveTextContent('قيد المراجعة')
+  expect(new URL(requestCalls()[0], 'http://x').searchParams.toString()).toBe('employee_id=e1&year=2026&per_page=100')
+  await user.click(screen.getByRole('button', { name: '2025' }))
+  await waitFor(() => expect(new URL(requestCalls().at(-1)!, 'http://x').searchParams.get('year')).toBe('2025'))
+})
+
+test('a year without requests says so', async () => {
+  mockFetch({ [LEAVE]: () => leave(), [REQUESTS]: () => json(200, { data: [], meta: { pagination: { ...pagination, total: 0 } } }) })
+  renderWithAuth(<Leave emp={emp} />, VIEW, { router: false })
+  expect(await screen.findByText('لا توجد طلبات إجازة.')).toBeInTheDocument()
+})
+
+test('the request button opens the dialog for this employee, with no picker', async () => {
+  mockFetch({ [LEAVE]: () => leave(), [REQUESTS]: () => json(200, { data: [], meta: { pagination } }), 'GET /api/v1/leave/requests/preview': () => json(200, { data: { dates: [], days: 1, balance, keep: 1, unpaid: 0, remaining_after: 10 } }) })
+  const user = userEvent.setup()
+  renderWithAuth(<Leave emp={emp} />, [...VIEW, 'leave.request.all'], { router: false })
+  await user.click(await screen.findByRole('button', { name: 'طلب إجازة' }))
+  const dialog = await screen.findByRole('dialog', { name: 'طلب إجازة' })
+  expect(within(dialog).queryByLabelText('الموظف')).toBeNull()
+  fireEvent.change(within(dialog).getByLabelText('من'), { target: { value: '2026-11-10' } })
+  fireEvent.change(within(dialog).getByLabelText('إلى'), { target: { value: '2026-11-10' } })
+  await waitFor(() => expect(within(dialog).getByRole('status')).toHaveTextContent(/الرصيد بعدها 10$/))
+  expect(vi.mocked(fetch).mock.calls.map(([u]) => String(u)).find((u) => u.includes('/preview'))).toContain('employee_id=e1')
+})
+
+test('without leave.request there is no request button', async () => {
+  mockFetch({ [LEAVE]: () => leave(), [REQUESTS]: () => json(200, { data: [], meta: { pagination } }) })
+  renderWithAuth(<Leave emp={emp} />, VIEW, { router: false })
+  await screen.findByText('لا توجد طلبات إجازة.')
+  expect(screen.queryByRole('button', { name: 'طلب إجازة' })).toBeNull()
 })
