@@ -104,6 +104,7 @@ Route::middleware('auth')->group(function (): void {
     });
 
     Route::get('attendance/site-day', [SiteDayController::class, 'show'])->middleware('permission:attendance.record');
+    Route::post('attendance/site-day', [SiteDayController::class, 'store'])->middleware('permission:attendance.record');
 
     Route::prefix('attendance/locks')->controller(AttendanceLockController::class)->group(function (): void {
         Route::post('/', 'store')->middleware('permission:attendance.lock');

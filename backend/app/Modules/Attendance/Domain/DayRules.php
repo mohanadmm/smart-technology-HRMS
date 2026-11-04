@@ -53,8 +53,10 @@ final class DayRules
         $in = $accepted['in_time'] ?? null;
         $out = $accepted['out_time'] ?? null;
         if ($type === EmployeeType::PermanentWorker) {
-            if (($in === null) !== ($out === null)) {
-                $violations[] = ['field' => $in === null ? 'in_time' : 'out_time', 'code' => 'times_need_both'];
+            // An arrival alone is an open day: the site manager records the departure in the evening (owner, 2026-11-04), and the
+            // period lock refuses while a day is still open. A departure needs its arrival.
+            if ($in === null && $out !== null) {
+                $violations[] = ['field' => 'in_time', 'code' => 'times_need_both'];
             }
         } elseif ($in !== null && $out !== null && self::minutes((string) $out) < self::minutes((string) $in)) {
             $violations[] = ['field' => 'out_time', 'code' => 'out_before_in'];

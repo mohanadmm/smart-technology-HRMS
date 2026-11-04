@@ -33,13 +33,19 @@ final class AttendanceLocks
 
             $derived = [];
             $missing = 0;
+            $open = 0;
             foreach ($this->days->forPeriod($p, $this->roster->allOfType($p->group, $p->start, $p->end)) as $days) {
                 foreach ($days as $day) {
                     $missing += $day['state'] === 'missing' ? 1 : 0;
+                    $open += $day['state'] === 'stored' && $day['in_time'] !== null && $day['out_time'] === null && $day['leave_code'] === null ? 1 : 0;
                     if ($day['state'] === 'derived') {
                         $derived[] = $day;
                     }
                 }
+            }
+            // An arrival with no departure (the site manager's morning save) must be completed first; no confirmation skips it.
+            if ($open > 0 && $p->group === EmployeeType::PermanentWorker) {
+                throw AttendanceRefused::because(AttendanceRefusal::OpenDays, ['count' => (string) $open]);
             }
             if ($missing > 0 && ! $confirmMissing) {
                 throw AttendanceRefused::because(AttendanceRefusal::MissingDaysUnconfirmed);
