@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/misc'
 import { useAuth } from '@/lib/auth'
 import { queryKey, useApi, useList, useSave } from '@/lib/query'
 import { cn } from '@/lib/utils'
-import { useRequestColumns } from './leave'
+import { type LeaveRequest, useRequestColumns } from './leave'
 import { RequestDialog } from './leave-dialogs'
 
 /** `GET /employees/{id}/leave`: every number is the server's (docs/calculations.md §7); `balance` is null for a day laborer. */
@@ -103,7 +103,7 @@ function Requests({ emp, year }: { emp: Row; year: number }) {
         )}
       </CardHeader>
       <RequestDialog open={asking} onOpenChange={setAsking} employee={emp} />
-      <DataList<Row> label={t('leave.requests.list')} rows={rows} rowKey={(r) => r.id} loading={loading} error={err} empty={{ icon: ClipboardList, title: t('leave.requests.empty') }} title={kind} fields={fields} status={status} />
+      <DataList<LeaveRequest> label={t('leave.requests.list')} rows={rows as LeaveRequest[]} rowKey={(r) => r.id} loading={loading} error={err} empty={{ icon: ClipboardList, title: t('leave.requests.empty') }} title={kind} fields={fields} status={status} />
     </Card>
   )
 }

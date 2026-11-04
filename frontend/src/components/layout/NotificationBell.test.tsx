@@ -207,7 +207,7 @@ test('a new leave request is listed with the name, code, kind and dates, and cou
 
 test('choosing a new leave request marks it read and opens it on the leave page', async () => {
   const patch = vi.fn(() => json(200, { data: { ...requested(ahmed), read_at: '2026-11-04T09:00:00Z' } }))
-  mockFetch({ 'GET /api/v1/notifications': inbox([requested(ahmed)]), 'PATCH /api/v1/notifications/q1/read': patch })
+  mockFetch({ 'GET /api/v1/notifications': inbox([{ ...requested(ahmed), ref: null }]), 'PATCH /api/v1/notifications/q1/read': patch })
   renderWithAuth(<><NotificationBell /><Where /></>, [])
   await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (1 غير مقروء)' }))
   await user.click(await screen.findByRole('menuitem', { name: /طلب إجازة جديد/ }))

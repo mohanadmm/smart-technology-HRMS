@@ -855,7 +855,7 @@
       "sent": "Leave request sent.",
       "days_one": "{{count}} day counted",
       "days_other": "{{count}} days counted",
-      "excluded": "(Fridays and official holidays not counted)",
+      "excluded": "(weekly days off and official holidays are not counted)",
       "after": ", balance after: <n/>",
       "unpaid_one": "{{count}} day unpaid",
       "unpaid_other": "{{count}} days unpaid"

@@ -28,7 +28,7 @@ test('the preview shows the counted days, the balance after, and the unpaid days
   mockFetch({ [PREVIEW]: preview() })
   open()
   dates('2026-11-10', '2026-11-15')
-  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/^4 أيام محسوبة \(الجمعة والإجازات الرسمية غير محسوبة\)، الرصيد بعدها 0$/))
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/^4 أيام محسوبة \(أيام الراحة الأسبوعية والإجازات الرسمية غير محسوبة\)، الرصيد بعدها 0$/))
   expect(screen.getByText('يومان بدون أجر')).toBeInTheDocument()
   expect(Object.fromEntries(previewQuery())).toEqual({ employee_id: 'e1', kind: 'annual', from_date: '2026-11-10', to_date: '2026-11-15' })
 })
@@ -58,18 +58,39 @@ test('without a balance the line drops the balance clause, and nothing unpaid sh
   open()
   await user.selectOptions(screen.getByLabelText('نوع الإجازة'), 'sick')
   dates('2026-11-10', '2026-11-15')
-  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/^4 أيام محسوبة \(الجمعة والإجازات الرسمية غير محسوبة\)$/))
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/^4 أيام محسوبة \(أيام الراحة الأسبوعية والإجازات الرسمية غير محسوبة\)$/))
   expect(screen.queryByText(/الرصيد بعدها/)).toBeNull()
   expect(screen.queryByText(/بدون أجر/, { ignore: 'option, script, style' })).toBeNull() // the kind list itself has «إجازة بدون أجر»
   expect(previewQuery().get('kind')).toBe('sick')
 })
 
-test('a refused preview shows the reason in the dialog and disables sending', async () => {
-  mockFetch({ [PREVIEW]: () => json(422, { error: { code: 'leave_overlap', message: 'يتداخل هذا الطلب مع طلب إجازة آخر.' } }) })
+test('a refused preview shows the reason in the dialog and leaves sending to the server', async () => {
+  const refusal = () => json(422, { error: { code: 'leave_overlap', message: 'يتداخل هذا الطلب مع طلب إجازة آخر.' } })
+  const post = vi.fn(refusal)
+  mockFetch({ [PREVIEW]: refusal, 'POST /api/v1/leave/requests': post })
   open()
   dates('2026-11-10', '2026-11-15')
   expect(await screen.findByRole('alert')).toHaveTextContent('يتداخل هذا الطلب مع طلب إجازة آخر.')
-  expect(screen.getByRole('button', { name: 'إرسال الطلب' })).toBeDisabled()
+  await user.click(screen.getByRole('button', { name: 'إرسال الطلب' }))
+  await waitFor(() => expect(post).toHaveBeenCalled())
+})
+
+test('editing a date hides the preview until the answer for the new dates arrives', async () => {
+  let release!: () => void
+  const later = new Promise<void>((r) => (release = r))
+  mockFetch({ [PREVIEW]: ((url: string) => (url.includes('to_date=2026-11-16') ? later.then(preview({ days: 5, unpaid: 3 })) : preview()())) as never })
+  open()
+  dates('2026-11-10', '2026-11-15')
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/^4 أيام محسوبة/))
+  expect(screen.getByText('يومان بدون أجر')).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('إلى'), { target: { value: '2026-11-16' } })
+  expect(screen.queryByRole('status')).toBeNull()
+  expect(screen.queryByText('يومان بدون أجر')).toBeNull()
+  await waitFor(() => expect(previewQuery().get('to_date')).toBe('2026-11-16'))
+  expect(screen.queryByRole('status')).toBeNull()
+  release()
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/^5 أيام محسوبة/))
+  expect(screen.getByText('3 أيام بدون أجر')).toBeInTheDocument()
 })
 
 test('sending posts the request, says so, and closes', async () => {
@@ -103,7 +124,7 @@ test('with the employee fixed there is no employee picker', async () => {
   expect(screen.queryByLabelText('الموظف')).toBeNull()
 })
 
-test('the employee picker searches the employees in reach and leaves out day laborers', async () => {
+test('the employee picker searches the employees in reach and offers day laborers too (the preview refuses them)', async () => {
   const worker = { id: 'e2', code: 202, name_ar: 'سعيد حسن', name_en: null, current_type: 'day_laborer' }
   const post = vi.fn(() => json(201, { data: { id: 'r1' } }))
   mockFetch({
@@ -116,7 +137,7 @@ test('the employee picker searches the employees in reach and leaves out day lab
   await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([u]) => new URL(String(u), 'http://x').searchParams.get('search') === 'سا')).toBe(true))
   const picker = screen.getByLabelText('الموظف')
   await waitFor(() => expect(within(picker).getByRole('option', { name: 'سامي فؤاد (101)' })).toBeInTheDocument())
-  expect(within(picker).queryByRole('option', { name: /سعيد حسن/ })).toBeNull()
+  expect(within(picker).getByRole('option', { name: 'سعيد حسن (202)' })).toBeInTheDocument()
   await user.selectOptions(picker, 'e1')
   dates('2026-11-10', '2026-11-15')
   await screen.findByText(/4 أيام محسوبة/)

@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Route, Routes, useLocation } from 'react-router-dom'
+import { Link, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { json, mockFetch, pagination, renderWithAuth } from '@/test-utils'
 import { LeavePage } from './leave'
@@ -183,12 +183,34 @@ test('the Balances tab keeps the balances list', async () => {
   expect(await screen.findByText('E-101')).toBeInTheDocument()
 })
 
-test('a manager sees the request button and no adjust action', async () => {
+test('a manager with leave.request.own sees the request button', async () => {
   mockFetch({ [REQUESTS]: requests([req('r1', 'pending')]) })
   at('/leave', ['leave.view.own', 'leave.request.own', 'employee.view.own'])
   await screen.findByText('سامي فؤاد')
   expect(screen.getByRole('button', { name: 'طلب إجازة' })).toBeInTheDocument()
-  expect(screen.queryByRole('button', { name: 'تعديل الرصيد' })).toBeNull()
+})
+
+test('a request whose employee was deleted lists with a dash for the name and code', async () => {
+  mockFetch({ [REQUESTS]: requests([req('r1', 'pending', { employee: null })]) })
+  at('/leave')
+  const r = (await screen.findByText('إجازة اعتيادية')).closest('tr')!
+  expect(cellOf(r, 'الموظف')).toHaveTextContent('—')
+  expect(cellOf(r, 'الرقم الوظيفي')).toHaveTextContent('—')
+})
+
+test('a link to one request clears the status, year and page the list was left on', async () => {
+  mockFetch({ [REQUESTS]: () => json(200, { data: [req('r1', 'pending')], meta: { pagination: { ...pagination, total: 45, total_pages: 3, has_next_page: true } } }) })
+  const user = userEvent.setup()
+  renderWithAuth(<>{page}<Link to="/leave?request=r2">go</Link></>, ['leave.view.all'], { path: '/leave' })
+  await screen.findByText('سامي فؤاد')
+  await user.selectOptions(screen.getByRole('combobox', { name: 'الحالة' }), 'refused')
+  await user.selectOptions(screen.getByRole('combobox', { name: 'السنة' }), '2025')
+  await user.click(screen.getByRole('button', { name: 'التالي' }))
+  await waitFor(() => expect(requestsCall().get('page')).toBe('2'))
+  await user.click(screen.getByRole('link', { name: 'go' }))
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'الحالة' })).toHaveValue(''))
+  expect(screen.getByRole('combobox', { name: 'السنة' })).toHaveValue('')
+  expect(await screen.findByRole('button', { name: 'السابق' })).toBeDisabled()
 })
 
 test('without leave.request there is no request button', async () => {

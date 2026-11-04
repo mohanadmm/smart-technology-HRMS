@@ -52,7 +52,7 @@ const VIEWS: { [K in Notification['type']]: (n: Extract<Notification, { type: K 
       key: n.id,
       text: named('notifications.leaveRequested', n.employee, ctx),
       detail: ctx.t('notifications.leaveRequested.detail', { kind: ctx.t(`attendance.leaveName.${n.data.kind}`), from: n.data.from_date, to: n.data.to_date }),
-      to: `/leave?request=${n.ref}`,
+      to: `/leave?request=${n.data.request_id}`,
     }],
   }),
 }

@@ -22,17 +22,32 @@ import { RequestDialog } from './leave-dialogs'
 const MONTHLY_TYPES = ['office', 'engineer', 'permanent_worker']
 const PAGE = 20
 
+/** A row of `GET /leave/requests`; `employee` is null once the employee was deleted. */
+export type LeaveRequest = {
+  id: string
+  employee: { id: string; code: number; name_ar: string; name_en: string | null } | null
+  kind: string
+  from_date: string
+  to_date: string
+  days: number
+  status: string
+  note: string | null
+  requested_by: { id: string; name: string } | null
+  created_at: string
+  version: number
+}
+
 const STATUS: Record<string, BadgeVariant> = { pending: 'warning', escalated: 'info', approved: 'success', refused: 'danger', cancelled: 'neutral' }
 
 /** The columns a leave request row shows wherever it is listed (`GET /leave/requests`); every number is the server's. */
 export function useRequestColumns() {
   const { t } = useTranslation()
-  const kind = { header: t('leave.requests.kind'), cell: (r: Row) => t(`attendance.leaveName.${r.kind}`) }
-  const fields: Field<Row>[] = [
+  const kind = { header: t('leave.requests.kind'), cell: (r: LeaveRequest) => t(`attendance.leaveName.${r.kind}`) }
+  const fields: Field<LeaveRequest>[] = [
     { header: t('leave.requests.dates'), cell: (r) => ltrDates(t('leave.requests.range', { from: r.from_date, to: r.to_date })) },
     { header: t('leave.requests.days'), numeric: true, cell: (r) => r.days },
   ]
-  const status = { header: t('common.status'), cell: (r: Row) => <StatusBadge variant={STATUS[r.status] ?? 'neutral'} label={t(`leave.status.${r.status}`)} /> }
+  const status = { header: t('common.status'), cell: (r: LeaveRequest) => <StatusBadge variant={STATUS[r.status] ?? 'neutral'} label={t(`leave.status.${r.status}`)} /> }
   return { kind, fields, status }
 }
 
@@ -59,7 +74,8 @@ export function LeavePage() {
           <TabsTrigger value="requests"><ClipboardList className="size-4" aria-hidden /> {t('leave.tab.requests')}</TabsTrigger>
           <TabsTrigger value="balances"><Scale className="size-4" aria-hidden /> {t('leave.tab.balances')}</TabsTrigger>
         </TabsList>
-        <TabsContent value="requests"><Requests thisYear={thisYear} highlight={params.get('request')} /></TabsContent>
+        {/* keyed by the linked request: a new link starts the list unfiltered on page 1, where that request can be found */}
+        <TabsContent value="requests"><Requests key={params.get('request')} thisYear={thisYear} highlight={params.get('request')} /></TabsContent>
         <TabsContent value="balances"><Balances thisYear={thisYear} year={year} setYear={setYear} /></TabsContent>
       </Tabs>
     </div>
@@ -86,18 +102,18 @@ function Requests({ thisYear, highlight }: { thisYear: number; highlight: string
         <FilterSelect value={status} onChange={filter(setStatus)} label={t('common.status')} allLabel={t('leave.requests.allStatuses')} options={Object.keys(STATUS).map((s) => [s, t(`leave.status.${s}`)])} />
         <FilterSelect value={year} onChange={filter(setYear)} label={t('leave.year')} allLabel={t('leave.requests.allYears')} options={[thisYear - 1, thisYear, thisYear + 1].map((y) => [String(y), String(y)])} />
       </div>
-      <DataList<Row>
+      <DataList<LeaveRequest>
         label={t('leave.requests.list')}
-        rows={rows}
+        rows={rows as LeaveRequest[]}
         rowKey={(r) => r.id}
         current={(r) => r.id === highlight}
         loading={loading}
         error={err}
         empty={{ icon: ClipboardList, title: t('leave.requests.empty') }}
         page={{ page, pageSize: PAGE, total, onPageChange: setPage }}
-        title={{ header: t('employee.employee'), cell: (r) => localName(r.employee, i18n.language) }}
+        title={{ header: t('employee.employee'), cell: (r) => (r.employee ? localName(r.employee, i18n.language) : '—') }}
         fields={[
-          { header: t('employee.code'), tableFrom: 'xl', cell: (r) => <bdi dir="ltr" className="font-mono text-xs text-muted-foreground">{r.employee.code ?? '—'}</bdi> },
+          { header: t('employee.code'), tableFrom: 'xl', cell: (r) => <bdi dir="ltr" className="font-mono text-xs text-muted-foreground">{r.employee?.code ?? '—'}</bdi> },
           kind,
           ...fields,
         ]}
