@@ -32,11 +32,17 @@ class LogMaskerTest extends TestCase
         $this->assertSame(['rows' => [['advance_amount' => '[masked]', 'note' => 'x'], ['employee' => ['salary' => '[masked]']]]], $out);
     }
 
-    public function test_non_string_scalars_are_untouched(): void
+    public function test_long_numbers_are_masked_and_short_scalars_keep_their_type(): void
     {
-        $in = ['n' => 12345678, 'f' => 1.5, 'b' => true, 'z' => null, 'list' => [1, 2]];
+        $kept = ['short' => 12, 'f' => 1.5, 'b' => true, 'z' => null, 'list' => [1, 2]];
+        $in = ['n' => 12345678, 'nid' => 29801011234567, 'big_float' => 29801011234567.0, ...$kept];
 
-        $this->assertSame($in, LogMasker::data($in));
+        $this->assertSame(['n' => '[masked]', 'nid' => '[masked]', 'big_float' => '[masked]', ...$kept], LogMasker::data($in));
+    }
+
+    public function test_secret_check_runs_on_the_cleaned_key(): void
+    {
+        $this->assertSame(['password' => '[masked]'], LogMasker::data(["pass\x00word" => 'hunter2']));
     }
 
     public function test_digit_runs_are_masked_in_any_string(): void

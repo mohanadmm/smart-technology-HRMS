@@ -18,6 +18,9 @@ final class LogMasker
     private const MONEY_AND_ID_KEYS = ['salary', 'raise', 'insured_basic', 'daily_wage', 'value', 'amount', 'current_pay', 'national_id',
         'insurance_no', 'bank_account', 'phone'];
 
+    /** Western, Arabic-Indic and Persian digits, mixed in one run too: HR types on Arabic keyboards. `/u` is safe after mb_scrub. */
+    private const DIGIT_RUN = '/[0-9٠-٩۰-۹]{7,}/u';
+
     private const MAX_BYTES = 65536;
 
     /**
@@ -28,11 +31,13 @@ final class LogMasker
     {
         $out = [];
         foreach ($data as $key => $value) {
-            // A numeric key string ("0") turns back into an int key, so lists stay lists.
-            $out[self::text((string) $key)] = match (true) {
-                self::sensitive(strtolower((string) $key)) => self::MASK,
+            // The key rules see the cleaned key ("pass\0word" is "password"); a numeric key string ("0") turns back into an int key.
+            $key = self::text((string) $key);
+            $out[$key] = match (true) {
+                self::sensitive(strtolower($key)) => self::MASK,
                 is_array($value) => self::data($value),
                 is_string($value) => self::text($value),
+                (is_int($value) || is_float($value)) && preg_match(self::DIGIT_RUN, (string) $value) === 1 => self::MASK,
                 default => $value,
             };
         }
@@ -42,8 +47,7 @@ final class LogMasker
 
     public static function text(string $text): string
     {
-        // Western, Arabic-Indic and Persian digits, mixed in one run too: HR types on Arabic keyboards. `/u` is safe after mb_scrub.
-        return (string) preg_replace('/[0-9٠-٩۰-۹]{7,}/u', self::MASK, (string) mb_scrub(str_replace("\0", '', $text), 'UTF-8'));
+        return (string) preg_replace(self::DIGIT_RUN, self::MASK, (string) mb_scrub(str_replace("\0", '', $text), 'UTF-8'));
     }
 
     /**
