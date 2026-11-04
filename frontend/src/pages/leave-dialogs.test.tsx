@@ -206,7 +206,7 @@ test('an escalated request offers the CEO approve and refuse, and shows the esca
   expect(term('ملاحظة الإحالة')).toHaveTextContent('الرصيد سالب')
 })
 
-test('HR sees an escalated request read-only', async () => {
+test('a decider who does not file for anyone sees an escalated request read-only', async () => {
   mockFetch({ [SHOW]: () => json(200, { data: shown({ status: 'escalated' }) }) })
   decide(HR)
   await screen.findByText('كريم حسن')

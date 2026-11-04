@@ -140,7 +140,7 @@ Job `leave:alert-anniversary`, daily 08:00 Cairo, `maintenance` queue, same retr
 | GET | `leave/requests/preview?employee_id=&kind=&from_date=&to_date=` (`dates`, `days`, `balance`, `keep`, `unpaid`, `remaining_after`) | `leave.request` |
 | POST | `leave/requests` (`employee_id`, `kind`, `from_date`, `to_date`, `note`) → 201 | `leave.request` |
 | GET | `leave/requests/{id}` (the row plus `decision_reason`, `decided_by: {id, name}`, `decided_at`, and `approval`: while pending or escalated `{dates, days, balance, keep, unpaid, remaining_after, blocked}` computed now, else null; own scope out of reach today → 404) | `leave.view` |
-| POST | `leave/requests/{id}/approve` (`version`), `/refuse` (`version`, `reason`), `/escalate` (`version`, `reason?`) → 200 the `GET {id}` shape; `/cancel` (Slice 6) | as in Workflow |
+| POST | `leave/requests/{id}/approve` (`version`), `/refuse` (`version`, `reason`), `/escalate` (`version`, `reason?`) → 200 the `GET {id}` shape; `/cancel` (`version`, `reason?`) → 200 the `GET {id}` shape; 403 without the permission for the status, 404 out of reach, 409 `concurrency_conflict` (stale, or already refused/cancelled), 409 `leave_cancel_blocked` with `error.dates`, 423 `period_locked` | as in Workflow (Cancel) |
 
 `.own` reads return only employees in the caller's reach today. A request row is `{id, employee: {id, code, name_ar, name_en}, kind, from_date, to_date, days, status, note, requested_by: {id, name}, created_at, version}`; refusals are 422 with the code named in Workflow. `remaining_after` is the remaining balance less the kept days for annual and casual, the remaining balance for sick and unpaid, and null with no entitlement.
 
