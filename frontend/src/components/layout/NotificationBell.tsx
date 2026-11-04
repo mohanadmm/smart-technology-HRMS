@@ -4,33 +4,43 @@ import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { ltrDates } from '@/components/form'
+import { localName, ltrDates } from '@/components/form'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/misc'
 import { queryKey, useList, useSave } from '@/lib/query'
 import { cn, FOCUS } from '@/lib/utils'
 
-type MissingDays = { date: string; groups: { group: string; period_start: string; period_end: string; missing: number }[] }
-type Notification = { id: string; type: string; date: string; data: MissingDays; read_at: string | null }
+type Base = { id: string; date: string; read_at: string | null }
+type MissingDays = Base & { type: 'attendance_missing_days'; data: { date: string; groups: { group: string; period_start: string; period_end: string; missing: number }[] } }
+type LeaveAnniversary = Base & {
+  type: 'leave_anniversary'
+  data: { employee_id: string; hire_date: string }
+  employee: { id: string; code: number; name_ar: string; name_en: string | null } | null
+}
+type Notification = MissingDays | LeaveAnniversary
+const KNOWN = new Set<string>(['attendance_missing_days', 'leave_anniversary'] satisfies Notification['type'][])
 
 const PATH = '/notifications?per_page=10'
 
-/** The header bell: the latest 10 notifications, the badge counting the unread among them; a line opens that group's grid for its period. */
+/** The header bell: the latest 10 notifications, the badge counting the unread among them; a line opens what it is about (a group's grid for its period, an employee's Leave tab). */
 export function NotificationBell() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const save = useSave()
   const id = useId()
   const { rows, err, loading } = useList(PATH, { refetchInterval: 5 * 60_000 }) // and on window focus, the query default
   // useList drops its rows on an error; a failed refetch keeps the last good answer in the cache, so the bell keeps showing it
   const kept = useQueryClient().getQueryData<{ data: Notification[] }>(queryKey(PATH))?.data
-  const list = ((err ? kept : rows) ?? []) as Notification[]
-  const known = list.filter((n) => n.type === 'attendance_missing_days') // the only type so far; an unknown one is neither counted nor shown
+  const list = ((err ? kept : rows) ?? []) as { type: string }[]
+  const known = list.filter((n): n is Notification => KNOWN.has(n.type)) // an unknown type is neither counted nor shown
   const unread = known.filter((n) => !n.read_at).length
-  const open = (n: Notification, group: string, period: string) => {
+  const open = (n: Notification, to: string) => {
     if (!n.read_at) save(`/notifications/${n.id}/read`, { method: 'PATCH' }).catch((e: Error) => toast.error(e.message))
-    navigate(`/attendance?${new URLSearchParams({ group, period, tab: 'grid' })}`)
+    navigate(to)
   }
+  const unreadWord = (n: Notification) => !n.read_at && <><span className="sr-only">{t('notifications.unread')}</span> </>
+  // without it, screen readers other than Chromium's run the line into the date that follows
+  const pause = <><span className="sr-only">{t('notifications.pause')}</span>{' '}</>
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
@@ -59,19 +69,31 @@ export function NotificationBell() {
           </div>
         )}
         {!loading && !err && known.length === 0 && <p className="px-2.5 py-3 text-sm text-muted-foreground">{t('notifications.empty')}</p>}
-        {known.map((n) => (
+        {known.map((n) => n.type === 'leave_anniversary' ? (
+          <DropdownMenuItem key={n.id} onSelect={() => open(n, `/employees/${n.data.employee_id}?tab=leave`)} className={cn('flex-col items-start gap-0.5', !n.read_at && 'font-semibold')}>
+            <span className="flex items-baseline gap-2">
+              {!n.read_at && <span aria-hidden className="size-2 shrink-0 self-center rounded-full bg-primary" />}
+              <span>
+                {unreadWord(n)}
+                {n.employee ? t('notifications.leaveAnniversary.line', { name: localName(n.employee, i18n.language) }) : t('notifications.leaveAnniversary.unknown')}
+                {n.employee && <> <bdi dir="ltr" className="font-mono text-xs font-normal text-muted-foreground">{n.employee.code}</bdi></>}
+                {pause}
+              </span>
+            </span>
+            <span className="text-xs font-normal text-muted-foreground">{ltrDates(t('notifications.leaveAnniversary.hired', { date: n.data.hire_date }))}</span>
+          </DropdownMenuItem>
+        ) : (
           <DropdownMenuGroup key={n.id} aria-labelledby={`${id}-${n.id}`} className="py-1">
             <p id={`${id}-${n.id}`} className={cn('flex items-center gap-2 px-2.5 py-1.5 text-xs', n.read_at ? 'text-muted-foreground' : 'text-foreground')}>
               {!n.read_at && <span aria-hidden className="size-2 shrink-0 rounded-full bg-primary" />}
               <span className={cn(!n.read_at && 'font-semibold')}>{ltrDates(t('notifications.missingDays.title', { date: n.data.date }))}</span>
             </p>
             {n.data.groups.map((g) => (
-              <DropdownMenuItem key={`${g.group}-${g.period_start}`} onSelect={() => open(n, g.group, g.period_start)} className={cn('flex-col items-start gap-0.5', !n.read_at && 'font-semibold')}>
+              <DropdownMenuItem key={`${g.group}-${g.period_start}`} onSelect={() => open(n, `/attendance?${new URLSearchParams({ group: g.group, period: g.period_start, tab: 'grid' })}`)} className={cn('flex-col items-start gap-0.5', !n.read_at && 'font-semibold')}>
                 <span>
-                  {!n.read_at && <><span className="sr-only">{t('notifications.unread')}</span> </>}
+                  {unreadWord(n)}
                   {t('notifications.missingDays.line', { group: t(`attendance.group.${g.group}`), count: g.missing })}
-                  {/* without it, screen readers other than Chromium's run the count into the range's first date */}
-                  <span className="sr-only">{t('notifications.pause')}</span>{' '}
+                  {pause}
                 </span>
                 <span className="text-xs font-normal text-muted-foreground">{ltrDates(t('notifications.missingDays.period', { start: g.period_start, end: g.period_end }))}</span>
               </DropdownMenuItem>

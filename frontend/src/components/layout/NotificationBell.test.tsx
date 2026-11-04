@@ -22,6 +22,10 @@ const unread = missing('n1', null, [
   { group: 'engineer', period_start: '2026-09-26', period_end: '2026-10-25', missing: 22 },
 ])
 const read = missing('n2', '2026-10-19T08:00:00Z', [{ group: 'day_laborer', period_start: '2026-10-16', period_end: '2026-10-31', missing: 4 }])
+const ahmed = { id: 'e1', code: 1042, name_ar: 'أحمد علي', name_en: 'Ahmed Ali' }
+const anniversary = (employee: { id: string; code: number; name_ar: string; name_en: string | null } | null, read_at: string | null = null) => ({
+  id: 'a1', type: 'leave_anniversary', date: '2026-11-04', ref: 'e1', read_at, data: { employee_id: 'e1', hire_date: '2025-11-04' }, employee,
+})
 const inbox = (rows: unknown[]) => () => json(200, { data: rows, meta: { pagination: { ...pagination, total: rows.length } } })
 
 function Where() {
@@ -142,4 +146,39 @@ test('while loading, the menu says so to screen readers', async () => {
   renderWithAuth(<NotificationBell />, [])
   await user.click(screen.getByRole('button', { name: /^فتح الإشعارات/ }))
   expect(await screen.findByText('جارٍ التحميل…')).toBeInTheDocument()
+})
+
+test('a one-year anniversary is listed with the name, code and hire date, and counted', async () => {
+  mockFetch({ 'GET /api/v1/notifications': inbox([anniversary(ahmed), unread]) })
+  renderWithAuth(<NotificationBell />, [])
+  await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (2 غير مقروء)' }))
+  const line = await screen.findByRole('menuitem', { name: /أحمد علي أكمل سنة خدمة اليوم/ })
+  expect(line).toHaveAccessibleName(/^غير مقروء، أحمد علي أكمل سنة خدمة اليوم 1042،\s*تاريخ التعيين 2025-11-04$/)
+})
+
+test('choosing an anniversary marks it read and opens the employee on the Leave tab', async () => {
+  const patch = vi.fn(() => json(200, { data: { ...anniversary(ahmed), read_at: '2026-11-04T09:00:00Z' } }))
+  mockFetch({ 'GET /api/v1/notifications': inbox([anniversary(ahmed)]), 'PATCH /api/v1/notifications/a1/read': patch })
+  renderWithAuth(<><NotificationBell /><Where /></>, [])
+  await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (1 غير مقروء)' }))
+  await user.click(await screen.findByRole('menuitem', { name: /أكمل سنة خدمة اليوم/ }))
+  expect(screen.getByRole('status')).toHaveTextContent('/employees/e1?tab=leave')
+  await waitFor(() => expect(patch).toHaveBeenCalledTimes(1))
+})
+
+test('an anniversary whose employee is gone reads as a generic line', async () => {
+  mockFetch({ 'GET /api/v1/notifications': inbox([anniversary(null, '2026-11-04T09:00:00Z')]) })
+  renderWithAuth(<NotificationBell />, [])
+  await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (0 غير مقروء)' }))
+  expect(await screen.findByRole('menuitem')).toHaveAccessibleName(/^موظف أكمل سنة خدمة اليوم،\s*تاريخ التعيين 2025-11-04$/)
+})
+
+test('in English an anniversary uses the English name, else the Arabic one', async () => {
+  await i18n.changeLanguage('en')
+  mockFetch({ 'GET /api/v1/notifications': inbox([anniversary(ahmed), { ...anniversary({ ...ahmed, name_en: null }), id: 'a2' }]) })
+  renderWithAuth(<NotificationBell />, [])
+  await user.click(await screen.findByRole('button', { name: 'Open notifications (2 unread)' }))
+  const [en, ar] = await screen.findAllByRole('menuitem')
+  expect(en).toHaveAccessibleName(/^unread, Ahmed Ali completed one year of service today 1042,\s*Hired 2025-11-04$/)
+  expect(ar).toHaveTextContent('أحمد علي completed one year of service today')
 })
