@@ -6,6 +6,7 @@ use App\Http\Middleware\RecordRequest;
 use App\Http\Middleware\SetLocaleFromRequest;
 use App\Modules\Attendance\Domain\AttendanceRefused;
 use App\Modules\Attendance\Presentation\AlertMissingDaysCommand;
+use App\Modules\Audit\Infrastructure\SystemLog;
 use App\Modules\Employees\Domain\EmployeeCodeTaken;
 use App\Modules\Employees\Presentation\EnsureEmployeeInScope;
 use App\Modules\Employees\Presentation\ImportMasterDataCommand;
@@ -50,6 +51,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias(['permission' => AuthorizePermission::class, 'employee.scope' => EnsureEmployeeInScope::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Every reported exception gets an error_log row; no ->stop(), so the default log still gets it too.
+        $exceptions->report(fn (Throwable $e) => SystemLog::error($e));
+
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );

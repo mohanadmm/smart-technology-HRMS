@@ -7,6 +7,7 @@ namespace App\Modules\Audit\Infrastructure;
 use App\Http\Middleware\AddRequestId;
 use App\Http\Middleware\RecordRequest;
 use App\Modules\Audit\Domain\LogMasker;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Routing\Route;
@@ -15,10 +16,11 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use PDOException;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
-/** The one writer of request_log rows. Never throws: logging must not break the request it logs. */
+/** The one writer of request_log and error_log rows. Never throws: logging must not break the request it logs. */
 final class SystemLog
 {
     public static function request(Request $request, Response $response): void
@@ -57,6 +59,59 @@ final class SystemLog
             // Only the class: the message may quote the row. Never to error_log (no loop).
             Log::warning('system_log.request_failed', ['class' => $e::class]);
         }
+    }
+
+    /** A reported exception, with no data values: a database error keeps its SQLSTATE, constraint and SQL, never the driver text. */
+    public static function error(Throwable $e): void
+    {
+        try {
+            $db = null;
+            for ($link = $e; $link !== null && $db === null; $link = $link->getPrevious()) {
+                $db = $link instanceof QueryException || $link instanceof PDOException ? $link : null;
+            }
+
+            $requestId = app()->bound('request') ? app('request')->attributes->get(AddRequestId::ATTRIBUTE) : null;
+            $sqlstate = null;
+            $message = LogMasker::text($e->getMessage());
+            if ($db !== null) {
+                $info = $db->errorInfo ?? [];
+                $code = (string) $db->getCode();
+                $sqlstate = is_string($info[0] ?? null) ? $info[0] : (strlen($code) === 5 ? $code : null);
+                $constraint = preg_match('/constraint "([^"]+)"/', (string) ($info[2] ?? ''), $m) === 1 ? ", constraint {$m[1]}" : '';
+                $sql = $db instanceof QueryException ? "\n".$db->getSql() : '';
+                $message = LogMasker::text("SQLSTATE {$sqlstate}{$constraint}{$sql}");
+            }
+
+            $row = [
+                'id' => (string) Str::uuid7(),
+                'request_id' => is_string($requestId) ? $requestId : null,
+                'user_id' => Auth::hasUser() ? Auth::id() : null,
+                'class' => self::cut($e::class, 255),
+                'message' => $message,
+                'file' => self::cut($e->getFile(), 1024),
+                'line' => $e->getLine(),
+                'trace' => self::trace($e),
+                'sqlstate' => $sqlstate,
+                'occurred_at' => now(),
+            ];
+
+            DB::transaction(fn () => DB::table('error_log')->insert($row));
+        } catch (Throwable $failure) {
+            // Only the class, as in request(); never back to error_log (no loop).
+            Log::warning('system_log.error_failed', ['class' => $failure::class]);
+        }
+    }
+
+    /** Frames as "#i file(line): class->function()", never their arguments. */
+    private static function trace(Throwable $e): string
+    {
+        $lines = [];
+        foreach ($e->getTrace() as $i => $frame) {
+            $where = isset($frame['file']) ? $frame['file'].'('.($frame['line'] ?? '?').')' : '[internal function]';
+            $lines[] = "#{$i} {$where}: ".($frame['class'] ?? '').($frame['type'] ?? '').$frame['function'].'()';
+        }
+
+        return LogMasker::text(implode("\n", $lines));
     }
 
     private static function cut(string $text, int $length): string

@@ -85,6 +85,8 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // A QueryException message shows "?" placeholders, not the bound values.
+            'mask_bindings_in_exception_messages' => true,
         ],
 
         'sqlsrv' => [
