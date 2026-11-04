@@ -1,0 +1,317 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Modules\Attendance\Application\AttendanceDays;
+use App\Modules\Employees\Application\EmployeeService;
+use App\Modules\Identity\Infrastructure\Eloquent\User;
+use App\Modules\Notifications\Application\Notifier;
+use App\Modules\Notifications\Infrastructure\Eloquent\Notification;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Testing\TestResponse;
+use Tests\AttendanceFixtures;
+use Tests\TestCase;
+
+/** Filing a leave request (leave spec, Counting a request's days and Workflow Submit). 2026-11-06 is a Friday, 11-07 a Saturday. */
+class LeaveRequestsTest extends TestCase
+{
+    use AttendanceFixtures;
+    use RefreshDatabase;
+
+    /** @var list<User> */
+    private array $hr;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->cairo('2026-10-20 12:00');
+        $this->hr = [$this->makeUser('hr'), $this->makeUser('hr')];
+        $this->makeUser('ceo');
+        $this->actingAs($this->hr[0], 'api');
+    }
+
+    private function preview(string $employeeId, string $from, string $to, string $kind = 'annual'): TestResponse
+    {
+        return $this->getJson("/api/v1/leave/requests/preview?employee_id={$employeeId}&kind={$kind}&from_date={$from}&to_date={$to}");
+    }
+
+    private function submit(string $employeeId, string $from, string $to, string $kind = 'annual', ?string $note = null): TestResponse
+    {
+        return $this->postJson('/api/v1/leave/requests', ['employee_id' => $employeeId, 'kind' => $kind, 'from_date' => $from, 'to_date' => $to, 'note' => $note]);
+    }
+
+    private function assign(string $employeeId, User $manager, string $from = '2026-01-01'): void
+    {
+        app(EmployeeService::class)->assignManager($employeeId, ['manager_id' => $manager->id, 'effective_from' => $from]);
+    }
+
+    /** @return list<string> */
+    private function dates(string $employeeId, string $from, string $to): array
+    {
+        return $this->preview($employeeId, $from, $to)->assertOk()->json('data.dates');
+    }
+
+    public function test_an_engineers_friday_is_not_counted(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $this->assertSame(['2026-11-05', '2026-11-07', '2026-11-08'], $this->dates($e, '2026-11-05', '2026-11-08'));
+    }
+
+    public function test_office_staff_skip_friday_and_saturday(): void
+    {
+        $e = $this->employee('office', '2020-01-01');
+        $this->assertSame(['2026-11-05', '2026-11-08'], $this->dates($e, '2026-11-05', '2026-11-08'));
+    }
+
+    public function test_an_official_holiday_is_not_counted(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $this->holiday('2026-11-04');
+        $this->assertSame(['2026-11-03', '2026-11-05'], $this->dates($e, '2026-11-03', '2026-11-05'));
+    }
+
+    public function test_dates_after_termination_are_not_counted(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01', ['termination_date' => '2026-11-04']);
+        $this->assertSame(['2026-11-02', '2026-11-03', '2026-11-04'], $this->dates($e, '2026-11-02', '2026-11-08'));
+    }
+
+    public function test_a_request_of_one_friday_is_refused_and_nothing_is_stored(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $this->preview($e, '2026-11-06', '2026-11-06')->assertStatus(422)->assertJsonPath('error.code', 'leave_no_days');
+        $this->submit($e, '2026-11-06', '2026-11-06')->assertStatus(422)->assertJsonPath('error.code', 'leave_no_days');
+        $this->assertSame(0, DB::table('leave_requests')->count());
+    }
+
+    public function test_a_day_laborer_cannot_request_leave(): void
+    {
+        $e = $this->employee('day_laborer', '2020-01-01');
+        $this->submit($e, '2026-11-02', '2026-11-03')->assertStatus(422)->assertJsonPath('error.code', 'leave_day_laborer')
+            ->assertJsonPath('error.message', 'Day laborers have no leave balance and cannot request leave.');
+    }
+
+    public function test_an_overlap_with_a_live_request_is_refused(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $first = $this->submit($e, '2026-11-02', '2026-11-04')->assertCreated()->json('data.id');
+        $this->preview($e, '2026-11-04', '2026-11-05')->assertStatus(422)->assertJsonPath('error.code', 'leave_overlap');
+        $this->submit($e, '2026-11-04', '2026-11-05')->assertStatus(422)->assertJsonPath('error.code', 'leave_overlap');
+
+        DB::table('leave_requests')->where('id', $first)->update(['status' => 'refused']);
+        $this->submit($e, '2026-11-04', '2026-11-05')->assertCreated();
+    }
+
+    public function test_a_range_crossing_dec_31_is_refused(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $this->submit($e, '2026-12-30', '2027-01-03')->assertStatus(422)->assertJsonPath('error.code', 'leave_crosses_year');
+    }
+
+    public function test_a_range_is_at_most_60_days(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $this->preview($e, '2026-11-01', '2026-12-30')->assertOk();
+        $this->submit($e, '2026-11-01', '2026-12-31')->assertStatus(422)->assertJsonPath('error.code', 'leave_too_long');
+    }
+
+    public function test_the_input_is_validated(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $this->submit($e, '2026-11-05', '2026-11-04')->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
+        $this->submit($e, '2026-11-04', '2026-11-05', 'holiday')->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
+        $this->preview($e, '2026-11-04', 'tomorrow')->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
+    }
+
+    public function test_a_managers_request_is_pending_and_notifies_each_hr_user_once(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $manager = $this->makeUser('manager');
+        $this->assign($e, $manager);
+
+        $this->actingAs($manager, 'api');
+        $row = $this->submit($e, '2026-11-05', '2026-11-08', 'annual', 'Note-1')->assertCreated()
+            ->assertJsonPath('data.employee.id', $e)->assertJsonPath('data.employee.name_ar', 'Engineer-1')
+            ->assertJsonPath('data.kind', 'annual')->assertJsonPath('data.from_date', '2026-11-05')->assertJsonPath('data.to_date', '2026-11-08')
+            ->assertJsonPath('data.days', 3)->assertJsonPath('data.status', 'pending')->assertJsonPath('data.note', 'Note-1')
+            ->assertJsonPath('data.requested_by', ['id' => $manager->id, 'name' => 'manager'])->assertJsonPath('data.version', 1)
+            ->json('data');
+        $this->assertSame(['id', 'employee', 'kind', 'from_date', 'to_date', 'days', 'status', 'note', 'requested_by', 'created_at', 'version'], array_keys($row));
+
+        $this->assertEqualsCanonicalizing([$this->hr[0]->id, $this->hr[1]->id], Notification::pluck('user_id')->all());
+        foreach (Notification::all() as $n) {
+            $this->assertSame(['leave_requested', '2026-10-20', $row['id']], [$n->type, substr((string) $n->date, 0, 10), $n->ref]);
+            $this->assertEquals(['employee_id' => $e, 'request_id' => $row['id'], 'kind' => 'annual', 'from_date' => '2026-11-05', 'to_date' => '2026-11-08', 'days' => 3], $n->data);
+        }
+    }
+
+    public function test_two_requests_the_same_day_send_two_notifications_per_hr_user(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $manager = $this->makeUser('manager');
+        $this->assign($e, $manager);
+
+        $this->actingAs($manager, 'api');
+        $this->submit($e, '2026-11-02', '2026-11-03')->assertCreated();
+        $this->submit($e, '2026-11-09', '2026-11-10', 'casual')->assertCreated();
+
+        $this->assertSame(2, Notification::where('user_id', $this->hr[0]->id)->count());
+        $this->assertSame(2, Notification::where('user_id', $this->hr[1]->id)->count());
+    }
+
+    public function test_hrs_own_request_notifies_nobody(): void
+    {
+        $e = $this->employee('office', '2020-01-01');
+        $this->submit($e, '2026-11-02', '2026-11-03')->assertCreated()->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.requested_by.id', $this->hr[0]->id);
+        $this->assertSame(0, Notification::count());
+    }
+
+    public function test_the_request_is_audited(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-11-02', '2026-11-03')->json('data.id');
+        $audit = DB::table('audit_log')->where(['entity_type' => 'leave_requests', 'entity_id' => $id])->get();
+        $this->assertSame(['CREATED'], $audit->pluck('event')->all());
+        $this->assertSame('pending', json_decode((string) $audit[0]->new_values, true)['status']);
+    }
+
+    public function test_a_manager_is_refused_when_a_counted_date_is_out_of_reach(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $manager = $this->makeUser('manager');
+        $this->assign($e, $manager);
+        $this->assign($e, $this->makeUser('manager'), '2026-11-05');
+
+        $this->actingAs($manager, 'api');
+        $this->preview($e, '2026-11-03', '2026-11-05')->assertStatus(422)->assertJsonPath('error.code', 'site_not_in_reach')
+            ->assertJsonPath('error.message', 'This site is not one of your sites, or it is not the worker\'s home site on this date.');
+        $this->submit($e, '2026-11-03', '2026-11-05')->assertStatus(422)->assertJsonPath('error.code', 'site_not_in_reach');
+        $this->submit($e, '2026-11-03', '2026-11-04')->assertCreated();
+        $this->assertSame(1, DB::table('leave_requests')->count());
+    }
+
+    public function test_a_manager_cannot_file_for_office_staff_or_learn_about_an_employee_out_of_reach(): void
+    {
+        $office = $this->employee('office', '2020-01-01');
+        $laborer = $this->employee('day_laborer', '2020-01-01');
+        $this->actingAs($this->makeUser('manager'), 'api');
+        $this->submit($office, '2026-11-02', '2026-11-03')->assertStatus(422)->assertJsonPath('error.code', 'site_not_in_reach');
+        $this->submit($laborer, '2026-11-02', '2026-11-03')->assertStatus(422)->assertJsonPath('error.code', 'site_not_in_reach');
+        $this->preview($office, '2026-11-06', '2026-11-07')->assertStatus(422)->assertJsonPath('error.code', 'site_not_in_reach');
+    }
+
+    public function test_a_termination_inside_the_range_drops_the_later_dates_for_a_manager_too(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01', ['termination_date' => '2026-11-03']);
+        $manager = $this->makeUser('manager');
+        $this->assign($e, $manager);
+        $this->actingAs($manager, 'api');
+        $this->submit($e, '2026-11-02', '2026-11-05')->assertCreated()->assertJsonPath('data.days', 2);
+    }
+
+    public function test_requests_need_leave_request(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $this->actingAs(User::where('role_id', DB::table('roles')->where('slug', 'ceo')->value('id'))->firstOrFail(), 'api');
+        $this->submit($e, '2026-11-02', '2026-11-03')->assertForbidden();
+        $this->preview($e, '2026-11-02', '2026-11-03')->assertForbidden();
+    }
+
+    public function test_the_preview_splits_annual_days_beyond_the_balance_into_unpaid(): void
+    {
+        $e = $this->employee('engineer', '2026-07-01');   // pro-rata entitlement 5
+        $days = app(AttendanceDays::class);
+        $annual = DB::table('sites')->where(['kind' => 'leave', 'leave_code' => 'annual', 'active' => true])->value('id');
+        $days->save($e, '2026-10-01', ['site_id' => $annual]);
+        $days->save($e, '2026-10-03', ['site_id' => $annual]);
+
+        $this->preview($e, '2026-11-02', '2026-11-08')->assertOk()
+            ->assertJsonPath('data.days', 6)->assertJsonPath('data.balance.remaining', 3)
+            ->assertJsonPath('data.keep', 3)->assertJsonPath('data.unpaid', 3)->assertJsonPath('data.remaining_after', 0);
+    }
+
+    public function test_casual_keeps_within_the_smaller_balance_and_sick_never_splits(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $casual = DB::table('sites')->where(['kind' => 'leave', 'leave_code' => 'casual', 'active' => true])->value('id');
+        foreach (['2026-10-01', '2026-10-03', '2026-10-04', '2026-10-05'] as $date) {
+            app(AttendanceDays::class)->save($e, $date, ['site_id' => $casual]);
+        }
+
+        $this->preview($e, '2026-11-02', '2026-11-05', 'casual')->assertOk()
+            ->assertJsonPath('data.days', 4)->assertJsonPath('data.keep', 2)->assertJsonPath('data.unpaid', 2)->assertJsonPath('data.remaining_after', 15);
+        $this->preview($e, '2026-11-02', '2026-11-05', 'sick')->assertOk()
+            ->assertJsonPath('data.keep', 4)->assertJsonPath('data.unpaid', 0)->assertJsonPath('data.remaining_after', 17);
+    }
+
+    public function test_no_hire_date_keeps_every_day_with_no_remaining_after(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01', ['hire_date' => null]);
+        $this->preview($e, '2026-11-02', '2026-11-03')->assertOk()
+            ->assertJsonPath('data.balance.entitlement', null)->assertJsonPath('data.keep', 2)->assertJsonPath('data.unpaid', 0)
+            ->assertJsonPath('data.remaining_after', null);
+    }
+
+    public function test_the_list_puts_pending_and_escalated_first_then_newest(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $old = $this->submit($e, '2026-11-02', '2026-11-03')->json('data.id');
+        $this->travel(1)->minutes();
+        $decided = $this->submit($e, '2026-11-09', '2026-11-10')->json('data.id');
+        $this->travel(1)->minutes();
+        $escalated = $this->submit($e, '2026-11-16', '2026-11-17')->json('data.id');
+        DB::table('leave_requests')->where('id', $decided)->update(['status' => 'approved']);
+        DB::table('leave_requests')->where('id', $escalated)->update(['status' => 'escalated']);
+
+        $list = $this->getJson('/api/v1/leave/requests')->assertOk();
+        $this->assertSame([$escalated, $old, $decided], array_column($list->json('data'), 'id'));
+        $this->assertSame(3, $list->json('meta.pagination.total'));
+        $this->assertSame([$decided], array_column($this->getJson('/api/v1/leave/requests?status=approved')->json('data'), 'id'));
+        $this->assertSame([], $this->getJson('/api/v1/leave/requests?year=2027')->json('data'));
+        $this->getJson('/api/v1/leave/requests?per_page=101')->assertStatus(422);
+    }
+
+    public function test_a_manager_lists_only_requests_for_employees_in_reach_today(): void
+    {
+        $mine = $this->employee('engineer', '2020-01-01');
+        $other = $this->employee('engineer', '2020-01-01');
+        $manager = $this->makeUser('manager');
+        $this->assign($mine, $manager);
+        $minesRequest = $this->submit($mine, '2026-11-02', '2026-11-03')->json('data.id');
+        $this->submit($other, '2026-11-02', '2026-11-03')->assertCreated();
+
+        $this->actingAs($manager, 'api');
+        $this->assertSame([$minesRequest], array_column($this->getJson('/api/v1/leave/requests')->assertOk()->json('data'), 'id'));
+        $this->assertSame([], $this->getJson("/api/v1/leave/requests?employee_id={$other}")->assertOk()->json('data'));
+    }
+
+    public function test_the_inbox_names_only_employees_the_reader_can_view(): void
+    {
+        $mine = $this->employee('engineer', '2020-01-01');
+        $other = $this->employee('engineer', '2020-01-01');
+        $manager = $this->makeUser('manager');
+        $this->assign($mine, $manager);
+        $notifier = app(Notifier::class);
+        foreach ([$mine, $other] as $id) {
+            $notifier->notifyOnce($manager->id, 'leave_decided', '2026-10-20', ['employee_id' => $id], $id);
+            $notifier->notifyOnce($this->hr[0]->id, 'leave_requested', '2026-10-20', ['employee_id' => $id], $id);
+        }
+        $blind = $this->userWith('all', null);   // no employee.view
+        $notifier->notifyOnce($blind->id, 'leave_requested', '2026-10-20', ['employee_id' => $mine], $mine);
+
+        $this->actingAs($manager, 'api');
+        $rows = collect($this->getJson('/api/v1/notifications')->assertOk()->json('data'))->keyBy('ref');
+        $this->assertSame($mine, $rows[$mine]['employee']['id']);
+        $this->assertNull($rows[$other]['employee']);
+        $this->assertNull($this->patchJson('/api/v1/notifications/'.$rows[$other]['id'].'/read')->assertOk()->json('data.employee'));
+
+        $this->actingAs($this->hr[0], 'api');
+        $rows = collect($this->getJson('/api/v1/notifications')->json('data'))->keyBy('ref');
+        $this->assertSame([$mine, $other], [$rows[$mine]['employee']['id'], $rows[$other]['employee']['id']]);
+
+        $this->actingAs($blind, 'api');
+        $this->assertNull($this->getJson('/api/v1/notifications')->json('data.0.employee'));
+    }
+}

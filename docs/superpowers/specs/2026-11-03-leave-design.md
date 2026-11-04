@@ -104,7 +104,7 @@ For employee E and year Y, read on date D = max(E's hire date, min(today in Afri
 For each date from..to: skip dates outside employment as a monthly type, the type's weekly off and official holidays (`OffDays`). The rest are the request's days. `days` is stored on submit and recomputed at approval (a holiday added in between changes it).
 
 ### Workflow (`Leave\Application\LeaveRequests`)
-- **Submit** (`leave.request.own` within reach on every date, or `.all`): refuse day laborers, refuse an overlap with a pending, escalated or approved request of the same employee, refuse 0 counted days, refuse a range that crosses Dec 31 (HR enters one request per year, so each year's balance and split stay simple). Manager submissions notify the holders of `leave.decide.all` instantly (`leave_requested`).
+- **Submit** (`leave.request.own` within reach on every counted date, or `.all`): refuse a range that crosses Dec 31 (`leave_crosses_year`; HR enters one request per year, so each year's balance and split stay simple) or is longer than 60 calendar days (`leave_too_long`), a manager when any counted date is out of reach (`site_not_in_reach`; with no counted date, reach on from_date decides), day laborers (`leave_day_laborer`), 0 counted days (`leave_no_days`), and an overlap with a pending, escalated or approved request of the same employee (`leave_overlap`, checked under a per-employee lock). The preview runs the same checks, so the dialog shows a refusal before submit. Manager submissions notify the holders of `leave.decide.all` instantly (`leave_requested`, ref = the request id); HR's notify nobody.
 - **Approve** (`leave.decide.all` on pending; `leave.decide_escalated.all` on escalated), in one transaction with a version check:
   1. Recount the days. Any date holding a stored non-leave day, or in a locked period, refuses with the list of dates (409 `leave_days_blocked`).
   2. For annual/casual, split: the first `min(remaining, casual_remaining if casual)` days keep the kind, the rest become `unpaid` (L2). The response and the dialog preview show the split. Sick and unpaid never split.
@@ -133,18 +133,18 @@ Job `leave:alert-anniversary`, daily 08:00 Cairo, `maintenance` queue, same retr
 | Method | Path | Permission |
 |---|---|---|
 | GET | `leave/balances?year=&type=&q=&per_page=` | `leave.view` |
-| GET | `employees/{id}/leave?year=` (balance + requests) | `leave.view` |
+| GET | `employees/{id}/leave?year=` (balance) | `leave.view` |
 | PUT | `employees/{id}/leave/{year}` (adjustment, with version) | `leave.adjust.all` |
-| GET | `leave/requests?status=&employee_id=&year=&per_page=` | `leave.view` |
-| GET | `leave/requests/preview?employee_id=&kind=&from=&to=` (days, balance after, split) | `leave.request` |
-| POST | `leave/requests` | `leave.request` |
+| GET | `leave/requests?status=&employee_id=&year=&page=&per_page=` (pending and escalated first, then newest; the employee's Leave tab reads its year here) | `leave.view` |
+| GET | `leave/requests/preview?employee_id=&kind=&from_date=&to_date=` (`dates`, `days`, `balance`, `keep`, `unpaid`, `remaining_after`) | `leave.request` |
+| POST | `leave/requests` (`employee_id`, `kind`, `from_date`, `to_date`, `note`) → 201 | `leave.request` |
 | POST | `leave/requests/{id}/approve`, `/refuse`, `/escalate`, `/cancel` (with version) | as in Workflow |
 
-`.own` reads return only employees in the caller's reach today.
+`.own` reads return only employees in the caller's reach today. A request row is `{id, employee: {id, code, name_ar, name_en}, kind, from_date, to_date, days, status, note, requested_by: {id, name}, created_at, version}`; refusals are 422 with the code named in Workflow. `remaining_after` is the remaining balance less the kept days for annual and casual, the remaining balance for sick and unpaid, and null with no entitlement.
 
 ### Frontend
 - Nav entry «الإجازات» → `/leave` with two tabs: **Requests** (pending and escalated first; cards on phones) and **Balances** (table with the year selector; negative remaining in `text-destructive`).
-- Employee page: a **Leave** tab with the balance card, the year's requests, and «طلب إجازة».
+- Employee page: a **Leave** tab with the balance card, the year's requests (`leave/requests?employee_id=&year=`), and «طلب إجازة».
 - Request dialog: employee (fixed on the employee page), kind, from, to, note; the live preview line from `preview`; a warning when days go unpaid.
 - Decide dialog: balance before and after, the split, Approve / Refuse (reason) / Escalate.
 - Adjustment dialog (HR): entitlement override, opening used, opening casual used, reason.

@@ -12,6 +12,7 @@ use App\Modules\Identity\Domain\Authentication\AuthenticationRefused;
 use App\Modules\Identity\Domain\Rbac\AuthorizationRefused;
 use App\Modules\Identity\Presentation\AuthorizePermission;
 use App\Modules\Identity\Presentation\CreateUserCommand;
+use App\Modules\Leave\Domain\LeaveRefused;
 use App\Modules\Leave\Domain\NoLeaveBalance;
 use App\Modules\Leave\Presentation\AlertAnniversaryCommand;
 use App\Support\Database\ConcurrencyConflict;
@@ -87,7 +88,7 @@ return Application::configure(basePath: dirname(__DIR__))
             $request, $e->reason->status(), $e->reason->value, __('attendance.refusal.'.$e->reason->value, $e->params), $e->details,
         ));
 
-        $exceptions->dontReport([ConcurrencyConflict::class, NoLeaveBalance::class]);
+        $exceptions->dontReport([ConcurrencyConflict::class, NoLeaveBalance::class, LeaveRefused::class]);
 
         $exceptions->render(fn (ConcurrencyConflict $e, Request $request) => ApiEnvelope::error(
             $request, 409, ConcurrencyConflict::CODE, ConcurrencyConflict::message(), $e->details,
@@ -95,6 +96,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(fn (NoLeaveBalance $e, Request $request) => ApiEnvelope::error(
             $request, 422, 'no_leave_balance', __('errors.no_leave_balance'),
+        ));
+
+        $exceptions->render(fn (LeaveRefused $e, Request $request) => ApiEnvelope::error(
+            $request, 422, $e->reason->value, __('leave.refusal.'.$e->reason->value, $e->params),
         ));
 
         $exceptions->dontReport(EmployeeCodeTaken::class);

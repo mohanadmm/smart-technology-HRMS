@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Modules\Leave\Domain\LeaveBalance;
+use App\Modules\Leave\Domain\LeaveKind;
 use PHPUnit\Framework\TestCase;
 
 class LeaveBalanceTest extends TestCase
@@ -69,5 +70,36 @@ class LeaveBalanceTest extends TestCase
         $this->assertNull($b['casual_remaining']);
         $this->assertSame(7, $b['used']);
         $this->assertSame(2, $b['casual_used']);
+    }
+
+    public function test_annual_keeps_what_the_balance_covers_and_the_rest_goes_unpaid(): void
+    {
+        $b = LeaveBalance::compute(21, 6, 19, 0, ['annual' => 0, 'casual' => 0, 'sick' => 0, 'unpaid' => 0]);
+        $this->assertSame(['keep' => 2, 'unpaid' => 2], LeaveBalance::split(LeaveKind::Annual, 4, $b));
+        $this->assertSame(['keep' => 1, 'unpaid' => 0], LeaveBalance::split(LeaveKind::Annual, 1, $b));
+    }
+
+    public function test_a_negative_balance_keeps_nothing(): void
+    {
+        $b = LeaveBalance::compute(5, 6, 0, 0, ['annual' => 6, 'casual' => 0, 'sick' => 0, 'unpaid' => 0]);
+        $this->assertSame(['keep' => 0, 'unpaid' => 3], LeaveBalance::split(LeaveKind::Annual, 3, $b));
+    }
+
+    public function test_casual_keeps_within_the_smaller_of_the_two_balances(): void
+    {
+        $b = LeaveBalance::compute(21, 6, 0, 0, ['annual' => 0, 'casual' => 5, 'sick' => 0, 'unpaid' => 0]);   // remaining 16, casual 1
+        $this->assertSame(['keep' => 1, 'unpaid' => 2], LeaveBalance::split(LeaveKind::Casual, 3, $b));
+        $low = LeaveBalance::compute(21, 6, 20, 0, ['annual' => 0, 'casual' => 0, 'sick' => 0, 'unpaid' => 0]);   // remaining 1, casual 6
+        $this->assertSame(['keep' => 1, 'unpaid' => 2], LeaveBalance::split(LeaveKind::Casual, 3, $low));
+    }
+
+    public function test_sick_unpaid_and_an_unknown_entitlement_never_split(): void
+    {
+        $b = LeaveBalance::compute(0, 6, 0, 0, ['annual' => 0, 'casual' => 0, 'sick' => 0, 'unpaid' => 0]);
+        $this->assertSame(['keep' => 3, 'unpaid' => 0], LeaveBalance::split(LeaveKind::Sick, 3, $b));
+        $this->assertSame(['keep' => 3, 'unpaid' => 0], LeaveBalance::split(LeaveKind::Unpaid, 3, $b));
+        $unknown = LeaveBalance::compute(null, 6, 0, 0, ['annual' => 0, 'casual' => 0, 'sick' => 0, 'unpaid' => 0]);
+        $this->assertSame(['keep' => 3, 'unpaid' => 0], LeaveBalance::split(LeaveKind::Annual, 3, $unknown));
+        $this->assertSame(['keep' => 3, 'unpaid' => 0], LeaveBalance::split(LeaveKind::Casual, 3, null));
     }
 }

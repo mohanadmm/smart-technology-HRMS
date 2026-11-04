@@ -49,4 +49,25 @@ final class LeaveBalance
             'unpaid_days' => $counts['unpaid'],
         ];
     }
+
+    /**
+     * How many of a request's $days keep their kind; the rest become unpaid (L2). Annual keeps what the remaining balance covers,
+     * casual what the smaller of the remaining and the casual balance covers. Sick and unpaid, a null balance or an unknown
+     * entitlement keep every day.
+     *
+     * @param  array<string, ?int>|null  $balance  compute()'s result
+     * @return array{keep: int, unpaid: int}
+     */
+    public static function split(LeaveKind $kind, int $days, ?array $balance): array
+    {
+        $remaining = $balance['remaining'] ?? null;
+        $covered = match (true) {
+            $remaining === null, $kind === LeaveKind::Sick, $kind === LeaveKind::Unpaid => $days,
+            $kind === LeaveKind::Casual => min($remaining, (int) ($balance['casual_remaining'] ?? 0)),
+            default => $remaining,
+        };
+        $keep = min($days, max(0, $covered));
+
+        return ['keep' => $keep, 'unpaid' => $days - $keep];
+    }
 }
