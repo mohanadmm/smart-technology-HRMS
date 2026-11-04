@@ -16,7 +16,7 @@ const proposal = (over: object = {}) => ({
   created_at: '2026-11-04T07:30:00Z',
   site: { id: 's1', name_ar: 'موقع الشاطبي', name_en: null },
   proposed_by: { id: 'u9', name: 'كريم' },
-  employee: { id: 'e1', code: 1043, name_ar: 'عامل جديد', name_en: null, gender: null, phone: '01012345678', hire_date: '2026-11-04' },
+  employee: { id: 'e1', code: 1043, name_ar: 'عامل جديد', name_en: null, phone: '01012345678', hire_date: '2026-11-04' },
   ...over,
 })
 const list = (rows: object[], total = rows.length) => () => json(200, { data: rows, meta: { pagination: { ...pagination, total } } })
@@ -52,31 +52,25 @@ test('more than one page waiting says so', async () => {
   expect(await screen.findByText(/يظهر أول 1 من 130/)).toBeInTheDocument()
 })
 
-test('approving needs the gender when the laborer has none, and sends only what HR changed', async () => {
+test('approving at the proposed wage sends only the version', async () => {
   const approve = vi.fn(() => json(200, { data: { id: 'p1', status: 'approved' } }))
   mockFetch({ [LIST]: list([proposal()]), 'POST /api/v1/employees/wage-proposals/p1/approve': approve })
   render('/wage-proposals?proposal=p1')
   const dialog = await screen.findByRole('dialog')
   expect(within(dialog).getByLabelText('الأجر المعتمد')).toHaveValue('350')
   expect(within(dialog).getByText('2026-11-04')).toBeInTheDocument()
-
-  await user.click(within(dialog).getByRole('button', { name: 'اعتماد' }))
-  expect(await within(dialog).findByText('اختر النوع قبل الاعتماد')).toBeInTheDocument()
-  expect(approve).not.toHaveBeenCalled()
-
-  await user.selectOptions(within(dialog).getByLabelText('النوع'), 'male')
+  expect(within(dialog).queryByLabelText('النوع')).not.toBeInTheDocument()   // the site manager entered it with the laborer
   await user.click(within(dialog).getByRole('button', { name: 'اعتماد' }))
   await waitFor(() => expect(approve).toHaveBeenCalledOnce())
-  expect(bodyOf('/p1/approve')).toEqual({ version: 1, gender: 'male' })
+  expect(bodyOf('/p1/approve')).toEqual({ version: 1 })
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 })
 
 test('HR can approve at another wage, typed with Arabic digits', async () => {
   const approve = vi.fn(() => json(200, { data: { id: 'p1', status: 'approved' } }))
-  mockFetch({ [LIST]: list([proposal({ employee: { ...proposal().employee, gender: 'male' } })]), 'POST /api/v1/employees/wage-proposals/p1/approve': approve })
+  mockFetch({ [LIST]: list([proposal()]), 'POST /api/v1/employees/wage-proposals/p1/approve': approve })
   render('/wage-proposals?proposal=p1')
   const dialog = await screen.findByRole('dialog')
-  expect(within(dialog).queryByLabelText('النوع')).not.toBeInTheDocument()
   const wage = within(dialog).getByLabelText('الأجر المعتمد')
   await user.clear(wage)
   await user.type(wage, '٠')
@@ -95,7 +89,7 @@ test('refusing asks once more, then sends the version', async () => {
   render('/wage-proposals?proposal=p1')
   const dialog = await screen.findByRole('dialog')
   await user.click(within(dialog).getByRole('button', { name: 'رفض' }))
-  expect(within(dialog).getByText(/يبقى العامل مسجلاً بلا أجر/)).toBeInTheDocument()
+  expect(within(dialog).getByText(/ينتهي العامل اليوم ويخرج من كل طاقم/)).toBeInTheDocument()
   expect(refuse).not.toHaveBeenCalled()
   await user.click(within(dialog).getByRole('button', { name: 'تأكيد الرفض' }))
   await waitFor(() => expect(refuse).toHaveBeenCalledOnce())
@@ -104,7 +98,7 @@ test('refusing asks once more, then sends the version', async () => {
 
 test('a proposal decided meanwhile shows the conflict and keeps the dialog open', async () => {
   mockFetch({
-    [LIST]: list([proposal({ employee: { ...proposal().employee, gender: 'female' } })]),
+    [LIST]: list([proposal()]),
     'POST /api/v1/employees/wage-proposals/p1/approve': () => json(409, { error: { code: 'concurrency_conflict', message: 'تغيّر هذا السجل' } }),
   })
   render('/wage-proposals?proposal=p1')

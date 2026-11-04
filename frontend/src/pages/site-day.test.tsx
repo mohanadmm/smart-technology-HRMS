@@ -16,9 +16,9 @@ const LEAVE = { absent: 'leave-absent', sick: 'leave-sick', rest: 'leave-rest', 
 const site = (id: string, name: string) => ({ id, name_ar: name, name_en: name, kind: 'work', active: true })
 const day = (extra = {}) => ({ state: 'missing', version: null, site_id: null, leave_code: null, in_time: null, out_time: null, note: null, ...extra })
 const row = (id: string, name: string, type: string, section: string, d = {}, extra = {}) => ({
-  employee: { id, code: 1, name_ar: name, name_en: name, type }, section, shift: { start: '08:00', end: '16:00' }, day: day(d), can_edit: true, why_not: null, ...extra,
+  employee: { id, code: 1, name_ar: name, name_en: name, type }, section, shift: { start: '08:00', end: '16:00' }, day: day(d), can_edit: true, why_not: null, departure_only: false, open_date: null, open_site_id: null, ...extra,
 })
-const answer = (s: { id: string; name_ar: string }, rows: unknown[]) => ({ site: { ...s, name_en: s.name_ar }, date: '2026-10-22', today: '2026-10-22', leave_sites: LEAVE, rows })
+const answer = (s: { id: string; name_ar: string }, rows: unknown[]) => ({ site: { ...s, name_en: s.name_ar }, date: '2026-10-22', today: '2026-10-22', leave_day_types: LEAVE, rows })
 
 const S1 = site('s1', 'Site-1')
 const S2 = site('s2', 'Site-2')
@@ -292,16 +292,17 @@ test('a day laborer with nothing recorded can be removed from today; one already
   expect(within(group('Engineer-1')).queryByRole('button', { name: /إخراج/ })).toBeNull()
 })
 
-test('«إضافة عامل يومية» finds existing laborers first, then proposes a new one', async () => {
+test('«إضافة عامل يومية» finds one laborer by code or full name, then proposes a new one with their gender', async () => {
   const crew = vi.fn((_url: string, _init?: RequestInit) => json(200, { data: {} }))
   const create = vi.fn((_url: string, _init?: RequestInit) => json(201, { data: { id: 'n1', code: 77, name_ar: 'سعيد' } }))
+  const found: Record<string, unknown> = {
+    '12': { match: { id: 'f1', code: 12, name_ar: 'سعيد علي', name_en: null, site: null, here: false, can_add: true }, ambiguous: false },
+    '13': { match: { id: 'f2', code: 13, name_ar: 'سعيد حسن', name_en: null, site: { id: 's9', name_ar: 'Site-9', name_en: null }, here: false, can_add: false }, ambiguous: false },
+    'محمد علي': { match: null, ambiguous: true },
+  }
+  const search = vi.fn((url: string) => json(200, { data: found[new URL(url, 'http://x').searchParams.get('search')!] ?? { match: null, ambiguous: false } }))
   routes([S1], { s1: S1_ROWS }, {
-    'GET /api/v1/attendance/site-day/laborers': () => json(200, {
-      data: [
-        { id: 'f1', code: 12, name_ar: 'سعيد علي', name_en: null, site: null, here: false, can_add: true },
-        { id: 'f2', code: 13, name_ar: 'سعيد حسن', name_en: null, site: { id: 's9', name_ar: 'Site-9', name_en: null }, here: false, can_add: false },
-      ],
-    }),
+    'GET /api/v1/attendance/site-day/laborers': search,
     'POST /api/v1/attendance/site-day/crew': crew,
     'POST /api/v1/attendance/site-day/laborers': create,
   })
@@ -309,23 +310,38 @@ test('«إضافة عامل يومية» finds existing laborers first, then pro
   await enter()
   await user.click(await screen.findByRole('button', { name: 'إضافة عامل يومية' }))
   const dialog = await screen.findByRole('dialog')
-  await user.type(within(dialog).getByRole('textbox', { name: 'اسم العامل' }), 'سعيد')
-  const matches = await within(dialog).findByRole('region', { name: 'عمال مسجلون بهذا الاسم' })
-  expect(await within(matches).findByText('على موقع آخر؛ تواصل مع الموارد البشرية')).toBeInTheDocument()
-  expect(within(matches).getAllByRole('button', { name: 'إضافة لطاقم اليوم' })).toHaveLength(1)
+  const box = within(dialog).getByRole('textbox', { name: /الرقم الوظيفي أو الاسم الكامل/ })
+  const matches = () => within(dialog).getByRole('region', { name: 'عمال مسجلون بهذا الاسم' })
 
+  await user.type(box, '13')
+  expect(await within(dialog).findByText('على موقع آخر؛ تواصل مع الموارد البشرية')).toBeInTheDocument()
+  expect(within(matches()).queryByRole('button', { name: 'إضافة لطاقم اليوم' })).toBeNull()
+  expect(within(dialog).queryByRole('region', { name: 'عامل جديد' })).toBeNull()   // a code never proposes a new laborer
+
+  await user.clear(box)
+  await user.type(box, 'محمد علي')
+  expect(await within(dialog).findByText('أكثر من عامل بهذا الاسم؛ اكتب الرقم الوظيفي.')).toBeInTheDocument()
+  expect(within(dialog).queryByRole('region', { name: 'عامل جديد' })).toBeNull()
+
+  await user.clear(box)
+  await user.type(box, 'سعيد')
+  expect(await within(dialog).findByText('لا يوجد عامل يومية بهذا الرقم أو الاسم الكامل.')).toBeInTheDocument()
+  const add = within(dialog).getByRole('button', { name: 'إضافة العامل الجديد' })
   await user.type(within(dialog).getByRole('textbox', { name: 'الأجر اليومي المقترح' }), '350')
   await user.type(within(dialog).getByRole('textbox', { name: 'رقم الموبايل (اختياري)' }), '01012345678')
-  await user.click(within(dialog).getByRole('button', { name: 'إضافة العامل الجديد' }))
+  expect(add).toBeDisabled()                                                          // the gender is required
+  await user.click(within(dialog).getByRole('button', { name: 'ذكر' }))
+  await user.click(add)
   await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
-  expect(bodyOf(create)).toEqual({ site_id: 's1', name_ar: 'سعيد', daily_wage: '350', phone: '01012345678' })
+  expect(bodyOf(create)).toEqual({ site_id: 's1', name_ar: 'سعيد', gender: 'male', daily_wage: '350', phone: '01012345678' })
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
   await user.click(screen.getByRole('button', { name: 'إضافة عامل يومية' }))
-  await user.type(within(await screen.findByRole('dialog')).getByRole('textbox', { name: 'اسم العامل' }), 'سعيد')
+  await user.type(within(await screen.findByRole('dialog')).getByRole('textbox', { name: /الرقم الوظيفي أو الاسم الكامل/ }), '12')
   await user.click(await screen.findByRole('button', { name: 'إضافة لطاقم اليوم' }))
   await waitFor(() => expect(crew).toHaveBeenCalledTimes(1))
   expect(bodyOf(crew)).toEqual({ site_id: 's1', employee_id: 'f1', action: 'add' })
+  expect(search.mock.calls.every(([u]) => new URL(String(u), 'http://x').searchParams.get('search') !== 'سعي')).toBe(true)   // typing settles before it asks
 })
 
 test('without the crew permissions there is no add or remove', async () => {
@@ -349,6 +365,25 @@ test('an engineer at another site shows that site', async () => {
   expect(within(await screen.findByRole('group', { name: 'Engineer-1' })).getByText('في موقع: Site-2')).toBeInTheDocument()
   expect(within(group('Engineer-1')).getByRole('button', { name: 'حاضر' })).toHaveAttribute('aria-pressed', 'false')
   expect(within(group('Engineer-2')).getByText('في موقع آخر')).toBeInTheDocument()
+})
+
+test('request-only leave is never offered; a day already stored with it shows its name and nothing pressed', async () => {
+  // annual, casual and unpaid come from an approved leave request: a site manager's write to them is 422 leave_needs_request
+  routes([S1], { s1: [
+    row('w1', 'Worker-1', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 'leave-annual', leave_code: 'annual' }),
+    row('w2', 'Worker-2', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 'leave-casual', leave_code: 'casual' }),
+    row('w3', 'Worker-3', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 'leave-unpaid', leave_code: 'unpaid' }),
+  ] })
+  render('/site-day?site=s1')
+  await enter()
+  const list = await screen.findByRole('list', { name: 'العاملون بالموقع' })
+  for (const [name, leave] of [['Worker-1', 'إجازة اعتيادية'], ['Worker-2', 'إجازة عارضة'], ['Worker-3', 'إجازة بدون أجر']]) {
+    const g = within(list).getByRole('group', { name })
+    expect(within(g).getByText(leave)).toBeInTheDocument()
+    expect(within(g).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['حاضر', 'غياب', 'مرضي', 'أنواع إجازات أخرى']) // «أنواع إجازات أخرى» is disabled until the day editor lands; it must leave these three out too
+    expect(g.querySelector('[aria-pressed="true"]')).toBeNull()
+  }
+  expect(screen.queryByRole('button', { name: /اعتيادية|عارضة|بدون أجر/ })).toBeNull()
 })
 
 test('no sites shows the empty state with HR as the contact', async () => {
@@ -385,10 +420,17 @@ test('a time that is not a time stops the save and names the person', async () =
   expect(post).not.toHaveBeenCalled()
 })
 
-test('an earlier day without a departure locks the row, says why, and opens that day', async () => {
-  const { siteDay } = routes([S1], { s1: [row('e1', 'Engineer-1', 'engineer', 'engineers', {}, { can_edit: false, why_not: 'open_day', open_date: '2026-10-21', open_editable: true }), row('e2', 'Engineer-2', 'engineer', 'engineers', {}, { can_edit: false, why_not: 'open_day', open_date: '2026-10-20', open_editable: false })] })
-  render()
-  await enter()
+test('an earlier day without a departure: the banner names it, the row is locked, and a link opens that day at its site', async () => {
+  const { siteDay } = routes([S1, S2], { s1: [
+    row('e1', 'Engineer-1', 'engineer', 'engineers', {}, { can_edit: false, why_not: 'open_day', open_date: '2026-10-21', open_site_id: 's2' }),
+    row('e2', 'Engineer-2', 'engineer', 'engineers', {}, { can_edit: false, why_not: 'open_day', open_date: '2026-10-20', open_site_id: null }),
+  ] })
+  render('/site-day?site=s1')
+  await enter(['Site-1'])
+  const banner = await screen.findByText(/بلا انصراف في يوم سابق \(2\)/)
+  const alert = banner.closest('[role="alert"], [role="status"], div')!
+  expect(within(alert as HTMLElement).getByText(/Engineer-2/)).toBeInTheDocument()
+  expect(within(alert as HTMLElement).getByText(/تكمّله الموارد البشرية/)).toBeInTheDocument()
   const g = await screen.findByRole('group', { name: 'Engineer-1' })
   expect(within(g).getByText(/انصراف يوم 2026-10-21 ناقص/)).toBeInTheDocument()
   expect(within(g).getByRole('button', { name: 'حاضر' })).toBeDisabled()
@@ -397,7 +439,23 @@ test('an earlier day without a departure locks the row, says why, and opens that
   expect(within(g2).queryByRole('button', { name: /افتح يوم/ })).toBeNull()
   await user.click(within(g).getByRole('button', { name: 'افتح يوم 2026-10-21 وسجّل الانصراف' }))
   expect(screen.getByTestId('url')).toHaveTextContent('date=2026-10-21')
-  await waitFor(() => expect(siteDay.mock.calls.some(([u]) => String(u).includes('date=2026-10-21'))).toBe(true))
+  expect(screen.getByTestId('url')).toHaveTextContent('site=s2')                       // the site it was recorded at, added to the working list
+  await waitFor(() => expect(siteDay.mock.calls.some(([u]) => String(u).includes('site_id=s2') && String(u).includes('date=2026-10-21'))).toBe(true))
+})
+
+test('past the window an open day takes only its departure', async () => {
+  const { post } = routes([S1], { s1: [row('e1', 'Engineer-1', 'engineer', 'engineers', { state: 'stored', version: 1, site_id: 's1', in_time: '08:10' }, { departure_only: true })] })
+  render()
+  await enter()
+  const g = await screen.findByRole('group', { name: 'Engineer-1' })
+  expect(within(g).getByText(/سجّل الانصراف فقط، وتُبلَّغ الموارد البشرية/)).toBeInTheDocument()
+  expect(within(g).getByRole('button', { name: 'غياب' })).toBeDisabled()
+  expect(within(g).getByRole('textbox', { name: 'حضور Engineer-1' })).toBeDisabled()
+  await user.type(within(g).getByRole('textbox', { name: 'انصراف Engineer-1' }), '4:00')
+  await user.click(within(g).getAllByRole('button', { name: 'مساءً' })[1])
+  await user.click(screen.getByRole('button', { name: 'حفظ اليوم' }))
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
+  expect(bodyOf(post).rows).toEqual([{ employee_id: 'e1', version: 1, site_id: 's1', in_time: '08:10', out_time: '16:00' }])
 })
 
 test('«زي امبارح» fills only the empty rows from yesterday, and one save sends them', async () => {
@@ -435,4 +493,23 @@ test('a note is typed on the row and saved with it', async () => {
   await user.click(screen.getByRole('button', { name: 'حفظ اليوم' }))
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1))
   expect(bodyOf(post).rows).toEqual([{ employee_id: 'a', version: 2, site_id: 's1', in_time: '09:00', out_time: null, note: 'وصل متأخر بسبب المواصلات' }])
+})
+
+test('a day stored at another of the manager\'s sites takes no note here, so the save never sends that site', async () => {
+  routes([S1, S2], { s1: [row('e1', 'Engineer-1', 'engineer', 'engineers', { state: 'stored', version: 1, site_id: 's2', in_time: '09:00' })] })
+  render('/site-day?site=s1')
+  await enter(['Site-1'])
+  const g = await screen.findByRole('group', { name: 'Engineer-1' })
+  expect(within(g).getByText('في موقع: Site-2')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /إضافة ملاحظة|ملاحظة:/ })).toBeNull()
+})
+
+test('a long note shows on one line, cut short, so the card keeps its width', async () => {
+  const long = 'ملاحظة طويلة '.repeat(40).trim()
+  routes([S1], { s1: [row('a', 'Laborer-A', 'day_laborer', 'workers', { state: 'stored', version: 1, site_id: 's1', in_time: '09:00', note: long })] })
+  render()
+  await enter()
+  const label = await screen.findByText(`ملاحظة: ${long}`)
+  expect(label).toHaveClass('truncate')
+  expect(label.closest('button')).toHaveClass('max-w-full')
 })

@@ -9,7 +9,7 @@ use Illuminate\Support\Str;
 // The site manager's day-labor crew (owner, 2026-11-04; PR #22 review):
 // - a crew change holds for one date only (day_crew_changes): it puts a day laborer on a site, or on none, for that day, and leaves their
 //   home-site history alone, so yesterday's records and tomorrow's roster are unchanged;
-// - a day laborer a site manager adds has no gender until HR completes the record;
+// - a day laborer a site manager adds is entered with their gender, which stays required (owner, 2026-11-05);
 // - their proposed daily wage waits in employee_wage_proposals and is never a pay row until HR approves it.
 return new class extends Migration
 {
@@ -21,8 +21,6 @@ return new class extends Migration
 
     public function up(): void
     {
-        DB::statement('alter table employees alter column gender drop not null');
-
         Schema::create('day_crew_changes', function (Blueprint $t): void {
             $t->standardColumns();
             $t->foreignUuid('employee_id')->constrained('employees')->restrictOnDelete();
@@ -56,16 +54,11 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Refuse rather than invent data: a removed-from-crew row or a gender HR has not filled in has no value to go back to.
-        if (DB::table('employees')->whereNull('gender')->exists()) {
-            throw new RuntimeException('Some employees have no gender; HR fills it in, then roll back.');
-        }
         foreach (array_keys(self::GRANTS) as $name) {
             [$resource, $action, $scope] = explode('.', $name);
             DB::table('permissions')->where(['resource' => $resource, 'action' => $action, 'scope' => $scope])->delete();
         }
         Schema::dropIfExists('employee_wage_proposals');
         Schema::dropIfExists('day_crew_changes');
-        DB::statement('alter table employees alter column gender set not null');
     }
 };

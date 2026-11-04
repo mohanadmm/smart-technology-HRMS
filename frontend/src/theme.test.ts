@@ -36,9 +36,12 @@ test('cn() keeps the touch floor next to a caller size, and an explicit opt-out 
 
 // The touch floor is min-h-tap / min-w-tap, the only shadow is shadow-float, and figures are tabular everywhere (index.css sets it on
 // html), so the old spellings must not come back. Pages join as UI-3 sweeps them: each slice deletes its own SKIP entries, and
-// pages/site-day.tsx stays until its owner's hand-over.
+// the site-day page (split into four files in PR #22's review) stays until its owner's hand-over.
 const SKIP = [
   'pages/holidays.tsx',
+  'pages/site-day-add.tsx',
+  'pages/site-day-picker.tsx',
+  'pages/site-day-row.tsx',
   'pages/site-day.tsx',
   'pages/sites.tsx',
 ]

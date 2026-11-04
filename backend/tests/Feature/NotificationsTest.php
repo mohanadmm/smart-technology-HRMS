@@ -46,7 +46,7 @@ class NotificationsTest extends TestCase
 
         $this->assertEqualsCanonicalizing([$hr1->id, $hr2->id, $c->id], Notification::pluck('user_id')->all());
         // assertEquals, not assertSame: jsonb stores object keys in its own order.
-        $this->assertEquals(['date' => '2026-10-20', 'groups' => [['group' => 'engineer', 'period_start' => '2026-09-26', 'period_end' => '2026-10-25', 'missing' => 22]]], Notification::first()?->data);
+        $this->assertEquals(['date' => '2026-10-20', 'groups' => [['group' => 'engineer', 'period_start' => '2026-09-26', 'period_end' => '2026-10-25', 'missing' => 22, 'open' => 0, 'crew_changes' => 0]]], Notification::first()?->data);
         $this->assertSame(22, Notification::first()?->data['groups'][0]['missing']);   // an int: the bell pluralizes it
         $this->assertSame(['attendance_missing_days'], Notification::distinct()->pluck('type')->all());
     }

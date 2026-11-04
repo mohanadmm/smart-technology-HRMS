@@ -8,6 +8,7 @@ use App\Modules\Identity\Infrastructure\Eloquent\User;
 use App\Modules\Settings\Application\BusinessRules;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Tests\AttendanceFixtures;
 use Tests\TestCase;
@@ -54,12 +55,12 @@ class SiteDaySaveTest extends TestCase
     {
         $this->actingAs($this->m, 'api');
         $r = $this->getJson("/api/v1/attendance/site-day?site_id={$this->s1}")->assertOk();
-        $this->assertEqualsCanonicalizing(['absent', 'sick', 'rest', 'other'], array_keys($r->json('data.leave_sites')));
-        $this->assertSame($this->leave['sick'], $r->json('data.leave_sites.sick'));
+        $this->assertEqualsCanonicalizing(['absent', 'sick', 'rest', 'other'], array_keys($r->json('data.leave_day_types')));
+        $this->assertSame($this->leave['sick'], $r->json('data.leave_day_types.sick'));
         $row = $r->json('data.rows.0');
 
         $this->assertSame(['start' => '08:00', 'end' => '17:00'], $row['shift']);   // the field shift setting (R19 open)
-        $this->assertSame([true, null], [$row['can_edit'], $row['why_not']]);
+        $this->assertSame([true, null, false, null], [$row['can_edit'], $row['why_not'], $row['departure_only'], $row['open_site_id']]);
     }
 
     public function test_morning_then_evening_saves_the_times_with_source_manager(): void
@@ -91,18 +92,19 @@ class SiteDaySaveTest extends TestCase
         $this->actingAs($this->m, 'api');
         $this->save($this->s1, [['employee_id' => $this->w1, 'site_id' => $this->leave['absent']], ['employee_id' => $this->l1, 'site_id' => $this->leave['sick']]])->assertOk();
         foreach (['annual', 'casual', 'unpaid', 'friday'] as $code) {
-            $this->save($this->s1, [['employee_id' => $this->e1, 'site_id' => $this->leave[$code]]])->assertStatus(422)->assertJsonPath('error.details.0.field', 'rows.0.site_id');
+            $this->save($this->s1, [['employee_id' => $this->e1, 'site_id' => $this->leave[$code]]])->assertStatus(422)
+                ->assertJsonPath('error.code', 'site_not_for_manager')->assertJsonPath('error.details.0.field', 'rows.0');
         }
-        $this->save($this->s1, [['employee_id' => $this->e1, 'site_id' => $this->s2]])->assertStatus(422)->assertJsonPath('error.details.0.field', 'rows.0.site_id');
+        $this->save($this->s1, [['employee_id' => $this->e1, 'site_id' => $this->s2]])->assertStatus(422)->assertJsonPath('error.details.0.code', 'site_not_for_manager');
     }
 
     public function test_yesterday_is_writable_until_noon_only(): void
     {
         $this->actingAs($this->m, 'api');
         $this->cairo('2026-10-22 11:59');
-        $this->save($this->s1, [$this->work($this->w1, '08:00')], '2026-10-21')->assertOk();
+        $this->save($this->s1, [$this->work($this->w1, '08:00', '16:00')], '2026-10-21')->assertOk();
         $this->cairo('2026-10-22 12:00');
-        $this->save($this->s1, [$this->work($this->w1, '08:00', null, 1)], '2026-10-21')->assertStatus(422)
+        $this->save($this->s1, [$this->work($this->w1, '08:30', '16:00', 1)], '2026-10-21')->assertStatus(422)
             ->assertJsonPath('error.code', 'outside_manager_window')->assertJsonPath('error.details.0.field', 'rows.0');
         $this->getJson("/api/v1/attendance/site-day?site_id={$this->s1}&date=2026-10-21")->assertOk()->assertJsonPath('data.rows.0.why_not', 'window');
         $this->save($this->s1, [$this->work($this->w1, '08:00')], '2026-10-20')->assertStatus(422)->assertJsonPath('error.code', 'outside_manager_window');
@@ -160,7 +162,8 @@ class SiteDaySaveTest extends TestCase
     {
         $this->actingAs($this->m, 'api');
         $this->save($this->s2, [['employee_id' => $this->e1, 'site_id' => $this->s2, 'in_time' => '08:00']])->assertOk();   // the engineer, at Site-2
-        $this->save($this->s1, [['employee_id' => $this->e1, 'version' => 1, 'clear' => true]])->assertStatus(422)->assertJsonPath('error.details.0.field', 'rows.0.site_id');
+        $this->save($this->s1, [['employee_id' => $this->e1, 'version' => 1, 'clear' => true]])->assertStatus(422)
+            ->assertJsonPath('error.code', 'clear_not_allowed')->assertJsonPath('error.details.0.field', 'rows.0');
         $this->save($this->s2, [['employee_id' => $this->e1, 'version' => 1, 'clear' => true]])->assertOk();
         $this->assertSame(0, DB::table('attendance_days')->where(['employee_id' => $this->e1, 'date' => '2026-10-22'])->whereNull('deleted_at')->count());
     }
@@ -168,40 +171,133 @@ class SiteDaySaveTest extends TestCase
     public function test_a_present_day_needs_its_arrival(): void
     {
         $this->actingAs($this->m, 'api');
-        $this->save($this->s1, [$this->work($this->e1, null, '16:00')])->assertStatus(422)->assertJsonPath('error.details.0.field', 'rows.0.in_time');
-        $this->save($this->s1, [$this->work($this->l1, null)])->assertStatus(422)->assertJsonPath('error.details.0.field', 'rows.0.in_time');
+        // every refused row is a detail with its code, and the first one names the error
+        $this->save($this->s1, [$this->work($this->e1, null, '16:00'), $this->work($this->w1, '08:00'), $this->work($this->l1, null)])->assertStatus(422)
+            ->assertJsonPath('error.code', 'arrival_required')
+            ->assertJsonPath('error.details.*.field', ['rows.0', 'rows.2'])->assertJsonPath('error.details.*.code', ['arrival_required', 'arrival_required']);
+        $this->assertSame(0, DB::table('attendance_days')->count());                                       // all or nothing
     }
 
-    public function test_an_earlier_day_without_a_departure_comes_first_and_after_the_window_only_hr_completes_it(): void
+    public function test_an_earlier_open_day_comes_first(): void
     {
         $this->actingAs($this->m, 'api');
         $this->cairo('2026-10-21 09:00');
         $this->save($this->s1, [$this->work($this->e1, '08:00')], '2026-10-21')->assertOk();             // no departure
         $this->cairo('2026-10-22 09:00');
-        $row = collect($this->getJson("/api/v1/attendance/site-day?site_id={$this->s1}")->json('data.rows'))->firstWhere('employee.id', $this->e1);
-        $this->assertSame(['open_day', '2026-10-21', true], [$row['why_not'], $row['open_date'], $row['open_editable']]);
+        $row = $this->row($this->s1, $this->e1);
+        $this->assertSame(['open_day', '2026-10-21', $this->s1], [$row['why_not'], $row['open_date'], $row['open_site_id']]);
         $this->save($this->s1, [$this->work($this->e1, '08:00')])->assertStatus(422)
             ->assertJsonPath('error.code', 'open_earlier_day')->assertJsonPath('error.details.0.field', 'rows.0');
         $this->save($this->s1, [$this->work($this->w1, '08:00')])->assertOk();                          // the others are not held up
-
-        $this->cairo('2026-10-22 12:30');
-        $row = collect($this->getJson("/api/v1/attendance/site-day?site_id={$this->s1}")->json('data.rows'))->firstWhere('employee.id', $this->e1);
-        $this->assertFalse($row['open_editable']);                                                       // only HR now
-        $this->save($this->s1, [$this->work($this->e1, '08:00', '16:00', 1)], '2026-10-21')->assertStatus(422)->assertJsonPath('error.code', 'outside_manager_window');
-        $this->actingAs($this->makeUser('hr'), 'api');
-        $this->putDay($this->e1, '2026-10-21', ['version' => 1, 'site_id' => $this->s1, 'in_time' => '08:00', 'out_time' => '16:00'])->assertOk();
-        $this->actingAs($this->m, 'api');
+        $this->save($this->s1, [$this->work($this->e1, '08:00', '16:00', 1)], '2026-10-21')->assertOk();   // completed in the window
         $this->save($this->s1, [$this->work($this->e1, '08:00')])->assertOk();
     }
 
-    public function test_hr_hears_of_open_days_in_the_evening(): void
+    public function test_after_the_window_the_site_manager_enters_only_the_departure_and_hr_hears_at_once(): void
+    {
+        $hr = $this->makeUser('hr');
+        $this->actingAs($this->m, 'api');
+        $this->cairo('2026-10-20 09:00');
+        $this->save($this->s1, [$this->work($this->e1, '08:10'), $this->work($this->w1, '08:00', '16:00')], '2026-10-20')->assertOk();
+        $this->cairo('2026-10-22 13:00');                                                                // two days later, past noon
+
+        $rows = collect($this->getJson("/api/v1/attendance/site-day?site_id={$this->s1}&date=2026-10-20")->json('data.rows'))->keyBy('employee.id');
+        $this->assertSame([true, null, true], [$rows[$this->e1]['can_edit'], $rows[$this->e1]['why_not'], $rows[$this->e1]['departure_only']]);
+        $this->assertSame([false, 'window'], [$rows[$this->w1]['can_edit'], $rows[$this->w1]['why_not']]);   // complete: nothing left to add
+        $this->assertSame($this->s1, $this->row($this->s1, $this->e1)['open_site_id']);                    // today's row links to it
+
+        $this->save($this->s1, [$this->work($this->e1, '08:00', '16:00', 1)], '2026-10-20')->assertStatus(422)->assertJsonPath('error.code', 'departure_only');   // the arrival stays
+        $this->save($this->s1, [['employee_id' => $this->e1, 'version' => 1, 'site_id' => $this->leave['absent']]], '2026-10-20')->assertStatus(422)->assertJsonPath('error.code', 'departure_only');
+        $this->save($this->s1, [[...$this->work($this->e1, '08:10', '16:00', 1), 'note' => 'Note-1']], '2026-10-20')->assertStatus(422)->assertJsonPath('error.code', 'departure_only');
+        $this->save($this->s1, [$this->work($this->w1, '08:00', '17:00', 1)], '2026-10-20')->assertStatus(422)->assertJsonPath('error.code', 'outside_manager_window');
+
+        $audits = DB::table('audit_log')->where('entity_type', 'attendance_days')->count();
+        $this->save($this->s1, [$this->work($this->e1, '08:10', '16:00', 1)], '2026-10-20')->assertOk();
+        $day = DB::table('attendance_days')->where(['employee_id' => $this->e1, 'date' => '2026-10-20'])->first();
+        $this->assertSame(['08:10:00', '16:00:00', 10, 0, 'manager'], [$day?->in_time, $day?->out_time, $day?->late_minutes, $day?->ot_minutes, $day?->source]);
+        $this->assertSame($audits + 1, DB::table('audit_log')->where('entity_type', 'attendance_days')->count());
+        $n = DB::table('notifications')->where(['user_id' => $hr->id, 'type' => 'attendance_past_edit'])->first();
+        $this->assertSame((string) $day?->id, $n?->ref);
+        $this->assertEquals(['employee_id' => $this->e1, 'date' => '2026-10-20', 'out_time' => '16:00', 'site_name_ar' => 'Site-1', 'site_name_en' => null, 'group' => 'engineer', 'period_start' => '2026-09-26'], json_decode((string) $n?->data, true));
+        $this->save($this->s1, [$this->work($this->e1, '08:00')])->assertOk();                          // today is no longer held up
+
+        $this->actingAs($hr, 'api');
+        $this->putDay($this->e1, '2026-10-20', ['version' => 2, 'site_id' => $this->s1, 'in_time' => '08:10', 'out_time' => '15:30'])->assertOk();   // HR corrects it
+    }
+
+    public function test_before_noon_yesterdays_departure_is_not_a_past_day_edit(): void
+    {
+        $hr = $this->makeUser('hr');
+        $this->actingAs($this->m, 'api');
+        $this->cairo('2026-10-21 09:00');
+        $this->save($this->s1, [$this->work($this->e1, '08:00')], '2026-10-21')->assertOk();
+        $this->cairo('2026-10-22 11:00');
+        $this->save($this->s1, [$this->work($this->e1, '08:00', '16:00', 1)], '2026-10-21')->assertOk();
+        $this->assertSame(0, DB::table('notifications')->where(['user_id' => $hr->id, 'type' => 'attendance_past_edit'])->count());
+    }
+
+    public function test_an_open_day_hr_recorded_blocks_and_hr_completes_it(): void
+    {
+        $this->putDay($this->e1, '2026-10-21', ['site_id' => $this->s1, 'in_time' => '08:00'])->assertOk();
+        $this->actingAs($this->m, 'api');
+        $row = $this->row($this->s1, $this->e1);
+        $this->assertSame(['open_day', '2026-10-21', null], [$row['why_not'], $row['open_date'], $row['open_site_id']]);
+        $this->save($this->s1, [$this->work($this->e1, '08:00', '16:00', 1)], '2026-10-21')->assertStatus(422)->assertJsonPath('error.code', 'hr_day');
+    }
+
+    public function test_an_open_day_outside_the_managers_reach_that_day_is_hrs(): void
+    {
+        // Engineer-2 was another site manager's on 10-21, and that manager left them open at the shared Site-1; this manager has them from 10-22.
+        $other = $this->managerOf($this->s1);
+        $e2 = $this->employee('engineer');
+        app(EmployeeService::class)->assignManager($e2, ['manager_id' => $other->id, 'effective_from' => '2026-10-01']);
+        $this->actingAs($other, 'api');
+        $this->cairo('2026-10-21 09:00');
+        $this->save($this->s1, [$this->work($e2, '08:00')], '2026-10-21')->assertOk();
+        $this->cairo('2026-10-22 09:00');
+        $this->signIn('hr');
+        app(EmployeeService::class)->assignManager($e2, ['manager_id' => $this->m->id, 'effective_from' => '2026-10-22']);
+        $this->actingAs($this->m, 'api');
+        $row = $this->row($this->s1, $e2);
+        $this->assertSame(['open_day', null], [$row['why_not'], $row['open_site_id']]);
+    }
+
+    public function test_an_open_day_in_a_locked_period_never_blocks(): void
+    {
+        // An arrival-only day from before the open-day rule, in a period HR has since locked (PR #22 review B2).
+        $this->postJson('/api/v1/attendance/locks', ['group' => 'engineer', 'period_start' => '2026-08-26', 'confirm_missing' => true])->assertCreated();
+        DB::table('attendance_days')->insert(['id' => (string) Str::uuid7(), 'employee_id' => $this->e1, 'date' => '2026-09-20', 'site_id' => $this->s1, 'in_time' => '08:00', 'source' => 'entered', 'version' => 1, 'created_at' => now(), 'updated_at' => now()]);
+        $this->actingAs($this->m, 'api');
+        $this->assertNull($this->row($this->s1, $this->e1)['why_not']);
+        $this->save($this->s1, [$this->work($this->e1, '08:00')])->assertOk();
+        $this->artisan('attendance:alert-missing', ['date' => '2026-10-22'])->assertSuccessful();
+        $groups = collect(json_decode((string) DB::table('notifications')->where('type', 'attendance_missing_days')->value('data'), true)['groups'])->where('group', 'engineer');
+        $this->assertSame([1], $groups->pluck('open')->filter()->values()->all());                       // today's open day only, not September's
+    }
+
+    public function test_an_approved_sick_request_over_the_site_managers_sick_day_takes_it_over(): void
+    {
+        $this->actingAs($this->m, 'api');
+        $this->save($this->s1, [['employee_id' => $this->l1, 'site_id' => $this->leave['sick']]])->assertOk();
+        $this->assertSame('manager', $this->stored($this->l1)->source);
+        app(AttendanceDays::class)->writeLeaveDay($this->l1, '2026-10-22', $this->leave['sick']);          // HR approves a sick request for that day
+        $this->assertSame('leave', $this->stored($this->l1)->source);
+        $this->assertSame('hr_day', $this->row($this->s1, $this->l1)['why_not']);
+        $this->save($this->s1, [$this->work($this->l1, '08:00', null, 1)])->assertStatus(422)->assertJsonPath('error.code', 'hr_day');
+        $this->save($this->s1, [['employee_id' => $this->l1, 'version' => 1, 'clear' => true]])->assertStatus(422)->assertJsonPath('error.code', 'hr_day');
+    }
+
+    public function test_hr_hears_of_open_days_in_the_evening_alert(): void
     {
         $hr = $this->makeUser('hr');
         $this->actingAs($this->m, 'api');
         $this->save($this->s1, [$this->work($this->e1, '08:00'), $this->work($this->l1, '08:00', '16:00')])->assertOk();
         $this->artisan('attendance:alert-missing', ['date' => '2026-10-22'])->assertSuccessful();
-        $n = DB::table('notifications')->where(['user_id' => $hr->id, 'type' => 'attendance_open_days'])->first();
-        $this->assertEquals(['date' => '2026-10-22', 'count' => 1], json_decode((string) $n?->data, true));
+        $this->assertSame(0, DB::table('notifications')->whereIn('type', ['attendance_open_days', 'crew_changes'])->count());   // one alert, not three
+        $groups = collect(json_decode((string) DB::table('notifications')->where(['user_id' => $hr->id, 'type' => 'attendance_missing_days'])->value('data'), true)['groups'])->keyBy(fn (array $g) => $g['group'].$g['period_start']);
+        $this->assertSame(1, $groups['engineer2026-09-26']['open']);
+        $this->assertSame(0, $groups['day_laborer2026-10-16']['open']);
+        $this->assertArrayNotHasKey('office2026-10-01', $groups->all());                                   // nothing to report there
     }
 
     public function test_previous_is_the_latest_day_in_the_week_before_skipping_fridays_and_holidays(): void
@@ -217,6 +313,50 @@ class SiteDaySaveTest extends TestCase
         $this->assertSame(['date' => '2026-10-22', 'site_id' => $this->s1, 'leave_code' => null, 'in_time' => '08:10', 'out_time' => '16:00'], $rows[$this->w1]['previous']);
         $this->assertSame('sick', $rows[$this->l1]['previous']['leave_code']);
         $this->assertNull($rows[$this->e1]['previous']);
+    }
+
+    public function test_previous_skips_an_official_holiday(): void
+    {
+        $this->actingAs($this->m, 'api');
+        $this->cairo('2026-10-20 09:00');
+        $this->save($this->s1, [$this->work($this->w1, '08:10', '16:00')], '2026-10-20')->assertOk();
+        $this->cairo('2026-10-22 09:00');
+        $this->holiday('2026-10-21');
+        $this->actingAs($this->makeUser('hr'), 'api');
+        $this->putDay($this->w1, '2026-10-21', ['site_id' => $this->leave['official_holiday']])->assertOk();
+        $this->actingAs($this->m, 'api');
+        $this->assertSame('2026-10-20', $this->row($this->s1, $this->w1)['previous']['date']);
+    }
+
+    public function test_previous_looks_back_seven_days_and_no_further(): void
+    {
+        $this->actingAs($this->makeUser('hr'), 'api');
+        $this->putDay($this->w1, '2026-10-15', ['site_id' => $this->s1, 'in_time' => '08:00', 'out_time' => '16:00'])->assertOk();   // D-7
+        $this->putDay($this->l1, '2026-10-14', ['site_id' => $this->s1, 'in_time' => '08:00', 'out_time' => '16:00'])->assertOk();   // D-8
+        $this->actingAs($this->m, 'api');
+        $this->assertSame('2026-10-15', $this->row($this->s1, $this->w1)['previous']['date']);
+        $this->assertNull($this->row($this->s1, $this->l1)['previous']);
+    }
+
+    public function test_previous_shows_only_days_at_the_managers_sites_or_on_a_leave_day_type(): void
+    {
+        // Worker-3 worked at another manager's Site-3 until HR moved them to Site-1 today: Site-1's manager never sees that week.
+        $s3 = $this->workSite('Site-3');
+        $this->managerOf($s3);
+        $this->homeSite($w3 = $this->employee('permanent_worker'), $s3, '2026-10-01');
+        $this->actingAs($this->makeUser('hr'), 'api');
+        $this->putDay($w3, '2026-10-20', ['site_id' => $s3, 'in_time' => '08:00', 'out_time' => '16:00'])->assertOk();
+        $this->putDay($w3, '2026-10-21', ['site_id' => $s3, 'in_time' => '08:00', 'out_time' => '16:00'])->assertOk();
+        $this->putDay($this->w1, '2026-10-21', ['site_id' => $this->leave['annual']])->assertOk();      // request-only leave: nothing to copy
+        $this->homeSite($w3, $this->s1, '2026-10-22');
+        $this->actingAs($this->m, 'api');
+        $this->assertNull($this->row($this->s1, $w3)['previous']);
+        $this->assertNull($this->row($this->s1, $this->w1)['previous']);
+
+        $this->actingAs($this->makeUser('hr'), 'api');
+        $this->putDay($w3, '2026-10-19', ['site_id' => $this->leave['sick']])->assertOk();             // a leave day-type shows wherever they were
+        $this->actingAs($this->m, 'api');
+        $this->assertSame(['2026-10-19', 'sick'], [$this->row($this->s1, $w3)['previous']['date'], $this->row($this->s1, $w3)['previous']['leave_code']]);
     }
 
     public function test_an_unchanged_arrival_keeps_its_late_minutes_and_an_unsent_note_stays(): void
@@ -239,6 +379,12 @@ class SiteDaySaveTest extends TestCase
         $this->save($this->s1, [$this->work($this->w1, '08:00')])->assertForbidden();
         $this->actingAs($this->makeUser('ceo'), 'api');
         $this->save($this->s1, [$this->work($this->w1, '08:00')])->assertForbidden();
+    }
+
+    /** @return array<string, mixed> the row of $employeeId on $siteId's list today */
+    private function row(string $siteId, string $employeeId): array
+    {
+        return collect($this->getJson("/api/v1/attendance/site-day?site_id={$siteId}")->assertOk()->json('data.rows'))->firstWhere('employee.id', $employeeId);
     }
 
     /** @return array<string, mixed> */

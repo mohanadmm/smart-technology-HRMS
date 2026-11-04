@@ -12,7 +12,11 @@ use Illuminate\Validation\Rule;
 /** The employee validation rules, shared by the API and the master-data importer so both accept exactly the same input. */
 final class EmployeeRules
 {
-    private const MONEY = ['nullable', 'regex:/^\d{1,12}(\.\d{1,6})?$/D'];
+    /** An amount as the API takes it: up to 12 digits and 6 decimals, as text so no float touches it. */
+    public const MONEY = 'regex:/^\d{1,12}(\.\d{1,6})?$/D';
+
+    /** A wage that must be above zero. */
+    public const POSITIVE = 'not_regex:/^0+(\.0+)?$/D';
 
     /** An Egyptian mobile number, kept as text so its leading 0 survives (owner, 2026-11-03). */
     public const MOBILE = 'regex:/^01[0125]\d{8}$/D';
@@ -32,10 +36,10 @@ final class EmployeeRules
     public static function pay(): array
     {
         return [
-            'salary' => self::MONEY,
-            'raise' => self::MONEY,
-            'insured_basic' => self::MONEY,
-            'daily_wage' => self::MONEY,
+            'salary' => ['nullable', self::MONEY],
+            'raise' => ['nullable', self::MONEY],
+            'insured_basic' => ['nullable', self::MONEY],
+            'daily_wage' => ['nullable', self::MONEY],
             'shift_start' => ['nullable', 'date_format:H:i'],
             'shift_end' => ['nullable', 'date_format:H:i'],
         ];

@@ -33,20 +33,25 @@ class SiteDayCrewTest extends TestCase
         $this->managerOf($this->s3);
     }
 
-    public function test_search_says_where_each_laborer_is_and_who_can_be_added(): void
+    public function test_search_finds_one_laborer_by_code_or_full_name_and_never_lists_the_company(): void
     {
         $free = $this->employee('day_laborer');                                        // Laborer-1, no site
         $this->homeSite($mine = $this->employee('day_laborer'), $this->s2, '2026-10-01');
         $this->homeSite($theirs = $this->employee('day_laborer'), $this->s3, '2026-10-01');
-        $this->homeSite($this->employee('permanent_worker'), $this->s2, '2026-10-01'); // never a match: not a day laborer
-
+        $this->homeSite($worker = $this->employee('permanent_worker'), $this->s2, '2026-10-01');
         $this->actingAs($this->m, 'api');
-        $rows = collect($this->getJson("/api/v1/attendance/site-day/laborers?site_id={$this->s1}&search=Labor")->assertOk()->json('data'))->keyBy('id');
-        $this->assertCount(3, $rows);
-        $this->assertSame([null, true], [$rows[$free]['site'], $rows[$free]['can_add']]);
-        $this->assertSame(['Site-2', true], [$rows[$mine]['site']['name_ar'], $rows[$mine]['can_add']]);
-        $this->assertSame(['Site-3', false], [$rows[$theirs]['site']['name_ar'], $rows[$theirs]['can_add']]);
-        $this->assertStringNotContainsString('wage', $this->getJson("/api/v1/attendance/site-day/laborers?site_id={$this->s1}&search=Labor")->getContent());
+
+        $this->assertSame([$free, null, true], $this->found('Laborer-1', ['id', 'site', 'can_add']));
+        $this->assertSame([$mine, 'Site-2', true], $this->found('  Laborer-2 ', ['id', 'site.name_ar', 'can_add']));   // spaces do not matter
+        $this->assertSame([$theirs, 'Site-3', false], $this->found((string) $this->code($theirs), ['id', 'site.name_ar', 'can_add']));
+        foreach (['Labor', 'Laborer', 'aborer-1', (string) $this->code($worker)] as $partOrOther) {      // part of a name, or not a day laborer
+            $this->search($partOrOther)->assertJsonPath('data.match', null)->assertJsonPath('data.ambiguous', false);
+        }
+        $this->assertStringNotContainsString('wage', $this->search('Laborer-1')->getContent());
+
+        DB::table('employees')->where('id', $mine)->update(['name_ar' => 'Laborer-1']);               // two share the name: the code tells them apart
+        $this->search('Laborer-1')->assertJsonPath('data.match', null)->assertJsonPath('data.ambiguous', true);
+        $this->assertSame([$mine], $this->found((string) $this->code($mine), ['id']));
     }
 
     public function test_add_and_remove_change_today_only_and_keep_yesterday_and_tomorrow(): void
@@ -91,7 +96,7 @@ class SiteDayCrewTest extends TestCase
         $this->homeSite($l = $this->employee('day_laborer'), $this->s2, '2026-10-01');
         $this->actingAs($this->m, 'api');
         $this->postJson('/api/v1/attendance/site-day', ['site_id' => $this->s2, 'date' => '2026-10-22', 'rows' => [['employee_id' => $l, 'site_id' => $this->s2, 'in_time' => '08:00']]])->assertOk();
-        $this->crew($this->s1, $l, 'add')->assertStatus(422)->assertJsonPath('error.details.0.field', 'employee_id');
+        $this->crew($this->s1, $l, 'add')->assertStatus(422)->assertJsonPath('error.code', 'crew_moved_has_day')->assertJsonPath('error.details.0.field', 'employee_id');
         $this->assertContains($l, $this->roster($this->s2, '2026-10-22'));
     }
 
@@ -102,19 +107,22 @@ class SiteDayCrewTest extends TestCase
         $this->homeSite($recorded = $this->employee('day_laborer'), $this->s1, '2026-10-01');
         $this->actingAs($this->m, 'api');
 
-        $this->crew($this->s1, $theirs, 'add')->assertStatus(422)->assertJsonPath('error.details.0.field', 'employee_id');
+        $this->crew($this->s1, $theirs, 'add')->assertStatus(422)->assertJsonPath('error.code', 'crew_on_other_site')->assertJsonPath('error.details.0.field', 'employee_id');
         $this->crew($this->s1, $worker, 'add')->assertNotFound();                                     // only day laborers
         $this->crew($this->s1, $worker, 'remove')->assertNotFound();
         $this->crew($this->s3, $theirs, 'remove')->assertNotFound();                                  // not this manager's site
         $this->postJson('/api/v1/attendance/site-day', ['site_id' => $this->s1, 'date' => '2026-10-22', 'rows' => [['employee_id' => $recorded, 'site_id' => $this->s1, 'in_time' => '08:00']]])->assertOk();
-        $this->crew($this->s1, $recorded, 'remove')->assertStatus(422);                               // clear today's day first
+        $this->crew($this->s1, $recorded, 'remove')->assertStatus(422)->assertJsonPath('error.code', 'crew_has_day');   // clear today's day first
     }
 
     public function test_a_proposed_laborer_joins_today_with_no_pay_row_until_hr_approves(): void
     {
         $this->actingAs($this->m, 'api');
-        $id = $this->postJson('/api/v1/attendance/site-day/laborers', ['site_id' => $this->s1, 'name_ar' => 'عامل جديد', 'daily_wage' => '350', 'phone' => '01012345678'])
-            ->assertCreated()->json('data.id');
+        $this->propose(['gender' => null])->assertStatus(422)->assertJsonPath('error.details.0.field', 'gender');   // the gender is required
+        $id = $this->propose(['phone' => '01012345678'])->assertCreated()->json('data.id');
+        $created = DB::table('audit_log')->where('event', 'CREATED')->where(fn ($q) => $q->where('entity_id', $id)->orWhereRaw("new_values->>'employee_id' = ?", [$id]))->pluck('entity_type')->all();
+        $this->assertEqualsCanonicalizing(['employees', 'employee_type_changes', 'day_crew_changes', 'employee_wage_proposals'], $created);
+        $this->assertSame('female', DB::table('employees')->where('id', $id)->value('gender'));
         $this->assertContains($id, $this->roster($this->s1, '2026-10-22'));
         $this->assertSame(0, DB::table('employee_pay_changes')->where('employee_id', $id)->count());
         $this->assertSame(0, DB::table('employee_site_assignments')->where('employee_id', $id)->count());     // today's crew only
@@ -126,25 +134,61 @@ class SiteDayCrewTest extends TestCase
         $this->getJson("/api/v1/employees/{$id}")->assertOk()->assertJsonMissingPath('data.current_pay');
 
         $this->actingAs($this->makeUser('hr'), 'api');
-        $this->postJson("/api/v1/employees/wage-proposals/{$proposal->id}/approve", ['version' => 1])->assertStatus(422)->assertJsonPath('error.details.0.field', 'gender');
-        $this->postJson("/api/v1/employees/wage-proposals/{$proposal->id}/approve", ['version' => 1, 'gender' => 'male', 'daily_wage' => '340'])->assertOk();
+        $this->postJson("/api/v1/employees/wage-proposals/{$proposal->id}/approve", ['version' => 1, 'daily_wage' => '340'])->assertOk();
         $this->assertSame(['2026-10-22', '340.000000'], [
             (string) DB::table('employee_pay_changes')->where('employee_id', $id)->value('effective_from'),
             (string) DB::table('employee_pay_changes')->where('employee_id', $id)->value('daily_wage'),
         ]);
-        $this->postJson("/api/v1/employees/wage-proposals/{$proposal->id}/approve", ['version' => 1, 'gender' => 'male'])->assertStatus(409);
+        $this->postJson("/api/v1/employees/wage-proposals/{$proposal->id}/approve", ['version' => 1])->assertStatus(409);
+        $this->assertSame(['pending', 'approved'], DB::table('audit_log')->where(['entity_type' => 'employee_wage_proposals', 'entity_id' => $proposal->id])->orderBy('occurred_at')->orderBy('id')->get()
+            ->map(fn (object $a) => json_decode((string) $a->new_values, true)['status'] ?? null)->all());
+    }
+
+    public function test_a_refused_laborer_ends_that_day_leaves_every_crew_and_keeps_their_recorded_days(): void
+    {
+        $this->actingAs($this->m, 'api');
+        $made = $this->propose()->assertCreated()->json('data');
+        $this->postJson('/api/v1/attendance/site-day', ['site_id' => $this->s1, 'date' => '2026-10-22', 'rows' => [['employee_id' => $made['id'], 'site_id' => $this->s1, 'in_time' => '08:00', 'out_time' => '16:00']]])->assertOk();
+
+        $this->cairo('2026-10-24 10:00');                                                               // HR decides two days later
+        $this->actingAs($this->makeUser('hr'), 'api');
+        $this->postJson("/api/v1/employees/wage-proposals/{$made['proposal_id']}/refuse", ['version' => 1])->assertOk()->assertJsonPath('data.status', 'refused');
+        $this->assertSame('2026-10-24', (string) DB::table('employees')->where('id', $made['id'])->value('termination_date'));
+        $this->assertSame(0, DB::table('employee_pay_changes')->where('employee_id', $made['id'])->count());
+        $this->assertSame(1, DB::table('attendance_days')->where(['employee_id' => $made['id'], 'date' => '2026-10-22'])->whereNull('deleted_at')->count());   // HR decides on it
+        $this->assertTrue(DB::table('audit_log')->where(['entity_type' => 'employees', 'entity_id' => $made['id'], 'event' => 'UPDATED'])->exists());
+        $this->getJson('/api/v1/employees/wage-proposals')->assertOk()->assertJsonCount(0, 'data');
+        $this->postJson("/api/v1/employees/wage-proposals/{$made['proposal_id']}/approve", ['version' => 2])->assertStatus(409);
+
+        $this->actingAs($this->m, 'api');
+        $this->assertNotContains($made['id'], $this->roster($this->s1, '2026-10-24'));
+        $this->search((string) $made['code'])->assertJsonPath('data.match', null);
+        $this->crew($this->s1, $made['id'], 'add')->assertNotFound();
+        $this->crew($this->s2, $made['id'], 'add')->assertNotFound();
+    }
+
+    public function test_a_laborer_refused_on_their_first_day_leaves_that_days_crew(): void
+    {
+        $this->actingAs($this->m, 'api');
+        $made = $this->propose()->assertCreated()->json('data');
+        $this->actingAs($this->makeUser('hr'), 'api');
+        $this->postJson("/api/v1/employees/wage-proposals/{$made['proposal_id']}/refuse", ['version' => 1])->assertOk();
+        $this->assertSame(0, DB::table('day_crew_changes')->where('employee_id', $made['id'])->whereNull('deleted_at')->count());
+        $this->actingAs($this->m, 'api');
+        $this->assertNotContains($made['id'], $this->roster($this->s1, '2026-10-22'));
+        $this->crew($this->s1, $made['id'], 'add')->assertNotFound();
     }
 
     public function test_hr_hears_of_a_proposed_wage_at_once_and_reads_the_list_a_page_at_a_time(): void
     {
         $hr = $this->makeUser('hr');
         $this->actingAs($this->m, 'api');
-        $made = $this->postJson('/api/v1/attendance/site-day/laborers', ['site_id' => $this->s1, 'name_ar' => 'عامل جديد', 'daily_wage' => '350'])->assertCreated()->json('data');
+        $made = $this->propose()->assertCreated()->json('data');
         $n = DB::table('notifications')->where(['user_id' => $hr->id, 'type' => 'wage_proposed'])->first();
         $this->assertNotNull($n);
         $this->assertSame($made['proposal_id'], $n->ref);
         $this->assertSame([$made['id'], '350', 'Site-1'], [json_decode($n->data, true)['employee_id'], json_decode($n->data, true)['daily_wage'], json_decode($n->data, true)['site_name_ar']]);
-        $this->postJson('/api/v1/attendance/site-day/laborers', ['site_id' => $this->s1, 'name_ar' => 'عامل آخر', 'daily_wage' => '300'])->assertCreated();
+        $this->propose(['name_ar' => 'عامل آخر', 'daily_wage' => '300'])->assertCreated();
 
         $this->actingAs($hr, 'api');
         $this->getJson('/api/v1/employees/wage-proposals?per_page=1')->assertOk()
@@ -161,7 +205,7 @@ class SiteDayCrewTest extends TestCase
     public function test_hr_refuses_a_proposed_wage_and_it_leaves_the_list_with_no_pay_row(): void
     {
         $this->actingAs($this->m, 'api');
-        $made = $this->postJson('/api/v1/attendance/site-day/laborers', ['site_id' => $this->s1, 'name_ar' => 'عامل جديد', 'daily_wage' => '350'])->assertCreated()->json('data');
+        $made = $this->propose()->assertCreated()->json('data');
 
         $this->actingAs($this->makeUser('hr'), 'api');
         $this->postJson("/api/v1/employees/wage-proposals/{$made['proposal_id']}/refuse", ['version' => 1])->assertOk()->assertJsonPath('data.status', 'refused');
@@ -171,7 +215,7 @@ class SiteDayCrewTest extends TestCase
         $this->getJson("/api/v1/employees/{$made['id']}")->assertOk();   // the laborer stays on file
     }
 
-    public function test_the_evening_digest_tells_hr_of_the_days_crew_changes(): void
+    public function test_the_evening_alert_counts_the_days_crew_changes(): void
     {
         $hr = $this->makeUser('hr');
         $this->homeSite($l = $this->employee('day_laborer'), $this->s1, '2026-10-01');
@@ -181,9 +225,10 @@ class SiteDayCrewTest extends TestCase
         $this->crew($this->s1, $k, 'add')->assertOk();
 
         $this->artisan('attendance:alert-missing', ['date' => '2026-10-22'])->assertSuccessful();
-        $n = DB::table('notifications')->where(['user_id' => $hr->id, 'type' => 'crew_changes'])->first();
-        $this->assertNotNull($n);
-        $this->assertEquals(['date' => '2026-10-22', 'sites' => [['site_name_ar' => 'Site-1', 'added' => 1]], 'removed' => 1], json_decode($n->data, true));
+        $this->assertSame(0, DB::table('notifications')->where('type', 'crew_changes')->count());
+        $groups = collect(json_decode((string) DB::table('notifications')->where(['user_id' => $hr->id, 'type' => 'attendance_missing_days'])->value('data'), true)['groups']);
+        $this->assertSame(2, $groups->firstWhere('period_start', '2026-10-16')['crew_changes']);       // the day laborers' current period
+        $this->assertSame(0, $groups->firstWhere('period_start', '2026-10-01')['crew_changes']);
     }
 
     public function test_a_site_manager_cannot_create_engineers_or_permanent_workers_or_set_pay(): void
@@ -191,11 +236,38 @@ class SiteDayCrewTest extends TestCase
         $this->actingAs($this->m, 'api');
         $this->postJson('/api/v1/employees', ['name_ar' => 'X', 'gender' => 'male', 'type' => 'permanent_worker', 'effective_from' => '2026-10-22', 'salary' => '9000'])->assertForbidden();
         $this->postJson('/api/v1/employees', ['name_ar' => 'X', 'gender' => 'male', 'type' => 'engineer', 'effective_from' => '2026-10-22', 'salary' => '9000'])->assertForbidden();
-        $this->postJson('/api/v1/attendance/site-day/laborers', ['site_id' => $this->s1, 'name_ar' => 'X', 'daily_wage' => '0'])->assertStatus(422);
-        $this->postJson('/api/v1/attendance/site-day/laborers', ['site_id' => $this->s3, 'name_ar' => 'X', 'daily_wage' => '300'])->assertNotFound();
-        $this->postJson('/api/v1/attendance/site-day/laborers', ['site_id' => $this->s1, 'name_ar' => 'X', 'daily_wage' => '300', 'type' => 'engineer'])->assertCreated();
+        $this->propose(['daily_wage' => '0'])->assertStatus(422);
+        $this->propose(['site_id' => $this->s3])->assertNotFound();
+        $this->propose(['type' => 'engineer'])->assertCreated();
         $this->assertSame('day_laborer', DB::table('employee_type_changes')->orderByDesc('id')->value('type'));   // the body's type is ignored
         $this->getJson('/api/v1/employees/wage-proposals')->assertForbidden();
+    }
+
+    /** @param  array<string, mixed>  $over */
+    private function propose(array $over = []): TestResponse
+    {
+        return $this->postJson('/api/v1/attendance/site-day/laborers', ['site_id' => $this->s1, 'name_ar' => 'عامل جديد', 'gender' => 'female', 'daily_wage' => '350', ...$over]);
+    }
+
+    private function search(string $search): TestResponse
+    {
+        return $this->getJson('/api/v1/attendance/site-day/laborers?'.http_build_query(['site_id' => $this->s1, 'search' => $search]))->assertOk();
+    }
+
+    /**
+     * @param  list<string>  $paths  in data.match
+     * @return list<mixed>
+     */
+    private function found(string $search, array $paths): array
+    {
+        $r = $this->search($search)->assertJsonPath('data.ambiguous', false);
+
+        return array_map(fn (string $p) => $r->json("data.match.{$p}"), $paths);
+    }
+
+    private function code(string $employeeId): int
+    {
+        return (int) DB::table('employees')->where('id', $employeeId)->value('code');
     }
 
     private function crew(string $siteId, string $employeeId, string $action): TestResponse

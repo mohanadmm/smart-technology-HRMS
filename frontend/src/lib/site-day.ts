@@ -1,3 +1,5 @@
+import { isHhmm } from '@/components/form'
+
 /** One `rows[]` item of `GET /attendance/site-day`: workers first, then the site manager's engineers. No pay figures. */
 export type SiteDayRow = {
   employee: { id: string; code: number; name_ar: string; name_en: string | null; type: string }
@@ -7,18 +9,23 @@ export type SiteDayRow = {
   day: { state: 'stored' | 'derived' | 'missing' | 'future'; version: number | null; site_id: string | null; leave_code: string | null; in_time: string | null; out_time: string | null; note: string | null }
   can_edit: boolean
   why_not: 'locked' | 'window' | 'hr_day' | 'open_day' | null
-  /** with why_not open_day: the earlier day that has an arrival and no departure */
-  open_date?: string | null
-  /** whether the site manager can still complete that day (inside the yesterday window); otherwise only HR */
-  open_editable?: boolean
-  /** the day «زي امبارح» copies: the latest stored day in the 7 before, Fridays, Saturdays and holidays skipped (P10) */
+  /** past the yesterday window: an open day of theirs here, where only the departure can still be entered (HR is told at once) */
+  departure_only: boolean
+  /** with why_not open_day: the earlier field day that has an arrival and no departure */
+  open_date: string | null
+  /** where this site manager can complete that day; null when only HR can (HR's day, or not theirs) */
+  open_site_id: string | null
+  /** the day «زي امبارح» copies: the latest day in the 7 before at this site manager's sites or on a leave day-type, Fridays, Saturdays and holidays skipped (P10) */
   previous?: { date: string; site_id: string | null; leave_code: string | null; in_time: string | null; out_time: string | null } | null
 }
 
-/** The leave types a site manager may store (P11), by code. */
-export type LeaveSites = Partial<Record<'absent' | 'sick' | 'rest' | 'other', string>>
+/** One exact path per site and date, so the site tabs, the page and an open day's link share one cache entry. */
+export const dayPath = (siteId: string, date: string | null) => `/attendance/site-day?${new URLSearchParams({ site_id: siteId, ...(date && { date }) })}`
 
-export type SiteDay = { site: { id: string; name_ar: string; name_en: string | null }; date: string; today: string; leave_sites: LeaveSites; rows: SiteDayRow[] }
+/** The leave day-types a site manager may store (P11): code → the leave day-type's id. */
+export type LeaveDayTypes = Partial<Record<'absent' | 'sick' | 'rest' | 'other', string>>
+
+export type SiteDay = { site: { id: string; name_ar: string; name_en: string | null }; date: string; today: string; leave_day_types: LeaveDayTypes; rows: SiteDayRow[] }
 
 export const MARKS = ['present', 'absent', 'sick'] as const
 export type Mark = (typeof MARKS)[number]
@@ -28,6 +35,9 @@ export const MORE = ['rest', 'other'] as const
 /** What the screen holds for one person before «حفظ اليوم»: the site (a work site or a leave type), the two times, and a note when typed (undefined: untouched). */
 export type Draft = { site_id: string | null; in_time: string | null; out_time: string | null; note?: string | null }
 export type Drafts = Record<string, Draft>
+
+/** The people whose earlier field day still has no departure: the banner above the list names them. */
+export const openDays = (rows: SiteDayRow[]) => rows.filter((r) => r.why_not === 'open_day' && r.open_date)
 
 /** The status button a day presses on `siteId`'s list: a work day at that site is present (one at another site is only a hint), the absent and sick leave days their own; anything else none. */
 export function markOf({ state, site_id, leave_code }: Pick<SiteDayRow['day'], 'state' | 'site_id' | 'leave_code'>, siteId: string): Mark | null {
@@ -87,18 +97,18 @@ export function changed(r: SiteDayRow, d: Draft | undefined): boolean {
  * that day's arrival (the departure stays empty until the evening); absent, sick, rest and other stay that leave type; anything
  * else (annual, casual, unpaid, or no previous day) stays empty.
  */
-export function likeYesterday(rows: SiteDayRow[], drafts: Drafts, siteId: string, leave: LeaveSites): Drafts {
+export function likeYesterday(rows: SiteDayRow[], drafts: Drafts, siteId: string, leave: LeaveDayTypes): Drafts {
   const next = { ...drafts }
   for (const r of rows) {
     const p = r.previous
     if (!r.can_edit || r.day.state !== 'missing' || drafts[r.employee.id] || !p) continue
     if (p.leave_code === null && p.site_id !== null) next[r.employee.id] = { site_id: siteId, in_time: p.in_time ?? r.shift.start, out_time: null }
-    else if (p.leave_code && p.leave_code in leave) next[r.employee.id] = { site_id: leave[p.leave_code as keyof LeaveSites]!, in_time: null, out_time: null }
+    else if (p.leave_code && p.leave_code in leave) next[r.employee.id] = { site_id: leave[p.leave_code as keyof LeaveDayTypes]!, in_time: null, out_time: null }
   }
   return next
 }
 
-export const likeYesterdayCount = (rows: SiteDayRow[], drafts: Drafts, siteId: string, leave: LeaveSites) =>
+export const likeYesterdayCount = (rows: SiteDayRow[], drafts: Drafts, siteId: string, leave: LeaveDayTypes) =>
   Object.keys(likeYesterday(rows, drafts, siteId, leave)).length - Object.keys(drafts).length
 
 /** What is still open on the screen: people with nothing recorded, and present people with no departure. Leave days count as recorded. */
@@ -116,7 +126,7 @@ export function counts(rows: SiteDayRow[], drafts: Drafts, siteId: string) {
     } else if (isPresent(d, siteId)) {
       present++
       if (d.in_time && !d.out_time) noCheckout++
-      if (d.in_time && /^\d{2}:\d{2}$/.test(d.in_time) && minutes(d.in_time) > minutes(r.shift.start)) late++
+      if (isHhmm(d.in_time) && minutes(d.in_time) > minutes(r.shift.start)) late++
     } else away++
   }
   return { present, away, unrecorded, noCheckout, late }
