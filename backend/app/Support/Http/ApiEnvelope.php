@@ -37,10 +37,13 @@ final class ApiEnvelope
         ]);
     }
 
-    /** @param  list<array{field?: string, code: string, message: string}>  $details */
-    public static function error(Request $request, int $status, string $code, string $message, array $details = []): JsonResponse
+    /**
+     * @param  list<array{field?: string, code: string, message: string}>  $details
+     * @param  array<string, mixed>  $extra  more keys of the error object (e.g. leave_days_blocked's `dates`)
+     */
+    public static function error(Request $request, int $status, string $code, string $message, array $details = [], array $extra = []): JsonResponse
     {
-        $error = ['code' => $code, 'message' => $message];
+        $error = [...$extra, 'code' => $code, 'message' => $message];
 
         if ($details !== []) {
             $error['details'] = $details;

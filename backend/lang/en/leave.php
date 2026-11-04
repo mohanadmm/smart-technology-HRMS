@@ -8,5 +8,6 @@ return [
         'leave_crosses_year' => 'A leave request cannot cross December 31. File one request for each year.',
         'leave_too_long' => 'A leave request covers at most :max days.',
         'site_not_in_reach' => 'This employee is not in your reach on some of these dates.',
+        'leave_days_blocked' => ':count of the requested days already holds a work day or is in a locked period.',
     ],
 ];

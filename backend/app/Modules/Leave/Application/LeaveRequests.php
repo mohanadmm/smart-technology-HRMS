@@ -4,10 +4,16 @@ declare(strict_types=1);
 
 namespace App\Modules\Leave\Application;
 
+use App\Modules\Attendance\Application\AttendanceDays;
+use App\Modules\Attendance\Domain\AttendanceRefusal;
+use App\Modules\Attendance\Domain\AttendanceRefused;
 use App\Modules\Employees\Application\EmployeeReach;
 use App\Modules\Employees\Application\EmployeeRoster;
 use App\Modules\Employees\Domain\EmployeeType;
+use App\Modules\Identity\Application\Rbac\AuthorizeAction;
 use App\Modules\Identity\Application\Rbac\PermissionHolders;
+use App\Modules\Identity\Domain\Rbac\AuthorizationRefused;
+use App\Modules\Identity\Domain\Rbac\Scope;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
 use App\Modules\Leave\Domain\LeaveBalance;
 use App\Modules\Leave\Domain\LeaveKind;
@@ -17,8 +23,12 @@ use App\Modules\Leave\Domain\LeaveStatus;
 use App\Modules\Leave\Infrastructure\Eloquent\LeaveRequest;
 use App\Modules\Leave\Infrastructure\LeaveRequestLock;
 use App\Modules\Notifications\Application\Notifier;
+use App\Modules\Sites\Domain\SiteKind;
+use App\Modules\Sites\Infrastructure\Eloquent\Site;
+use App\Support\Database\ConcurrencyConflict;
 use App\Support\Http\Paginates;
 use DateTimeImmutable;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -37,6 +47,8 @@ final class LeaveRequests
         private readonly LeaveBalances $balances,
         private readonly Notifier $notifier,
         private readonly PermissionHolders $holders,
+        private readonly AttendanceDays $attendance,
+        private readonly AuthorizeAction $authorize,
     ) {}
 
     /**
@@ -97,6 +109,160 @@ final class LeaveRequests
         $result = $this->page($query, $perPage, $page);
 
         return [...$result, 'data' => $this->named($result['data'])];
+    }
+
+    /**
+     * The list row plus the decision and, while pending or escalated, the approval preview. Own scope: out of reach today is a 404.
+     *
+     * @return array<string, mixed>
+     */
+    public function show(string $id, ?string $ownerId): array
+    {
+        $request = LeaveRequest::findOrFail($id);
+        if ($ownerId !== null && ! EmployeeReach::reaches((string) $request->employee_id, $ownerId, now('Africa/Cairo')->toDateString())) {
+            throw new ModelNotFoundException;
+        }
+
+        return $this->detail($request);
+    }
+
+    /**
+     * Recounts the dates (a holiday added since submit drops out), refuses when one is blocked, then writes each date as the request's kind,
+     * the dates past the balance as unpaid (L2), all in one transaction.
+     *
+     * @return array<string, mixed> the show shape
+     */
+    public function approve(string $id, int $version, Authenticatable $by): array
+    {
+        return $this->detail(DB::transaction(function () use ($id, $version, $by): LeaveRequest {
+            $request = $this->forDecision($id, $version, $by, false);
+            $approval = $this->approval($request);
+            if ($approval['dates'] === []) {
+                throw new LeaveRefused(LeaveRefusal::NoDays);
+            }
+            if ($approval['blocked'] !== []) {
+                throw new LeaveRefused(LeaveRefusal::DaysBlocked, ['count' => (string) count($approval['blocked'])], $approval['blocked']);
+            }
+            $kind = (string) $request->kind;
+            $sites = Site::where(['kind' => SiteKind::Leave->value, 'active' => true])->whereIn('leave_code', [$kind, LeaveKind::Unpaid->value])->pluck('id', 'leave_code');
+            foreach ($approval['dates'] as $i => $date) {
+                $code = $i < $approval['keep'] ? $kind : LeaveKind::Unpaid->value;
+                $site = $sites[$code] ?? throw AttendanceRefused::because(AttendanceRefusal::LeaveTypeMissing, ['code' => $code]);
+                $this->attendance->writeLeaveDay((string) $request->employee_id, $date, (string) $site);
+            }
+
+            return $this->conclude($request, LeaveStatus::Approved, $by, ['days' => $approval['days']]);
+        }));
+    }
+
+    /** @return array<string, mixed> the show shape */
+    public function refuse(string $id, int $version, string $reason, Authenticatable $by): array
+    {
+        return $this->detail(DB::transaction(fn () => $this->conclude($this->forDecision($id, $version, $by, false), LeaveStatus::Refused, $by, ['decision_reason' => $reason])));
+    }
+
+    /**
+     * Hands a pending request to the CEO; HR's optional note is kept in decision_reason for the CEO to read.
+     *
+     * @return array<string, mixed> the show shape
+     */
+    public function escalate(string $id, int $version, ?string $reason, Authenticatable $by): array
+    {
+        return $this->detail(DB::transaction(function () use ($id, $version, $reason, $by): LeaveRequest {
+            $request = $this->forDecision($id, $version, $by, true);
+            $request->fill(['status' => LeaveStatus::Escalated->value, 'decision_reason' => $reason, 'version' => $request->version + 1])->save();
+            foreach ($this->holders->userIds('leave.decide_escalated.all') as $userId) {
+                $this->notifier->notifyOnce($userId, 'leave_escalated', now('Africa/Cairo')->toDateString(), $this->notice($request), (string) $request->id);
+            }
+
+            return $request;
+        }));
+    }
+
+    /**
+     * The request locked for a decision. Permission follows its status: pending (or any escalate) needs leave.decide, escalated needs
+     * leave.decide_escalated, and a decided request needs either, so only a decider learns it is a conflict. Both are `.all` only.
+     */
+    private function forDecision(string $id, int $version, Authenticatable $by, bool $pendingOnly): LeaveRequest
+    {
+        $employeeId = LeaveRequest::whereKey($id)->value('employee_id') ?? throw new ModelNotFoundException;
+        LeaveRequestLock::forEmployee((string) $employeeId);
+        $request = LeaveRequest::whereKey($id)->lockForUpdate()->firstOrFail();
+        $status = LeaveStatus::from((string) $request->status);
+        $abilities = match (true) {
+            $pendingOnly, $status === LeaveStatus::Pending => ['leave.decide'],
+            $status === LeaveStatus::Escalated => ['leave.decide_escalated'],
+            default => ['leave.decide', 'leave.decide_escalated'],
+        };
+        if (array_filter($abilities, fn (string $a) => $this->authorize->decide($by, $a)->allows(Scope::All)) === []) {
+            throw AuthorizationRefused::of($abilities[0]);
+        }
+        $open = $pendingOnly ? [LeaveStatus::Pending] : [LeaveStatus::Pending, LeaveStatus::Escalated];
+        if (! in_array($status, $open, true) || $request->version !== $version) {
+            throw new ConcurrencyConflict;
+        }
+
+        return $request;
+    }
+
+    /**
+     * Approve or refuse: stores the decision and tells the requester, unless they decided it themselves.
+     *
+     * @param  array<string, mixed>  $values
+     */
+    private function conclude(LeaveRequest $request, LeaveStatus $status, Authenticatable $by, array $values): LeaveRequest
+    {
+        $byId = (string) $by->getAuthIdentifier();
+        $request->fill([...$values, 'status' => $status->value, 'decided_by' => $byId, 'decided_at' => now(), 'version' => $request->version + 1])->save();
+        if ($request->requested_by !== $byId) {
+            $this->notifier->notifyOnce((string) $request->requested_by, 'leave_decided', now('Africa/Cairo')->toDateString(), [...$this->notice($request), 'status' => $status->value], (string) $request->id);
+        }
+
+        return $request;
+    }
+
+    /** @return array{employee_id: string, request_id: string, kind: string, from_date: string, to_date: string, days: int} ids, codes and dates only */
+    private function notice(LeaveRequest $request): array
+    {
+        return [
+            'employee_id' => (string) $request->employee_id, 'request_id' => (string) $request->id, 'kind' => (string) $request->kind,
+            'from_date' => (string) $request->from_date, 'to_date' => (string) $request->to_date, 'days' => $request->days,
+        ];
+    }
+
+    /**
+     * What approving now would do, recounted: the dates, the balance split, and the dates that block it.
+     *
+     * @return array{dates: list<string>, days: int, balance: ?array<string, ?int>, keep: int, unpaid: int, remaining_after: ?int, blocked: list<string>}
+     */
+    private function approval(LeaveRequest $request): array
+    {
+        $employeeId = (string) $request->employee_id;
+        $employee = $this->roster->find($employeeId) ?? throw new ModelNotFoundException;
+        $from = (string) $request->from_date;
+        $dates = $this->days->dates($employee, $from, (string) $request->to_date);
+        $balance = $this->balances->forEmployee($employeeId, (int) substr($from, 0, 4))['balance'];
+
+        return [
+            'dates' => $dates, 'days' => count($dates), 'balance' => $balance, ...LeaveBalance::split(LeaveKind::from((string) $request->kind), count($dates), $balance),
+            'blocked' => $this->attendance->leaveBlockedDates($employeeId, $dates),
+        ];
+    }
+
+    /** @return array<string, mixed> the list row, the decision, and the approval preview while undecided */
+    private function detail(LeaveRequest $request): array
+    {
+        /** @var array<string, mixed> $row */
+        $row = $request->toArray();
+        $undecided = in_array($row['status'], [LeaveStatus::Pending->value, LeaveStatus::Escalated->value], true);
+
+        return [
+            ...$this->named([$row])[0],
+            'decision_reason' => $row['decision_reason'],
+            'decided_by' => $row['decided_by'] === null ? null : ['id' => $row['decided_by'], 'name' => User::withTrashed()->whereKey($row['decided_by'])->value('name')],
+            'decided_at' => $row['decided_at'],
+            'approval' => $undecided ? $this->approval($request) : null,
+        ];
     }
 
     /**

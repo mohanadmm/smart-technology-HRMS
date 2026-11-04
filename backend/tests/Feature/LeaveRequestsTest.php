@@ -9,6 +9,7 @@ use App\Modules\Notifications\Application\Notifier;
 use App\Modules\Notifications\Infrastructure\Eloquent\Notification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\AttendanceFixtures;
@@ -23,12 +24,14 @@ class LeaveRequestsTest extends TestCase
     /** @var list<User> */
     private array $hr;
 
+    private User $ceo;
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->cairo('2026-10-20 12:00');
         $this->hr = [$this->makeUser('hr'), $this->makeUser('hr')];
-        $this->makeUser('ceo');
+        $this->ceo = $this->makeUser('ceo');
         $this->actingAs($this->hr[0], 'api');
     }
 
@@ -45,6 +48,20 @@ class LeaveRequestsTest extends TestCase
     private function assign(string $employeeId, User $manager, string $from = '2026-01-01'): void
     {
         app(EmployeeService::class)->assignManager($employeeId, ['manager_id' => $manager->id, 'effective_from' => $from]);
+    }
+
+    /** @param  array<string, mixed>  $body */
+    private function decide(string $id, string $action, array $body = []): TestResponse
+    {
+        return $this->postJson("/api/v1/leave/requests/{$id}/{$action}", ['version' => DB::table('leave_requests')->where('id', $id)->value('version'), ...$body]);
+    }
+
+    /** @return array<string, string> date => "leave_code/source" of the employee's stored days */
+    private function stored(string $employeeId): array
+    {
+        return DB::table('attendance_days')->join('sites', 'sites.id', '=', 'attendance_days.site_id')
+            ->where('employee_id', $employeeId)->whereNull('attendance_days.deleted_at')->orderBy('date')->get(['date', 'leave_code', 'source'])
+            ->mapWithKeys(fn (object $r) => [substr((string) $r->date, 0, 10) => "{$r->leave_code}/{$r->source}"])->all();
     }
 
     /** @return list<string> */
@@ -373,5 +390,213 @@ class LeaveRequestsTest extends TestCase
 
         $this->actingAs($blind, 'api');
         $this->assertNull($this->getJson('/api/v1/notifications')->json('data.0.employee'));
+    }
+
+    public function test_approval_writes_each_counted_date_with_source_leave_and_leaves_friday_alone(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-11-05', '2026-11-08')->json('data.id');
+
+        $row = $this->decide($id, 'approve')->assertOk()
+            ->assertJsonPath('data.status', 'approved')->assertJsonPath('data.days', 3)->assertJsonPath('data.version', 2)
+            ->assertJsonPath('data.decided_by', ['id' => $this->hr[0]->id, 'name' => 'hr'])->assertJsonPath('data.decision_reason', null)
+            ->assertJsonPath('data.approval', null)->json('data');
+        $this->assertNotNull($row['decided_at']);
+        $this->assertSame(['2026-11-05' => 'annual/leave', '2026-11-07' => 'annual/leave', '2026-11-08' => 'annual/leave'], $this->stored($e));
+    }
+
+    public function test_annual_days_beyond_the_balance_are_approved_as_unpaid_latest_last(): void
+    {
+        $e = $this->employee('engineer', '2026-07-01');   // pro-rata entitlement 5
+        $annual = $this->leaveTypes()['annual'];
+        foreach (['2026-10-01', '2026-10-03', '2026-10-04'] as $date) {
+            app(AttendanceDays::class)->save($e, $date, ['site_id' => $annual]);
+        }
+        $id = $this->submit($e, '2026-11-02', '2026-11-05')->json('data.id');
+
+        $this->decide($id, 'approve')->assertOk();
+        $this->assertSame(
+            ['2026-11-02' => 'annual/leave', '2026-11-03' => 'annual/leave', '2026-11-04' => 'unpaid/leave', '2026-11-05' => 'unpaid/leave'],
+            array_slice($this->stored($e), 3),
+        );
+    }
+
+    public function test_casual_is_kept_within_the_smaller_balance_and_sick_never_splits(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $casual = $this->leaveTypes()['casual'];
+        foreach (['2026-10-01', '2026-10-03', '2026-10-04', '2026-10-05'] as $date) {
+            app(AttendanceDays::class)->save($e, $date, ['site_id' => $casual]);
+        }
+        $this->decide($this->submit($e, '2026-11-02', '2026-11-05', 'casual')->json('data.id'), 'approve')->assertOk();
+        $this->assertSame(
+            ['2026-11-02' => 'casual/leave', '2026-11-03' => 'casual/leave', '2026-11-04' => 'unpaid/leave', '2026-11-05' => 'unpaid/leave'],
+            array_slice($this->stored($e), 4),
+        );
+
+        $new = $this->employee('engineer', '2026-11-01');   // entitlement 1
+        $this->decide($this->submit($new, '2026-11-02', '2026-11-04', 'sick')->json('data.id'), 'approve')->assertOk();
+        $this->assertSame(['2026-11-02' => 'sick/leave', '2026-11-03' => 'sick/leave', '2026-11-04' => 'sick/leave'], $this->stored($new));
+    }
+
+    public function test_a_worked_day_blocks_approval_names_the_date_and_writes_nothing(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-10-12', '2026-10-15')->json('data.id');
+        $days = app(AttendanceDays::class);
+        $days->save($e, '2026-10-13', ['site_id' => $this->workSite()]);
+        $days->save($e, '2026-10-14', ['site_id' => $this->leaveTypes()['sick']]);   // a leave day is replaced, not a block
+
+        $this->getJson("/api/v1/leave/requests/{$id}")->assertOk()->assertJsonPath('data.approval.blocked', ['2026-10-13']);
+        $this->decide($id, 'approve')->assertStatus(409)->assertJsonPath('error.code', 'leave_days_blocked')
+            ->assertJsonPath('error.dates', ['2026-10-13'])->assertJsonPath('error.message', '1 of the requested days already holds a work day or is in a locked period.');
+        $this->withHeader('Accept-Language', 'ar')->decide($id, 'approve')->assertStatus(409)
+            ->assertJsonPath('error.message', 'عدد الأيام المحجوزة بحضور مسجّل أو في فترة مقفلة: 1.');
+        $this->assertSame(['2026-10-13' => '/entered', '2026-10-14' => 'sick/entered'], $this->stored($e));
+        $this->assertSame(['pending', 1], [DB::table('leave_requests')->where('id', $id)->value('status'), DB::table('leave_requests')->where('id', $id)->value('version')]);
+    }
+
+    public function test_a_locked_period_blocks_approval(): void
+    {
+        $e = $this->employee('engineer', '2026-09-26');
+        $id = $this->submit($e, '2026-10-12', '2026-10-13')->json('data.id');
+        $this->leaveTypes();   // the lock stores the derived Fridays
+        $this->postJson('/api/v1/attendance/locks', ['group' => 'engineer', 'period_start' => '2026-09-26', 'confirm_missing' => true])->assertCreated();
+
+        $this->decide($id, 'approve')->assertStatus(409)->assertJsonPath('error.code', 'leave_days_blocked')->assertJsonPath('error.dates', ['2026-10-12', '2026-10-13']);
+        $this->assertSame('pending', DB::table('leave_requests')->where('id', $id)->value('status'));
+    }
+
+    public function test_a_holiday_added_after_submit_is_not_written_and_days_drops(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-11-02', '2026-11-04')->assertJsonPath('data.days', 3)->json('data.id');
+        $this->holiday('2026-11-03');
+
+        $this->decide($id, 'approve')->assertOk()->assertJsonPath('data.days', 2);
+        $this->assertSame(['2026-11-02' => 'annual/leave', '2026-11-04' => 'annual/leave'], $this->stored($e));
+
+        $only = $this->submit($e, '2026-11-10', '2026-11-10')->json('data.id');
+        $this->holiday('2026-11-10', 'Holiday-2');
+        $this->decide($only, 'approve')->assertStatus(422)->assertJsonPath('error.code', 'leave_no_days');
+    }
+
+    public function test_hr_escalates_with_a_note_and_only_the_ceo_decides_it(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-11-02', '2026-11-03')->json('data.id');
+
+        $this->decide($id, 'escalate', ['reason' => 'Note-HR'])->assertOk()->assertJsonPath('data.status', 'escalated')
+            ->assertJsonPath('data.decision_reason', 'Note-HR')->assertJsonPath('data.decided_by', null)->assertJsonPath('data.decided_at', null)
+            ->assertJsonPath('data.approval.days', 2);
+        $n = Notification::sole();
+        $this->assertSame([$this->ceo->id, 'leave_escalated', $id], [$n->user_id, $n->type, $n->ref]);
+        $this->assertEquals(['employee_id' => $e, 'request_id' => $id, 'kind' => 'annual', 'from_date' => '2026-11-02', 'to_date' => '2026-11-03', 'days' => 2], $n->data);
+
+        $this->decide($id, 'approve')->assertForbidden();
+        $this->decide($id, 'refuse', ['reason' => 'R'])->assertForbidden();
+        $this->decide($id, 'escalate')->assertStatus(409)->assertJsonPath('error.code', 'concurrency_conflict');
+        $this->actingAs($this->ceo, 'api');
+        $this->decide($id, 'approve')->assertOk()->assertJsonPath('data.status', 'approved')->assertJsonPath('data.decided_by.id', $this->ceo->id);
+        $this->assertCount(2, $this->stored($e));
+    }
+
+    public function test_the_ceo_cannot_decide_a_pending_request_and_a_manager_decides_nothing(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $manager = $this->makeUser('manager');
+        $this->assign($e, $manager);
+        $id = $this->submit($e, '2026-11-02', '2026-11-03')->json('data.id');
+
+        foreach ([$this->ceo, $manager] as $user) {
+            $this->actingAs($user, 'api');
+            $this->decide($id, 'approve')->assertForbidden();
+            $this->decide($id, 'refuse', ['reason' => 'R'])->assertForbidden();
+            $this->decide($id, 'escalate')->assertForbidden();
+        }
+        $this->assertSame(['pending', 1], [DB::table('leave_requests')->where('id', $id)->value('status'), DB::table('leave_requests')->where('id', $id)->value('version')]);
+    }
+
+    public function test_refusal_needs_a_reason_and_writes_no_day(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-11-02', '2026-11-03')->json('data.id');
+
+        $this->decide($id, 'refuse')->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
+        $this->decide($id, 'refuse', ['reason' => str_repeat('x', 1001)])->assertStatus(422);
+        $this->decide($id, 'refuse', ['reason' => 'Reason-1'])->assertOk()->assertJsonPath('data.status', 'refused')
+            ->assertJsonPath('data.decision_reason', 'Reason-1')->assertJsonPath('data.decided_by.id', $this->hr[0]->id)->assertJsonPath('data.approval', null);
+        $this->assertSame([], $this->stored($e));
+    }
+
+    public function test_a_stale_version_or_a_decided_request_is_a_conflict(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-11-02', '2026-11-03')->json('data.id');
+
+        $this->decide($id, 'approve', ['version' => 7])->assertStatus(409)->assertJsonPath('error.code', 'concurrency_conflict');
+        $this->decide($id, 'approve')->assertOk();
+        $this->decide($id, 'approve')->assertStatus(409)->assertJsonPath('error.code', 'concurrency_conflict');
+        $this->decide($id, 'refuse', ['reason' => 'R'])->assertStatus(409);
+        $this->decide($id, 'approve', ['version' => null])->assertStatus(422);
+        $this->postJson('/api/v1/leave/requests/'.Str::uuid7().'/approve', ['version' => 1])->assertNotFound();
+    }
+
+    public function test_the_requester_hears_the_decision_unless_they_decided_it(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $manager = $this->makeUser('manager');
+        $this->assign($e, $manager);
+        $this->actingAs($manager, 'api');
+        $approved = $this->submit($e, '2026-11-02', '2026-11-03')->json('data.id');
+        $refused = $this->submit($e, '2026-11-09', '2026-11-10')->json('data.id');
+        $this->actingAs($this->hr[0], 'api');
+        Notification::query()->delete();
+
+        $this->decide($approved, 'approve')->assertOk();
+        $this->decide($refused, 'refuse', ['reason' => 'R'])->assertOk();
+        $rows = Notification::where('user_id', $manager->id)->get()->keyBy('ref');
+        $this->assertSame(['leave_decided', 'leave_decided'], [$rows[$approved]->type, $rows[$refused]->type]);
+        $this->assertEquals(['employee_id' => $e, 'request_id' => $approved, 'kind' => 'annual', 'from_date' => '2026-11-02', 'to_date' => '2026-11-03', 'days' => 2, 'status' => 'approved'], $rows[$approved]->data);
+        $this->assertSame('refused', $rows[$refused]->data['status']);
+        $this->assertSame(2, Notification::count());
+
+        $own = $this->submit($e, '2026-11-16', '2026-11-17')->json('data.id');
+        $this->decide($own, 'approve')->assertOk();
+        $this->assertSame(2, Notification::count());
+    }
+
+    public function test_every_transition_is_audited(): void
+    {
+        $e = $this->employee('engineer', '2020-01-01');
+        $id = $this->submit($e, '2026-11-02', '2026-11-03')->json('data.id');
+        $this->decide($id, 'escalate');
+        $this->actingAs($this->ceo, 'api');
+        $this->decide($id, 'refuse', ['reason' => 'R']);
+
+        $audit = DB::table('audit_log')->where(['entity_type' => 'leave_requests', 'entity_id' => $id])->orderBy('occurred_at')->orderBy('id')->get();
+        $this->assertSame(['CREATED', 'UPDATED', 'UPDATED'], $audit->pluck('event')->all());
+        $this->assertSame(['pending', 'escalated'], [json_decode((string) $audit[1]->old_values, true)['status'], json_decode((string) $audit[1]->new_values, true)['status']]);
+        $this->assertSame(['escalated', 'refused'], [json_decode((string) $audit[2]->old_values, true)['status'], json_decode((string) $audit[2]->new_values, true)['status']]);
+    }
+
+    public function test_show_carries_the_approval_preview_while_pending_and_only_within_reach(): void
+    {
+        $e = $this->employee('engineer', '2026-07-01');   // pro-rata entitlement 5
+        $manager = $this->makeUser('manager');
+        $this->assign($e, $manager);
+        $id = $this->submit($e, '2026-11-02', '2026-11-08', 'annual', 'Note-1')->json('data.id');
+
+        $data = $this->getJson("/api/v1/leave/requests/{$id}")->assertOk()->assertJsonPath('data.note', 'Note-1')
+            ->assertJsonPath('data.decided_by', null)->assertJsonPath('data.decision_reason', null)->json('data');
+        $this->assertSame(['dates', 'days', 'balance', 'keep', 'unpaid', 'remaining_after', 'blocked'], array_keys($data['approval']));
+        $this->assertSame([6, 5, 1, 0, []], [$data['approval']['days'], $data['approval']['keep'], $data['approval']['unpaid'], $data['approval']['remaining_after'], $data['approval']['blocked']]);
+        $this->assertSame(5, $data['approval']['balance']['remaining']);
+
+        $this->actingAs($manager, 'api');
+        $this->getJson("/api/v1/leave/requests/{$id}")->assertOk();
+        $this->actingAs($this->makeUser('manager'), 'api');
+        $this->getJson("/api/v1/leave/requests/{$id}")->assertNotFound();
+        $this->getJson('/api/v1/leave/requests/'.Str::uuid7())->assertNotFound();
     }
 }

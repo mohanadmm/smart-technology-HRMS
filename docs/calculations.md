@@ -175,7 +175,7 @@ Spec: `docs/superpowers/specs/2026-11-03-leave-design.md`. Attendance is the led
 
 **Leave request days**
 - A request's days = its dates, minus days not employed as a monthly type, the type's weekly off and official holidays (§2a). Those are not counted and not written.
-- On approval, annual or casual days beyond the balance (for casual, beyond the smaller of the two balances) are written as unpaid leave (بدون أجر). ⚠️ (L2, client question 9)
+- On approval the days are counted again (a holiday added since the request drops out). The earliest dates keep the kind; annual or casual days beyond the balance (for casual, beyond the smaller of the two balances) are written as unpaid leave (بدون أجر). ⚠️ (L2, client question 9)
 
 **Leave pay (Release 2 payroll)**
 - Annual and casual leave are paid in full for monthly staff, like the weekly off.

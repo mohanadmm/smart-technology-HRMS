@@ -99,7 +99,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ));
 
         $exceptions->render(fn (LeaveRefused $e, Request $request) => ApiEnvelope::error(
-            $request, 422, $e->reason->value, __('leave.refusal.'.$e->reason->value, $e->params),
+            $request, $e->reason->status(), $e->reason->value, __('leave.refusal.'.$e->reason->value, $e->params), extra: $e->dates === [] ? [] : ['dates' => $e->dates],
         ));
 
         $exceptions->dontReport(EmployeeCodeTaken::class);

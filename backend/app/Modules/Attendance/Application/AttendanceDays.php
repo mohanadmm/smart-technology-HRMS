@@ -182,23 +182,70 @@ final class AttendanceDays
     }
 
     /**
+     * The leave workflow's write (leave spec, Workflow Approve): source `leave`, a future date allowed, the period lock and row lock kept,
+     * no reach check (deciders hold `.all`). A stored leave day is replaced, keeping its note and advance (P28); a work day or office
+     * present refuses (`leave_days_blocked`).
+     */
+    public function writeLeaveDay(string $employeeId, string $date, string $leaveSiteId): void
+    {
+        $employee = $this->roster->find($employeeId) ?? throw new ModelNotFoundException;
+        try {
+            DB::transaction(fn () => $this->write($employee, $date, ['site_id' => $leaveSiteId], null, 'leave', true, leaveDay: true));
+        } catch (UniqueConstraintViolationException) {
+            throw new ConcurrencyConflict;
+        }
+    }
+
+    /**
+     * Read only: the dates a leave approval may not write, those holding a work day or office present, or inside a locked period.
+     *
+     * @param  list<string>  $dates
+     * @return list<string> in $dates order
+     */
+    public function leaveBlockedDates(string $employeeId, array $dates): array
+    {
+        $employee = $this->roster->find($employeeId) ?? throw new ModelNotFoundException;
+        $worked = AttendanceDay::where('employee_id', $employeeId)->whereIn('date', $dates)
+            ->where(fn ($q) => $q->whereNull('site_id')->orWhereNotIn('site_id', Site::withTrashed()->where('kind', SiteKind::Leave->value)->select('id')))
+            ->pluck('date')->map(fn ($d) => substr((string) $d, 0, 10))->all();
+        $locked = [];
+
+        return array_values(array_filter($dates, function (string $date) use ($employee, $worked, &$locked): bool {
+            $type = Employment::typeOn($employee, $date);
+            if ($type === null) {
+                return false;
+            }
+            $period = Period::containing($type, $date);
+
+            return in_array($date, $worked, true) || ($locked[$period->group->value.$period->start] ??= PeriodGuard::isLocked($period));
+        }));
+    }
+
+    /**
      * One day's write; call inside a transaction. $keepUnsent (bulk) applies P28 to the fields absent from $input, else they are stored as null.
      * An unchanged row is not written (P29). $dryRun stops after the last check, before anything is saved. With $ownerId (own scope)
      * the employee must be in that user's reach on $date, and a work site must be one of their sites and, for a worker, the home site
      * on $date (design Part 1), and a change of the day's site must not be to a leave type that needs a leave request (a day already
      * stored as one, by HR or the leave workflow, can be resubmitted). The import takes reach once per period, so
-     * this is what checks each cell's own date.
+     * this is what checks each cell's own date. $leaveDay is writeLeaveDay(): a future date passes, the version is the live row's,
+     * and a live row that is not a leave type refuses.
      *
      * @param  array<string, mixed>  $employee
      * @param  array<string, mixed>  $input  validated against FORMAT
      * @param  array<string, string>|null  $settings  read here when null and needed
      * @return int the row's version after the write
      */
-    private function write(array $employee, string $date, array $input, ?string $ownerId, string $source, bool $keepUnsent, ?array $settings = null, bool $dryRun = false): int
+    private function write(array $employee, string $date, array $input, ?string $ownerId, string $source, bool $keepUnsent, ?array $settings = null, bool $dryRun = false, bool $leaveDay = false): int
     {
-        [$type, $row] = $this->guard($employee, $date);
+        [$type, $row] = $this->guard($employee, $date, $leaveDay);
         $live = $row !== null && ! $row->trashed() ? $row : null;
-        $this->assertVersion($live, $input['version'] ?? null);
+        $liveKind = $live?->site_id === null ? null : Site::withTrashed()->whereKey($live->site_id)->value('kind');
+        if ($leaveDay && $live !== null && $liveKind !== SiteKind::Leave->value) {
+            throw AttendanceRefused::because(AttendanceRefusal::LeaveDaysBlocked);
+        }
+        if (! $leaveDay) {
+            $this->assertVersion($live, $input['version'] ?? null);
+        }
 
         $siteId = $input['site_id'] ?? null;
         $site = $siteId === null ? null : Site::find((string) $siteId);
@@ -210,7 +257,6 @@ final class AttendanceDays
         }
         $siteRule = $this->siteRule($site, $live);
         $isLeave = $site?->kind === 'leave';
-        $liveKind = $live?->site_id === null ? null : Site::withTrashed()->whereKey($live->site_id)->value('kind');
         $values = array_map(fn (string $f) => $input[$f] ?? null, array_combine(EffectiveDays::VALUES, EffectiveDays::VALUES));
         if ($keepUnsent && $live !== null) {
             $values = [...$values, ...array_diff_key($this->kept($type, $live, $liveKind, $siteRule), $input)];
@@ -253,6 +299,10 @@ final class AttendanceDays
             $values[$m] = $values[$m] === null ? null : (int) $values[$m];
         }
 
+        // A leave-written day re-saved on the same leave type stays `leave`, so cancelling the request still clears it.
+        if ($live?->source === 'leave' && $live->site_id === $siteId) {
+            $source = 'leave';
+        }
         $row ??= new AttendanceDay(['employee_id' => $employee['id'], 'date' => $date, 'version' => 0]);
         $row->fill([...$values, 'site_id' => $siteId, 'source' => $source, 'deleted_at' => null]);
         if ($row->exists && ! $row->isDirty()) {
@@ -299,14 +349,14 @@ final class AttendanceDays
     }
 
     /**
-     * Future date, employment and open period, then the row (soft-deleted ones too) locked for update.
+     * Future date (unless $allowFuture: the leave workflow only), employment and open period, then the row (soft-deleted ones too) locked for update.
      *
      * @param  array<string, mixed>  $employee
      * @return array{EmployeeType, ?AttendanceDay}
      */
-    private function guard(array $employee, string $date): array
+    private function guard(array $employee, string $date, bool $allowFuture = false): array
     {
-        if ($date > EffectiveDays::today()) {
+        if (! $allowFuture && $date > EffectiveDays::today()) {
             throw AttendanceRefused::because(AttendanceRefusal::FutureDate);
         }
         $type = Employment::typeOn($employee, $date) ?? throw AttendanceRefused::because(AttendanceRefusal::EmployeeNotActive);
