@@ -9,6 +9,9 @@ const row = (id: string, day: Partial<SiteDayRow['day']> = {}, extra: Partial<Si
   day: { state: 'missing', version: null, site_id: null, leave_code: null, in_time: null, out_time: null, note: null, ...day },
   can_edit: true,
   why_not: null,
+  departure_only: false,
+  open_date: null,
+  open_site_id: null,
   ...extra,
 })
 

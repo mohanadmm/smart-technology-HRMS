@@ -1,3 +1,5 @@
+import { isHhmm } from '@/components/form'
+
 /** One `rows[]` item of `GET /attendance/site-day`: workers first, then the site manager's engineers. No pay figures. */
 export type SiteDayRow = {
   employee: { id: string; code: number; name_ar: string; name_en: string | null; type: string }
@@ -7,16 +9,21 @@ export type SiteDayRow = {
   day: { state: 'stored' | 'derived' | 'missing' | 'future'; version: number | null; site_id: string | null; leave_code: string | null; in_time: string | null; out_time: string | null; note: string | null }
   can_edit: boolean
   why_not: 'locked' | 'window' | 'hr_day' | 'open_day' | null
-  /** with why_not open_day: the earlier day that has an arrival and no departure */
-  open_date?: string | null
-  /** whether the site manager can still complete that day (inside the yesterday window); otherwise only HR */
-  open_editable?: boolean
+  /** past the yesterday window: an open day of theirs here, where only the departure can still be entered (HR is told at once) */
+  departure_only: boolean
+  /** with why_not open_day: the earlier field day that has an arrival and no departure */
+  open_date: string | null
+  /** where this site manager can complete that day; null when only HR can (HR's day, or not theirs) */
+  open_site_id: string | null
 }
 
-/** The leave types a site manager may store (P11), by code. */
-export type LeaveSites = Partial<Record<'absent' | 'sick' | 'rest' | 'other', string>>
+/** One exact path per site and date, so the site tabs, the page and an open day's link share one cache entry. */
+export const dayPath = (siteId: string, date: string | null) => `/attendance/site-day?${new URLSearchParams({ site_id: siteId, ...(date && { date }) })}`
 
-export type SiteDay = { site: { id: string; name_ar: string; name_en: string | null }; date: string; today: string; leave_sites: LeaveSites; rows: SiteDayRow[] }
+/** The leave day-types a site manager may store (P11): code → the leave day-type's id. */
+export type LeaveDayTypes = Partial<Record<'absent' | 'sick' | 'rest' | 'other', string>>
+
+export type SiteDay = { site: { id: string; name_ar: string; name_en: string | null }; date: string; today: string; leave_day_types: LeaveDayTypes; rows: SiteDayRow[] }
 
 export const MARKS = ['present', 'absent', 'sick'] as const
 export type Mark = (typeof MARKS)[number]
@@ -26,6 +33,9 @@ export const MORE = ['rest', 'other'] as const
 /** What the screen holds for one person before «حفظ اليوم»: the site (a work site or a leave type) and the two times. */
 export type Draft = { site_id: string | null; in_time: string | null; out_time: string | null }
 export type Drafts = Record<string, Draft>
+
+/** The people whose earlier field day still has no departure: the banner above the list names them. */
+export const openDays = (rows: SiteDayRow[]) => rows.filter((r) => r.why_not === 'open_day' && r.open_date)
 
 /** The status button a day presses on `siteId`'s list: a work day at that site is present (one at another site is only a hint), the absent and sick leave days their own; anything else none. */
 export function markOf({ state, site_id, leave_code }: Pick<SiteDayRow['day'], 'state' | 'site_id' | 'leave_code'>, siteId: string): Mark | null {
@@ -93,7 +103,7 @@ export function counts(rows: SiteDayRow[], drafts: Drafts, siteId: string) {
     } else if (isPresent(d, siteId)) {
       present++
       if (d.in_time && !d.out_time) noCheckout++
-      if (d.in_time && /^\d{2}:\d{2}$/.test(d.in_time) && minutes(d.in_time) > minutes(r.shift.start)) late++
+      if (isHhmm(d.in_time) && minutes(d.in_time) > minutes(r.shift.start)) late++
     } else away++
   }
   return { present, away, unrecorded, noCheckout, late }

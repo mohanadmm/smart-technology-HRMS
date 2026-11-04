@@ -759,9 +759,12 @@
     "unread": "unread,",
     "pause": ",",
     "missingDays": {
-      "title": "Missing attendance days as of {{date}}",
+      "title": "Attendance follow-up as of {{date}}",
       "line": "Missing days, {{group}}: {{count}}",
-      "period": "{{start}} – {{end}}"
+      "period": "{{start}} – {{end}}",
+      "group": "{{group}}",
+      "open": "No departure: {{count}}",
+      "crew": "Crew changes: {{count}}"
     },
     "leaveAnniversary": {
       "line": "One year since <name/> (<code/>) was hired",
@@ -792,18 +795,14 @@
       "unknown": "Proposed daily wage for a day laborer",
       "detail": "{{amount}} · {{site}}"
     },
-    "openDays": {
-      "title": "Arrivals with no departure up to {{date}}",
-      "line": "Days with no departure: {{count}}"
-    },
-    "crewChanges": {
-      "title": "Day-labor crew changes on {{date}}",
-      "added": "Added to {{site}}: {{count}}",
-      "removed": "Taken off the day’s crew: {{count}}"
-    },
     "leaveCancelled": {
       "line": "Leave request for <name/> (<code/>) cancelled",
       "unknown": "A leave request was cancelled"
+    },
+    "pastEdit": {
+      "line": "Departure of <name/> (<code/>) for {{date}}, after the window",
+      "unknown": "A departure entered after the window for {{date}}",
+      "detail": "{{time}} · {{site}}"
     }
   },
   "time": {
@@ -863,11 +862,10 @@
     "later": "Stayed {{count}} min after hours (overtime needs HR approval)",
     "removeFromToday": "Remove {{name}} from today's crew",
     "addLaborer": "Add day laborer",
-    "addLaborerHint": "Joins today's crew at {{site}}. Search first; they may already be on file.",
-    "laborerName": "Laborer's name",
+    "addLaborerHint": "They join today’s crew at {{site}}. Search by code or full name first; they may already be on file.",
     "matches": "Day laborers with this name",
     "searching": "Searching…",
-    "noMatches": "No day laborer on file with this name.",
+    "noMatches": "No day laborer has this code or full name.",
     "alreadyHere": "At this site",
     "addToToday": "Add to today's crew",
     "onOtherSite": "On another site; contact HR",
@@ -886,7 +884,14 @@
     "late": "{{count}} min late",
     "lateCount": "Late: {{count}}",
     "openDay": "Open {{date}} and enter the departure",
-    "backToToday": "Back to today"
+    "backToToday": "Back to today",
+    "laborerCodeOrName": "Employee code or full name",
+    "searchHint": "Type the code, or the whole name as recorded.",
+    "sameName": "More than one laborer has this name; type the code.",
+    "departureOnly": "Past the window: enter the departure only; HR is told",
+    "openDays": {
+      "title": "No departure on an earlier day ({{count}}); complete it before today"
+    }
   },
   "leave": {
     "balance": "Leave balance",
