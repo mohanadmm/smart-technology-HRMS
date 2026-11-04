@@ -77,9 +77,11 @@ final class SystemLog
                 $info = $db->errorInfo ?? [];
                 $code = (string) $db->getCode();
                 $sqlstate = is_string($info[0] ?? null) ? $info[0] : (strlen($code) === 5 ? $code : null);
-                $constraint = preg_match('/constraint "([^"]+)"/', (string) ($info[2] ?? ''), $m) === 1 ? ", constraint {$m[1]}" : '';
+                // Line 1 only: the DETAIL line quotes the failing row, whose values may contain `constraint "…"`.
+                $firstLine = explode("\n", (string) ($info[2] ?? ''), 2)[0];
+                $constraint = preg_match('/constraint "([^"]+)"/', $firstLine, $m) === 1 ? ", constraint {$m[1]}" : '';
                 $sql = $db instanceof QueryException ? "\n".$db->getSql() : '';
-                $message = LogMasker::text("SQLSTATE {$sqlstate}{$constraint}{$sql}");
+                $message = LogMasker::text('SQLSTATE '.($sqlstate ?? 'unknown').$constraint.$sql);
             }
 
             $row = [
@@ -121,7 +123,8 @@ final class SystemLog
 
     private static function requestBody(Request $request): ?string
     {
-        $body = array_diff_key($request->input(), $request->query->all()) + self::files($request->allFiles());
+        // The body alone: input() merges the query in. Not getInputSource(): for a GET it is the query.
+        $body = ($request->isJson() ? $request->json()->all() : $request->request->all()) + self::files($request->allFiles());
 
         return $body === [] ? null : LogMasker::encode($body);
     }

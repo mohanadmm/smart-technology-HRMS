@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 
 /** Read model for audit_log; rows are written only by AuditLog::record. */
 class AuditLogEntry extends Model
@@ -30,6 +31,12 @@ class AuditLogEntry extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /** The DB value of CUTOFF. */
+    public static function cutoff(): string
+    {
+        return (string) DB::scalar('select '.self::CUTOFF);
     }
 
     /** @return Builder<self> */

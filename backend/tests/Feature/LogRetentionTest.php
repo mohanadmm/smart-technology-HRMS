@@ -2,12 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Modules\Audit\Application\PruneLogs;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Tests\TestCase;
 
 /** Rows are backdated in SQL: under RefreshDatabase the DB clock (now()) is frozen at the transaction start, travel() cannot move it. */
@@ -34,7 +37,7 @@ class LogRetentionTest extends TestCase
         $old = $this->auditRow('13 months');
         $young = $this->auditRow('11 months');
 
-        $this->artisan('logs:prune')->assertSuccessful();
+        $this->artisan('logs:prune')->expectsOutput('request_log: 0, error_log: 0, audit_log: 1')->assertSuccessful();
 
         $this->assertSame([$young], DB::table('audit_log')->whereIn('id', [$old, $young])->pluck('id')->all());
         $pruned = DB::table('audit_log')->where('event', 'PRUNED')->get();
@@ -43,6 +46,22 @@ class LogRetentionTest extends TestCase
         $this->assertNull($pruned[0]->entity_id);
         $cutoff = CarbonImmutable::parse((string) DB::scalar("select now() - interval '1 year'"))->toJSON();
         $this->assertSame(['count' => 1, 'cutoff' => $cutoff], json_decode($pruned[0]->new_values, true));
+    }
+
+    public function test_a_failed_pruned_record_keeps_the_old_audit_rows(): void
+    {
+        $old = $this->auditRow('13 months');
+        // Fails after the audit insert ran, as a dropped connection would: the prune must roll back with it.
+        DB::listen(function (QueryExecuted $q): void {
+            if (str_starts_with($q->sql, 'insert into "audit_log"')) {
+                throw new RuntimeException('audit write failed');
+            }
+        });
+
+        $this->assertThrows(fn () => app(PruneLogs::class)->run(), RuntimeException::class);
+
+        $this->assertSame(1, DB::table('audit_log')->where('id', $old)->count());
+        $this->assertSame(0, DB::table('audit_log')->where('event', 'PRUNED')->count());
     }
 
     public function test_the_trigger_still_refuses_young_rows(): void

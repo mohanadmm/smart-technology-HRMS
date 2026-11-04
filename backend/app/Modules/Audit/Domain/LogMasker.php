@@ -6,8 +6,9 @@ namespace App\Modules\Audit\Domain;
 
 /**
  * Masks what the request and error logs store: a key rule (secrets by substring, money and IDs by exact name) at any depth,
- * then a shape rule (a run of 7+ digits) on every remaining string, keys included, and on every int or float. A whole UUID is
- * kept: its hex groups often hold 7 digits in a row. The spec's "Masking" section is the source.
+ * then a shape rule (a run of 7+ digits, Arabic-Indic and Persian digits included) on every remaining string, keys included, and
+ * on every int or float. A whole UUID is kept: its hex groups often hold 7 digits in a row. The spec's "Masking" section is the
+ * source, these build-time additions included.
  */
 final class LogMasker
 {

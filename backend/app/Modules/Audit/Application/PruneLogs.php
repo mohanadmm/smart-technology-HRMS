@@ -20,13 +20,16 @@ final class PruneLogs
         $counts = [
             'request_log' => (new RequestLogEntry)->pruneAll(),
             'error_log' => (new ErrorLogEntry)->pruneAll(),
-            'audit_log' => (new AuditLogEntry)->pruneAll(),
         ];
-        if ($counts['audit_log'] > 0) {
-            // Read after the prune: every deleted row is older than this cutoff.
-            $cutoff = CarbonImmutable::parse((string) DB::scalar('select '.AuditLogEntry::CUTOFF))->toJSON();
-            AuditLog::record('PRUNED', 'audit_log', null, null, ['count' => $counts['audit_log'], 'cutoff' => $cutoff]);
-        }
+        // One transaction: an audit gap never exists without its PRUNED row. now() is frozen in it, so the cutoff is the deletes' own.
+        $counts['audit_log'] = DB::transaction(function (): int {
+            $count = (new AuditLogEntry)->pruneAll();
+            if ($count > 0) {
+                AuditLog::record('PRUNED', 'audit_log', null, null, ['count' => $count, 'cutoff' => CarbonImmutable::parse(AuditLogEntry::cutoff())->toJSON()]);
+            }
+
+            return $count;
+        });
 
         return $counts;
     }

@@ -96,6 +96,15 @@ class RequestLogTest extends TestCase
         $this->assertEquals(['note' => 'x', 'doc' => ['name' => '[masked].pdf', 'size' => 1024]], $this->rowOf($res)->request_body);
     }
 
+    public function test_a_body_key_shared_with_the_query_is_kept(): void
+    {
+        Route::patch('api/v1/_body', fn () => abort(422))->middleware('api');
+        $row = $this->rowOf($this->patchJson('/api/v1/_body?type=office', ['type' => 'engineer'])->assertStatus(422));
+
+        $this->assertSame(['type' => 'engineer'], $row->request_body);
+        $this->assertSame(['type' => 'office'], $row->query);
+    }
+
     public function test_bad_bytes_still_get_a_row(): void
     {
         $res = $this->call('POST', '/api/v1/auth/login', [], [], [], ['HTTP_USER_AGENT' => "ua\x00\xC3\x28", 'CONTENT_TYPE' => 'application/json'], '{"email":"a\\u0000b"}');

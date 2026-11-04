@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\Modules\Audit\Infrastructure\Eloquent;
 
-use App\Modules\Identity\Infrastructure\Eloquent\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /** Read model for error_log (developer console). */
 class ErrorLogEntry extends Model
@@ -22,12 +20,6 @@ class ErrorLogEntry extends Model
     public $timestamps = false;
 
     protected $casts = ['occurred_at' => 'datetime'];
-
-    /** @return BelongsTo<User, $this> */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
 
     /** @return Builder<self> */
     public function prunable(): Builder

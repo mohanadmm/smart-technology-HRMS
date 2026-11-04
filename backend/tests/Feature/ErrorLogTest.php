@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use PDOException;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -92,6 +93,33 @@ class ErrorLogTest extends TestCase
         $this->assertStringContainsString('update "employees" set "national_id" = ?', $row->message);
         $this->assertSame(0, $this->rowsContaining('error_log', self::NATIONAL_ID));
         $this->assertSame(0, $this->rowsContaining('request_log', self::NATIONAL_ID));
+    }
+
+    public function test_a_constraint_name_is_read_from_the_first_line_only(): void
+    {
+        // A not-null violation names no constraint on line 1; its DETAIL line quotes the failing row, which holds `constraint "x"`.
+        $e = $this->queryException(fn () => DB::table('error_log')->insert([
+            'id' => (string) Str::uuid7(), 'class' => null, 'message' => 'constraint "x" 9000.000000', 'trace' => 'x', 'occurred_at' => now(),
+        ]));
+        $this->assertStringContainsString('constraint "x"', (string) $e->errorInfo[2]);
+        $before = ErrorLogEntry::pluck('id');
+
+        report($e);
+
+        $row = ErrorLogEntry::whereNotIn('id', $before)->sole();
+        $this->assertSame('23502', $row->sqlstate);
+        $this->assertStringStartsWith("SQLSTATE 23502\ninsert into \"error_log\"", $row->message);
+    }
+
+    public function test_an_unknown_sqlstate_is_named(): void
+    {
+        $before = ErrorLogEntry::pluck('id');
+
+        report(new PDOException('driver gone'));
+
+        $row = ErrorLogEntry::whereNotIn('id', $before)->sole();
+        $this->assertNull($row->sqlstate);
+        $this->assertSame('SQLSTATE unknown', $row->message);
     }
 
     public function test_the_trace_has_no_arguments(): void

@@ -31,6 +31,7 @@ return new class extends Migration
         DB::statement('CREATE INDEX request_log_occurred_at_index ON request_log (occurred_at DESC)');
         DB::statement('CREATE INDEX request_log_status_index ON request_log (status, occurred_at DESC)');
         DB::statement('CREATE INDEX request_log_request_id_index ON request_log (request_id)');
+        DB::statement('CREATE INDEX request_log_user_index ON request_log (user_id, occurred_at DESC)');
 
         Schema::create('error_log', function (Blueprint $t): void {
             $t->uuid('id')->primary();
