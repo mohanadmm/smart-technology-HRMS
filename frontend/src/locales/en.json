@@ -881,7 +881,7 @@
       "casualBefore": "Casual remaining before approval",
       "after": "Balance after approval",
       "split": "{{keep}} {{kind}} + {{unpaid}} unpaid",
-      "short": "The balance is short, so the last days of the range are unpaid: {{unpaid}}.",
+      "short": "The balance is short, so the last days of the range are unpaid.",
       "blocked": "Approval will be refused until these days change: they already hold attendance other than leave, or fall in a locked period:",
       "decidedBy": "Decided by",
       "decidedAt": "Decided on",

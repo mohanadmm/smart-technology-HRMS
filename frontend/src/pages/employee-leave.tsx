@@ -103,7 +103,7 @@ function Requests({ emp, year }: { emp: Row; year: number }) {
         )}
       </CardHeader>
       <RequestDialog open={asking} onOpenChange={setAsking} employee={emp} />
-      <DataList<LeaveRequest> label={t('leave.requests.list')} rows={rows as LeaveRequest[]} rowKey={(r) => r.id} loading={loading} error={err} empty={{ icon: ClipboardList, title: t('leave.requests.empty') }} title={kind} fields={fields} status={status} />
+      <DataList<LeaveRequest> label={t('leave.requests.list')} rows={rows as LeaveRequest[]} rowKey={(r) => r.id} to={(r) => `/leave?request=${r.id}`} loading={loading} error={err} empty={{ icon: ClipboardList, title: t('leave.requests.empty') }} title={kind} fields={fields} status={status} />
     </Card>
   )
 }

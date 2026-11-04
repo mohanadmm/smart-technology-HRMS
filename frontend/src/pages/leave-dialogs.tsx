@@ -118,19 +118,21 @@ type Action = 'approve' | 'refuse' | 'escalate'
 /** One request by id (a link may point past the loaded list page): its details, and the decisions the reader may take on it now. */
 export function DecideDialog({ id, open, onOpenChange }: { id: string } & Required<Controlled>) {
   const { t } = useTranslation()
+  // a decision in flight keeps the dialog open, so its outcome (or its refusal) is seen
+  const [busy, setBusy] = useState(false)
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(o) => busy || onOpenChange(o)}>
       <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{t('leave.decide.title')}</DialogTitle>
         </DialogHeader>
-        <DecideBody id={id} close={() => onOpenChange(false)} />
+        <DecideBody id={id} close={() => onOpenChange(false)} busy={busy} setBusy={setBusy} />
       </DialogContent>
     </Dialog>
   )
 }
 
-function DecideBody({ id, close }: { id: string; close: () => void }) {
+function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => void; busy: boolean; setBusy: (b: boolean) => void }) {
   const { t, i18n } = useTranslation()
   const { can } = useAuth()
   const time = useCairoTime()
@@ -138,7 +140,6 @@ function DecideBody({ id, close }: { id: string; close: () => void }) {
   const path = `/leave/requests/${id}`
   const { data: r, err: loadErr } = useApi<Shown>(path, { fresh: true })
   const [err, setErr] = useState<unknown>()
-  const [busy, setBusy] = useState(false)
   const [asking, setAsking] = useState<Action>()
   if (!r) return <DialogBody>{loadErr ? <ErrorBanner err={loadErr} shown={[]} /> : <Skeleton className="h-40" />}</DialogBody>
 
@@ -147,16 +148,14 @@ function DecideBody({ id, close }: { id: string; close: () => void }) {
   // a refusal (409 stale or blocked days) also marks the request stale, so it reloads with the server's current status and blocked dates
   const decide = (action: Action, reason?: string) =>
     send(`${path}/${action}`, { body: { version: r.version, ...(reason && { reason }) } }, ['/leave', '/attendance', ...(r.employee ? [`/employees/${r.employee.id}/leave`] : [])])
-  const done = (action: Action) => {
-    toast.success(t(`leave.decide.${action}.done`))
-    close()
-  }
-  const approve = async () => {
+  // every decision lands here, so a refusal shows in the one banner above the request (the reason form has closed by then)
+  const run = async (action: Action, reason?: string) => {
     setBusy(true)
     setErr(undefined)
     try {
-      await decide('approve')
-      done('approve')
+      await decide(action, reason)
+      toast.success(t(`leave.decide.${action}.done`))
+      close()
     } catch (e) {
       setErr(e)
     } finally {
@@ -191,7 +190,7 @@ function DecideBody({ id, close }: { id: string; close: () => void }) {
         {a && a.unpaid > 0 && (
           <Alert tone="warning">
             <p className="font-semibold">{t('leave.decide.split', { keep: a.keep, kind, unpaid: a.unpaid })}</p>
-            <p>{t('leave.decide.short', { unpaid: t('leave.request.unpaid', { count: a.unpaid }) })}</p>
+            <p>{t('leave.decide.short')}</p>
           </Alert>
         )}
         {a && a.remaining_after === null && (r.kind === 'annual' || r.kind === 'casual') && <Alert tone="warning">{t('leave.noHireDate')}</Alert>}
@@ -206,7 +205,7 @@ function DecideBody({ id, close }: { id: string; close: () => void }) {
         <DialogFooter>
           {actions.map((action) =>
             action === 'approve' ? (
-              <Button key={action} type="button" disabled={busy} onClick={approve}>{t('leave.decide.approve.action')}</Button>
+              <Button key={action} type="button" disabled={busy} onClick={() => run('approve')}>{t('leave.decide.approve.action')}</Button>
             ) : (
               <Button key={action} type="button" variant="outline" disabled={busy} onClick={() => setAsking(action)}>{t(`leave.decide.${action}.action`)}</Button>
             ),
@@ -222,8 +221,8 @@ function DecideBody({ id, close }: { id: string; close: () => void }) {
           init={{ reason: '' }}
           reloadKey={r.version}
           validate={(f): Record<string, string> => (action === 'refuse' && !f.reason.trim() ? { reason: t('leave.decide.refuse.required') } : {})}
-          submit={(f) => decide(action, f.reason.trim())}
-          onDone={() => done(action)}
+          submit={async (f) => f.reason.trim()}
+          onDone={(reason) => run(action, reason)}
           shown={['reason']}
           footer={`leave.decide.${action}.submit`}
           destructive={action === 'refuse'}

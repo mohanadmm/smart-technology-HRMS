@@ -244,6 +244,13 @@ test('a link to a request not on the loaded page loads it by id and opens it', a
   expect(await within(dialog).findByText('مدير قديم')).toBeInTheDocument()
 })
 
+test('a link to a request the reader cannot see shows the refusal inside the dialog', async () => {
+  mockFetch({ [REQUESTS]: requests([req('r1', 'pending')]), 'GET /api/v1/leave/requests/r9': () => json(404, { error: { code: 'not_found', message: 'السجل غير موجود.' } }) })
+  at('/leave?request=r9')
+  const dialog = await screen.findByRole('dialog', { name: 'تفاصيل طلب الإجازة' })
+  expect(await within(dialog).findByText('السجل غير موجود.')).toBeInTheDocument()
+})
+
 test('a row opens its request, keeps the list filters, and closing keeps the row highlighted', async () => {
   mockFetch({ [REQUESTS]: requests([req('r1', 'pending'), req('r2', 'pending')]), 'GET /api/v1/leave/requests/r2': () => json(200, { data: shownReq('r2', { requested_by: { id: 'u3', name: 'مدير الموقع' } }) }) })
   const user = userEvent.setup()
