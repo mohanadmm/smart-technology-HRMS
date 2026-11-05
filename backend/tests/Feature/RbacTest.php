@@ -21,16 +21,16 @@ class RbacTest extends TestCase
     {
         $grants = fn (string $slug) => Role::where('slug', $slug)->firstOrFail()->permissions
             ->map(fn ($p) => "{$p->resource}.{$p->action}.{$p->scope}")->sort()->values()->all();
-        $this->assertSame(34, Permission::count());
-        $this->assertSame(['attendance.record.own', 'employee.view.own', 'leave.request.own', 'leave.view.own', 'site.view.own'], $grants('manager'));
+        $this->assertSame(36, Permission::count());
+        $this->assertSame(['attendance.record.own', 'employee.view.own', 'fare.manage.own', 'leave.request.own', 'leave.view.own', 'site.view.own'], $grants('manager'));
         $this->assertSame(['attendance.view.all', 'audit_log.view.all', 'employee.view.all', 'employee_document.view.all', 'leave.decide_escalated.all', 'leave.view.all', 'setting.view.all', 'site.view.all'], $grants('ceo'));
-        $this->assertCount(23, $grants('hr'));
-        foreach (['attendance.view.all', 'attendance.edit.all', 'attendance.lock.all', 'holiday.manage.all', 'employee.assign_site.all', 'employee.edit_code.all', 'employee_document.view.all', 'employee_document.edit.all', 'leave.view.all', 'leave.request.all', 'leave.decide.all', 'leave.adjust.all'] as $name) {
+        $this->assertCount(24, $grants('hr'));
+        foreach (['attendance.view.all', 'attendance.edit.all', 'attendance.lock.all', 'holiday.manage.all', 'employee.assign_site.all', 'employee.edit_code.all', 'employee_document.view.all', 'employee_document.edit.all', 'fare.manage.all', 'leave.view.all', 'leave.request.all', 'leave.decide.all', 'leave.adjust.all'] as $name) {
             $this->assertContains($name, $grants('hr'));
         }
         $this->assertNotContains('user.manage.all', $grants('hr'));
         $this->assertNotContains('leave.decide_escalated.all', $grants('hr'));
-        $this->assertCount(28, $grants('developer'));
+        $this->assertCount(29, $grants('developer'));
         $this->assertNotContains('leave.view.own', $grants('developer'));
     }
 
