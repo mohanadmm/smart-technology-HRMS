@@ -15,7 +15,7 @@ No new tables. The two effective-dated tables stay the source of truth, and `Far
 
 - `fares` (residence × site × effective_from → amount): the default for workers.
 - `employee_fare_overrides` (employee × site × effective_from → amount): the per-worker exception.
-- `updated_by` on each row says who set it last (it equals `created_by` until an in-place update). A row with no writer is a starting value and is labelled «من الإكسيل». `hrms:import-master` signs in as an HR account, so a one-time migration (`2026_11_05_000002_mark_starting_fares_from_excel`) clears `created_by` and `updated_by` on every fare and override that existed before team leads could write: the Excel import's rows and HR's setup. The CREATED audit entry keeps the real writer.
+- `updated_by` on each row says who set it last (it equals `created_by` until an in-place update). A row with no writer is a starting value and is labelled «من الإكسيل». `hrms:import-master` signs in as an HR account, so a one-time migration (`2026_11_05_000002_mark_starting_fares_from_excel`) clears `created_by` and `updated_by` on every fare and override that existed before team leads could write: the Excel import's rows and HR's setup. From then on `MasterDataImport` (through `FareService::addFare` and `addOverride`) clears both columns on the fares and overrides it writes, so a fresh install's import reads «من الإكسيل» too. The CREATED audit entry keeps the real writer.
 
 The resolved fare of an employee at a site on a date (`FareLookup::describe`):
 
@@ -44,7 +44,8 @@ Checked by name through `permission:fare.manage` and `RequestScope::ownerId`, ne
 | `GET /fares` | `site.view` | Own scope: only rows whose `site_id` is one of the user's sites. New filters `manager_id` (that manager's sites) and `changed_since` (Y-m-d; rows created or updated on or after that Cairo date). Each row adds `set_by` (`{id, name}` or null = from Excel) and `previous_amount` (the amount of the row for the same pair just before this one, or null). |
 | `POST /fares` | `fare.manage` (was `site.manage`) | Rules below. A write with the same (residence, site, effective_from) as a live row updates its amount instead of failing. |
 | `POST /employees/{employee}/fare-overrides` | `fare.manage` + `employee.scope` (was `employee.edit`) | Rules below. Same-key write updates the amount. |
-| `GET /team-fares?date=` | `fare.manage` | New. Own scope: the user's team. All scope: `manager_id` is required. `date` defaults to today (Cairo). |
+| `GET /employees/{employee}/fare?site_id=&date=` | `employee.view` + `employee.scope` | Own scope: a `site_id` outside the user's sites is refused (422 `site_id`), as on the write routes. |
+| `GET /team-fares?date=` | `fare.manage` | New. Own scope: the user's team. All scope: `manager_id` is required. `date` defaults to today (Cairo). Unpaginated by decision: a team is tens of rows (`ponytail:` note in `FareService::team` with the ceiling and the upgrade). |
 
 ### Write rules (both POST routes)
 
@@ -53,7 +54,7 @@ Checked by name through `permission:fare.manage` and `RequestScope::ownerId`, ne
 3. **Closed period.** Every scope: refuse (422 `effective_from`) when `effective_from` falls in a locked attendance period (`PeriodGuard::isLocked(Period::containing(type, date))`). For an override, the type is the employee's type on that date. For a residence × site fare, both worker types (permanent worker and day laborer) are checked.
 4. **Engineers.** A residence × site fare never applies to an engineer. A team-lead write for an engineer is an override only; the client sends `site_id` (one of the team lead's sites).
 5. **Audit.** Both models already use `Audited`. A new row records CREATED with its values. An in-place update records UPDATED with before and after. The tests assert both.
-6. **Notify.** When the writer is own-scope, each holder of `fare.manage.all` gets `fare_changed` via `Notifier::notifyOnce`: date = today (Cairo), ref = the written row's id, data = `{kind: 'fare'|'override', site_id, residence_id|employee_id, effective_from, old_amount, new_amount}`. `old_amount` is what applied on `effective_from` before the write (the row in force for the same key, or null). A second edit of the same row on the same day is not re-notified (notifyOnce dedups on ref); the audit log still holds every write. HR writes notify nobody.
+6. **Notify.** When the writer is own-scope, each holder of `fare.manage.all` gets `fare_changed` via `Notifier::notifyOnce`: date = today (Cairo), ref = the written row's id, data = `{kind: 'fare'|'override', site_id, residence_id|employee_id, effective_from, old_amount, new_amount}`. `old_amount` is what applied on `effective_from` before the write: for a residence × site fare, the pair's row in force (or null); for an override, the employee's resolved fare (`FareLookup::describe(...)['amount']`, so the default when no override was in force, 0 when nothing applied). Every team-lead write notifies: a second edit of the same row on the same day updates that notification's `new_amount` (the first `old_amount` stays) and marks it unread again (`Notifier::notifyOrRefresh`). The audit log holds every write. HR writes notify nobody.
 
 ### `GET /team-fares` row
 
@@ -80,22 +81,21 @@ Matches mockup 1:
 - Filter chips: «كل التيم (N)», one per site, «من غير مبلغ (N)».
 - Table: worker (name + type), residence (or «السكن مش متسجل»), site (or «حسب اليوم» for engineers), daily fare (or «—»), source label: «تلقائي» (default), «معدّل للعامل» (override), «مفيش مبلغ للسكن ده» (none), «اكتب المبلغ أو اطلب من HR السكن» (no_residence), «المهندس بيتحدد له بالاسم» (engineer).
 - Edit dialog «تعديل مواصلات {name} · {residence} ← {site}»: «التلقائي {default}», amount, «يسري من» (default today, min yesterday), scope radio: «للعامل ده بس» (default) or «لكل اللي ساكنين في {residence} وبيشتغلوا في {site} ({n} عمال)». The second option is hidden for engineers and for a worker with no residence. Engineers pick a site from the manager's sites.
-- Shown to users holding `fare.manage`. Not shown: «سجل التغييرات» (skipped; the audit log covers it).
+- The nav link shows to `fare.manage.own` only. HR (`fare.manage.all`) reaches the page by URL and picks a team lead first. Not shown: «سجل التغييرات» (skipped; the audit log covers it).
 
 ### Settings → Fares (combined, HR)
 
-Matches mockup 3a: one row per residence × site in force today. Columns: site, residence, amount (with «كان X» when `previous_amount` is set), effective from, set by (or «من الإكسيل»), edit. Filters: team lead (the `manager-candidates` list) and «اتغيرت آخر ٧ أيام». An «إضافة» button opens the same dialog with residence and site pickers for a pair that has no fare. The tab needs `fare.manage` at all scope. «تصدير» is skipped.
+Matches mockup 3a: one row per residence × site in force today. Columns: site, residence, amount (with «كان X» when `previous_amount` is set), effective from, set by (or «من الإكسيل»), edit. Filters: team lead (the `manager-candidates` list) and «اتغيرت آخر ٧ أيام». An «إضافة» button opens the same dialog with residence and site pickers for a pair that has no fare. The tab shows to `site.view.all` (the CEO reads it); edit and «إضافة» need `fare.manage.all`. «تصدير» is skipped.
 
 ## Docs (same PR)
 
 - `calculations.md` §3 and §4: who sets the fare, engineers only by override, day laborers 0 without a fare, and the October fixture (0 day-laborer transport) runs with no day-laborer fares; the difference goes in the Excel-difference report.
-- `calculations.md` §8: transport stays a site-cost line from the same resolved fare.
 - `CONTEXT.md` Fare: set by the team lead for their sites or by HR; override vs default.
 - `hrms-module-plan.md`: the decision (2026-11-05, option A); the team lead sets fares but never sets or sees wages.
 
 ## Risks
 
-- A site shared by two team leads has one fare per residence: the last write wins. The combined screen shows who set each row.
+- A same-key write is last-write-wins, also between two team leads sharing a site. The owner accepted this risk: there is no optimistic locking, and the combined list shows who set each row.
 - `fare_changed` has no bell rendering until Mohanad's `NotificationBell.tsx` handles it; the row is stored and listed meanwhile.
 
 ## Follow-ups (after Mohanad's PRs #22, #24, #26 merge)
