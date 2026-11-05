@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Identity\Infrastructure\Eloquent;
 
+use App\Modules\Identity\Domain\Authentication\ViewAs;
 use App\Support\Database\HasStandardColumns;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -12,6 +13,9 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 class User extends Authenticatable
 {
     use HasStandardColumns;
+
+    /** Set by the guard on a view-as session: Auth::user() is the target, this names the developer. */
+    public ?ViewAs $viewAs = null;
 
     protected $guarded = [];
 
