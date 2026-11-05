@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Sites\Presentation;
 
+use App\Modules\Identity\Presentation\RequestScope;
 use App\Modules\Sites\Application\FareLookup;
 use App\Modules\Sites\Application\FareService;
 use App\Modules\Sites\Application\SiteRules;
@@ -21,8 +22,10 @@ final class FareController
             'residence_id' => ['sometimes', 'uuid'],
             'site_id' => ['sometimes', 'uuid'],
             'date' => ['sometimes', 'date_format:Y-m-d'],
+            'manager_id' => ['sometimes', 'uuid'],
+            'changed_since' => ['sometimes', 'date_format:Y-m-d'],
             'per_page' => ['sometimes', 'integer', 'min:1'],
-        ]));
+        ]), RequestScope::ownerId($request));
 
         return ApiEnvelope::collection($request, $r['data'], $r['pagination']);
     }

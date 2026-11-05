@@ -76,7 +76,7 @@ Write refusals (both POSTs): `422` with `error.details[].field` = `site_id` (own
 
 ## Spec statements the code contradicts (flagged, handled as stated)
 
-- **«من الإكسيل» = `created_by` null** — false for real data: `hrms:import-master` runs `Auth::setUser($actor)` with the `--as` HR account (`ImportMasterDataCommand.php:55`), so imported rows carry that account. Plan: `set_by` null still renders «من الإكسيل», but the imported rows on the VPS will show the importing HR account's name. A one-off data fix (null `created_by/updated_by` on the import's rows) is the owner's call; not in this plan.
+- **«من الإكسيل» = `created_by` null** — false for real data: `hrms:import-master` runs `Auth::setUser($actor)` with the `--as` HR account (`ImportMasterDataCommand.php:55`). Controller decision: migration `2026_11_05_000002_mark_starting_fares_from_excel` nulls `created_by` and `updated_by` on every existing fare and override, so they read «من الإكسيل» (tested in `TeamFaresTest::test_starting_fares_read_as_from_excel`).
 - **"same key updates instead of failing"** would break the importer's duplicate-row check (`MasterDataImport` calls `FareService::addFare/addOverride` and its test expects `fares row 3 --from`). Plan: new `saveFare/saveOverride` for the API; `addFare/addOverride` stay strict.
 - **`set_by` from `created_by`**: an in-place update keeps `created_by` and moves `updated_by`; the plan uses `updated_by` so "who set it" names the last writer.
 - **Reach on `effective_from`**: the `employee.scope` middleware checks reach **today** only; the spec's reach on `effective_from` is added in `saveOverride` on top.
@@ -356,4 +356,3 @@ export type TeamFares = { sites: Ref[]; rows: TeamFareRow[] }
 
 1. Full/half/none per day in the site-day sheet (`SiteDay.php` FORMAT, `site-day-row.tsx`, `lib/site-day.ts`, `SiteDaySaveTest`), after Mohanad's #22/#24/#26 merge.
 2. `NotificationBell.tsx` text for `fare_changed`.
-3. Owner decision: null `created_by`/`updated_by` on the rows `hrms:import-master` wrote, so they read «من الإكسيل».

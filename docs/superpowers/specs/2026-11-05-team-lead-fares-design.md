@@ -15,7 +15,7 @@ No new tables. The two effective-dated tables stay the source of truth, and `Far
 
 - `fares` (residence × site × effective_from → amount): the default for workers.
 - `employee_fare_overrides` (employee × site × effective_from → amount): the per-worker exception.
-- `created_by` on each row says who set it. A row with `created_by` null was written by the Excel import (`hrms:import-master` runs with no user) and is labelled «من الإكسيل».
+- `updated_by` on each row says who set it last (it equals `created_by` until an in-place update). A row with no writer is a starting value and is labelled «من الإكسيل». `hrms:import-master` signs in as an HR account, so a one-time migration (`2026_11_05_000002_mark_starting_fares_from_excel`) clears `created_by` and `updated_by` on every fare and override that existed before team leads could write: the Excel import's rows and HR's setup. The CREATED audit entry keeps the real writer.
 
 The resolved fare of an employee at a site on a date (`FareLookup::describe`):
 
