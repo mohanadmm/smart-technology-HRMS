@@ -105,3 +105,90 @@ test('the route renders the page', async () => {
   expect(await screen.findByRole('heading', { level: 1, name: 'مواصلات التيم' })).toBeInTheDocument()
   await waitFor(() => expect(urls('/team-fares')).toHaveLength(1))
 })
+
+const post = (part: string) => vi.mocked(fetch).mock.calls.filter(([u, i]) => i?.method === 'POST' && String(u).includes(part)).map(([, i]) => JSON.parse(String(i!.body)))
+const edit = async (name: string) => user.click(await screen.findByRole('button', { name: `تعديل مواصلات ${name}` }))
+const saving = (extra = {}) => mockFetch({
+  'GET /api/v1/team-fares': team(),
+  'GET /api/v1/sites/manager-candidates': () => json(200, { data: [{ id: 'm1', name: 'م. أحمد سامي' }] }),
+  'POST /api/v1/employees/w2/fare-overrides': () => json(201, { data: {} }),
+  'POST /api/v1/employees/e1/fare-overrides': () => json(201, { data: {} }),
+  'POST /api/v1/fares': () => json(201, { data: {} }),
+  ...extra,
+})
+
+test('editing a worker posts an override by default', async () => {
+  saving()
+  renderWithAuth(<TeamFaresPage />, LEAD)
+  await edit('سيد إبراهيم')
+  const dialog = await screen.findByRole('dialog', { name: 'تعديل مواصلات سيد إبراهيم · كفر الدوار ← العامرية' })
+  expect(within(dialog).getByText(`التلقائي ${fmt(35)}`)).toBeInTheDocument()
+  expect(within(dialog).getByRole('radio', { name: 'للعامل ده بس' })).toBeChecked()
+  await user.type(within(dialog).getByLabelText('المبلغ اليومي'), '32')
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(post('/fare-overrides')).toEqual([{ site_id: 's1', effective_from: '2026-11-05', amount: '32' }])
+})
+
+test('the pair option posts the residence × site fare', async () => {
+  saving()
+  renderWithAuth(<TeamFaresPage />, LEAD)
+  await edit('محمود عبد الله')
+  const dialog = await screen.findByRole('dialog')
+  await user.click(within(dialog).getByRole('radio', { name: 'لكل اللي ساكنين في كفر الدوار وبيشتغلوا في العامرية (2 عمال)' }))
+  await user.type(within(dialog).getByLabelText('المبلغ اليومي'), '40')
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(post('/fares')).toEqual([{ residence_id: 'r1', site_id: 's1', effective_from: '2026-11-05', amount: '40' }])
+  expect(post('/fare-overrides')).toEqual([])
+})
+
+test('engineers pick a site and have no pair option', async () => {
+  saving()
+  renderWithAuth(<TeamFaresPage />, LEAD)
+  await edit('م. كريم فتحي')
+  const dialog = await screen.findByRole('dialog', { name: 'تعديل مواصلات م. كريم فتحي' })
+  expect(within(dialog).queryByRole('radio')).toBeNull()
+  const site = within(dialog).getByRole('combobox', { name: 'الموقع' })
+  expect(within(site).getAllByRole('option').map((o) => o.textContent)).toEqual(['العامرية', 'برج العرب'])
+  await user.selectOptions(site, 's2')
+  await user.type(within(dialog).getByLabelText('المبلغ اليومي'), '50')
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(post('/fare-overrides')).toEqual([{ site_id: 's2', effective_from: '2026-11-05', amount: '50' }])
+})
+
+test('a worker with no residence has no pair option', async () => {
+  saving()
+  renderWithAuth(<TeamFaresPage />, LEAD)
+  await edit('فتحي سالم')
+  const dialog = await screen.findByRole('dialog')
+  expect(within(dialog).queryByRole('radio', { name: /لكل اللي ساكنين/ })).toBeNull()
+  expect(within(dialog).queryByRole('combobox')).toBeNull()
+})
+
+test('the date cannot go before yesterday for a team lead', async () => {
+  saving()
+  const { unmount } = renderWithAuth(<TeamFaresPage />, LEAD)
+  await edit('سيد إبراهيم')
+  const date = within(await screen.findByRole('dialog')).getByLabelText('يسري من')
+  expect(date).toHaveAttribute('min', '2026-11-04')
+  expect(date).toHaveValue('2026-11-05')
+  unmount()
+  renderWithAuth(<TeamFaresPage />, HR)
+  await screen.findByRole('option', { name: 'م. أحمد سامي' })
+  await user.selectOptions(screen.getByRole('combobox', { name: 'مسؤول التيم' }), 'm1')
+  await edit('سيد إبراهيم')
+  expect(within(await screen.findByRole('dialog')).getByLabelText('يسري من')).not.toHaveAttribute('min')
+})
+
+test('a 422 shows the server message', async () => {
+  saving({ 'POST /api/v1/employees/w2/fare-overrides': () => json(422, { error: { code: 'validation_failed', message: 'x', details: [{ field: 'effective_from', code: 'locked', message: 'الفترة مقفولة' }] } }) })
+  renderWithAuth(<TeamFaresPage />, LEAD)
+  await edit('سيد إبراهيم')
+  const dialog = await screen.findByRole('dialog')
+  await user.type(within(dialog).getByLabelText('المبلغ اليومي'), '32')
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  expect(await within(dialog).findByText('الفترة مقفولة')).toBeInTheDocument()
+  expect(within(dialog).getByLabelText('يسري من')).toHaveAccessibleDescription('الفترة مقفولة')
+})

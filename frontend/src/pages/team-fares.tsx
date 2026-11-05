@@ -4,13 +4,14 @@ import { useTranslation } from 'react-i18next'
 import { EmptyState } from '@/components/common/EmptyState'
 import { FilterSelect } from '@/components/common/Filters'
 import { PageHeader } from '@/components/common/PageHeader'
-import { ErrorBanner, useMoney } from '@/components/form'
+import { cairoToday, type Controlled, ErrorBanner, FormDialog, SelectField, TextField, useMoney } from '@/components/form'
 import { TableSkeleton } from '@/components/layout/PageSkeleton'
 import { Badge, type BadgeVariant } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useAuth } from '@/lib/auth'
-import { useApi } from '@/lib/query'
+import { useApi, useSave } from '@/lib/query'
 import { cn } from '@/lib/utils'
 import { NotFoundPage } from './pages'
 
@@ -58,6 +59,7 @@ function TeamTable({ team }: { team: TeamFares }) {
   const { t } = useTranslation()
   const money = useMoney()
   const [chip, setChip] = useState<Chip>('all')
+  const [editing, setEditing] = useState<TeamFareRow>()
   const siteName = (id: string) => team.sites.find((s) => s.id === id)?.name ?? ''
   const shown = team.rows.filter((r) => chip === 'all' || (chip === 'missing' ? missing(r) : r.site?.id === chip || r.overrides.some((o) => o.site_id === chip)))
   const chips: [Chip, string][] = [['all', t('teamFare.all', { count: team.rows.length })], ...team.sites.map((s): [Chip, string] => [s.id, s.name]), ['missing', t('teamFare.missing', { count: team.rows.filter(missing).length })]]
@@ -75,6 +77,9 @@ function TeamTable({ team }: { team: TeamFares }) {
           <TableHeader>
             <TableRow>
               {(['worker', 'residence', 'site', 'fare', 'source'] as const).map((c) => <TableHead key={c}>{t(`teamFare.col.${c}`)}</TableHead>)}
+              <TableHead>
+                <span className="sr-only">{t('common.actions')}</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -98,11 +103,71 @@ function TeamTable({ team }: { team: TeamFares }) {
                     <span className="text-xs text-muted-foreground">{t(`teamFare.source.${r.source}`)}</span>
                   )}
                 </TableCell>
+                <TableCell className="text-end">
+                  <Button type="button" variant="outline" size="sm" aria-label={t('teamFare.edit', { name: r.name })} onClick={() => setEditing(r)}>
+                    {t('fare.edit')}
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </Card>
+      {editing && <TeamFareDialog row={editing} team={team} open onOpenChange={() => setEditing(undefined)} />}
     </>
+  )
+}
+
+/** `date` minus one day, both YYYY-MM-DD. */
+const dayBefore = (date: string) => {
+  const d = new Date(`${date}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
+/** One worker's fare from a date: an override for this worker (default), or the residence × site fare for everyone in that pair. Engineers only get an override, at a site they pick. */
+function TeamFareDialog({ row, team, ...dialog }: { row: TeamFareRow; team: TeamFares } & Controlled) {
+  const { t } = useTranslation()
+  const { can } = useAuth()
+  const money = useMoney()
+  const send = useSave()
+  const today = cairoToday()
+  const engineer = isEngineer(row)
+  const pair = !engineer && row.residence && row.site ? { residence: row.residence, site: row.site } : null
+  const pairCount = pair ? team.rows.filter((r) => !isEngineer(r) && r.residence?.id === pair.residence.id && r.site?.id === pair.site.id).length : 0
+  const where = row.site && !engineer ? ` · ${row.residence ? `${row.residence.name} ← ` : ''}${row.site.name}` : ''
+  const invalidate = ['/team-fares', '/fares']
+  const submit = (form: Record<string, string>) =>
+    form.scope === 'pair' && pair
+      ? send('/fares', { body: { residence_id: pair.residence.id, site_id: pair.site.id, effective_from: form.effective_from, amount: form.amount } }, invalidate)
+      : send(`/employees/${row.employee_id}/fare-overrides`, { body: { site_id: form.site_id, effective_from: form.effective_from, amount: form.amount } }, invalidate)
+  return (
+    <FormDialog
+      {...dialog}
+      title={t('teamFare.edit', { name: row.name }) + where}
+      init={{ effective_from: today, amount: '', scope: 'worker', site_id: engineer ? team.sites[0]?.id ?? '' : row.site?.id ?? '' }}
+      submit={submit}
+      shown={['effective_from', 'amount', 'site_id']}
+    >
+      {(f) => (
+        <>
+          {row.default_amount !== null && <Badge variant="neutral" className="justify-self-start">{t('teamFare.auto', { amount: money(row.default_amount) })}</Badge>}
+          {engineer && <SelectField name="site_id" label={t('teamFare.col.site')} options={team.sites.map((s) => [s.id, s.name])} {...f} />}
+          <TextField name="amount" label={t('teamFare.amount')} inputMode="decimal" {...f} />
+          {/* a team lead may backdate one day only; the server enforces it too */}
+          <TextField name="effective_from" label={t('teamFare.from')} type="date" min={can('fare.manage.all') ? undefined : dayBefore(today)} {...f} />
+          {pair && (
+            <div className="grid gap-2">
+              {(['worker', 'pair'] as const).map((scope) => (
+                <label key={scope} className="flex min-h-tap items-center gap-2 text-sm">
+                  <input type="radio" name="scope" checked={f.values.scope === scope} onChange={() => f.set('scope', scope)} />
+                  {scope === 'worker' ? t('teamFare.scope.worker') : t('teamFare.scope.pair', { residence: pair.residence.name, site: pair.site.name, count: pairCount })}
+                </label>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </FormDialog>
   )
 }
