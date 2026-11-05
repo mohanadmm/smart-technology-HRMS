@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DataList } from '@/components/common/DataList'
 import { EmptyState } from '@/components/common/EmptyState'
-import { chipCls, FilterSelect } from '@/components/common/Filters'
+import { FilterSelect } from '@/components/common/Filters'
 import { PageHeader } from '@/components/common/PageHeader'
 import { cairoToday, type Controlled, ErrorBanner, FormDialog, SelectField, TextField, useList, useMoney } from '@/components/form'
 import { TableSkeleton } from '@/components/layout/PageSkeleton'
@@ -21,6 +21,8 @@ export type TeamFares = { sites: Ref[]; rows: TeamFareRow[] }
 const TONE: Partial<Record<TeamFareRow['source'], BadgeVariant>> = { default: 'neutral', override: 'info', none: 'warning' }
 const isEngineer = (r: TeamFareRow) => r.type === 'engineer'
 const missing = (r: TeamFareRow) => !isEngineer(r) && r.amount === null
+/** A filter toggle: put it on a `<button aria-pressed>`. */
+const chipCls = 'min-h-tap rounded-full border bg-card px-3 text-[13px] font-medium text-muted-foreground transition-colors outline-none hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-primary'
 /** A stored decimal as a person types it: "35.500000" → "35.5". */
 const typed = (v: string) => v.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
 
@@ -93,7 +95,7 @@ function TeamTable({ team, edit, fillResidence }: { team: TeamFares; edit: boole
               cell: (r) =>
                 r.residence ? (
                   r.residence.name
-                ) : fillResidence ? (
+                ) : fillResidence && !isEngineer(r) ? (
                   <Button type="button" variant="outline" size="sm" onClick={() => setHousing(r)}>
                     {t('teamFare.setResidence')}
                   </Button>
@@ -145,9 +147,12 @@ function TeamFareDialog({ row, team, ...dialog }: { row: TeamFareRow; team: Team
   const engineer = isEngineer(row)
   const pair = !engineer && row.residence && row.site ? { residence: row.residence, site: row.site } : null
   const pairCount = pair ? team.rows.filter((r) => !isEngineer(r) && r.residence?.id === pair.residence.id && r.site?.id === pair.site.id).length : 0
-  const where = row.site && !engineer ? ` · ${row.residence ? `${row.residence.name} ← ` : ''}${row.site.name}` : ''
+  const title = row.site && !engineer
+    ? row.residence ? t('teamFare.editAt', { name: row.name, residence: row.residence.name, site: row.site.name }) : t('teamFare.editAtSite', { name: row.name, site: row.site.name })
+    : t('teamFare.edit', { name: row.name })
   const site = engineer ? team.sites[0]?.id ?? '' : row.site?.id ?? ''
-  const current = engineer ? row.overrides.find((o) => o.site_id === site)?.amount : row.amount
+  const overrideAt = (id: string) => row.overrides.find((o) => o.site_id === id)?.amount
+  const current = engineer ? overrideAt(site) : row.amount
   const invalidate = ['/team-fares', '/fares']
   const submit = (form: Record<string, string>) =>
     form.scope === 'pair' && pair
@@ -156,15 +161,15 @@ function TeamFareDialog({ row, team, ...dialog }: { row: TeamFareRow; team: Team
   return (
     <FormDialog
       {...dialog}
-      title={t('teamFare.edit', { name: row.name }) + where}
+      title={title}
       init={{ effective_from: today, amount: typed(current ?? row.default_amount ?? ''), scope: 'worker', site_id: site }}
       submit={submit}
-      shown={['effective_from', 'amount', 'site_id']}
+      shown={['effective_from', 'amount', ...(engineer ? ['site_id'] : [])]}
     >
       {(f) => (
         <>
           {row.default_amount !== null && <Badge variant="neutral" className="justify-self-start">{t('teamFare.auto', { amount: money(row.default_amount) })}</Badge>}
-          {engineer && <SelectField name="site_id" label={t('teamFare.col.site')} options={team.sites.map((s) => [s.id, s.name])} {...f} />}
+          {engineer && <SelectField name="site_id" label={t('teamFare.col.site')} options={team.sites.map((s) => [s.id, s.name])} {...f} set={(k, v) => { f.set(k, v); f.set('amount', typed(overrideAt(v) ?? '')) }} />}
           <TextField name="amount" label={t('teamFare.amount')} inputMode="decimal" {...f} />
           <TextField name="effective_from" label={t('teamFare.from')} type="date" {...f} />
           {pair && (

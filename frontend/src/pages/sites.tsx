@@ -406,7 +406,7 @@ function FareDialog({ residence, site, ...dialog }: { residence?: Row; site?: Ro
   return (
     <FormDialog
       {...dialog}
-      title={pick ? t('fare.add') : `${residence.name_ar} ← ${site.name_ar}`}
+      title={pick ? t('fare.add') : t('fare.pairTitle', { residence: residence.name_ar, site: site.name_ar })}
       trigger={pick ? <Button type="button" variant="outline" size="sm"><Plus />{t('fare.add')}</Button> : undefined}
       init={{ effective_from: cairoToday(), residence_id: residence?.id ?? '', site_id: site?.id ?? '' }}
       submit={(form) => send('/fares', { body: form }, ['/fares', '/team-fares'])}
@@ -428,13 +428,13 @@ function FareDialog({ residence, site, ...dialog }: { residence?: Row; site?: Ro
   )
 }
 
-/** Every residence × site fare in force today, with who set it (mockup 3a). Editing needs fare.manage at all scope. */
+/** Every residence × site fare in force today, with who set it (mockup 3a). Editing needs fare.manage. */
 export function FaresTab() {
   const { t } = useTranslation()
   const { can } = useAuth()
   const money = useMoney()
   const today = cairoToday()
-  const manage = can('fare.manage.all')
+  const manage = can('fare.manage')
   const [lead, setLead] = useState('')
   const [page, setPage] = useState(1)
   const [edit, setEdit] = useState<Row>()

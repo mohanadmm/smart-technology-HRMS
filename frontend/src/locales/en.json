@@ -261,7 +261,8 @@
     "allLeads": "All",
     "lead": "Team lead",
     "add": "Add",
-    "edit": "Edit"
+    "edit": "Edit",
+    "pairTitle": "{{residence}} → {{site}}"
   },
   "auth": {
     "email": "Email address",
@@ -964,6 +965,8 @@
       "engineer": "Engineers are set by name"
     },
     "edit": "Edit transport for {{name}}",
+    "editAt": "Edit transport for {{name}} · {{residence}} → {{site}}",
+    "editAtSite": "Edit transport for {{name}} · {{site}}",
     "auto": "Automatic {{amount}}",
     "amount": "Daily amount",
     "from": "Effective from",

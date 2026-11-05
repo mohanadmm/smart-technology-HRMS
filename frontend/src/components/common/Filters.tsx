@@ -19,9 +19,6 @@ export function SearchInput({ value, onChange, placeholder, className }: { value
   )
 }
 
-/** A filter toggle: put it on a `<button aria-pressed>`. */
-export const chipCls = 'min-h-tap rounded-full border bg-card px-3 text-[13px] font-medium text-muted-foreground transition-colors outline-none hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-primary'
-
 export function FilterSelect({
   value, onChange, label, allLabel, options,
 }: { value: string; onChange: (v: string) => void; label: string; allLabel: string; options: [string, string][] }) {

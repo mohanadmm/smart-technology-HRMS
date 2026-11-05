@@ -215,11 +215,25 @@ test('engineers pick a site and have no pair option', async () => {
   expect(post('/fare-overrides')).toEqual([{ site_id: 's2', effective_from: '2026-11-05', amount: '50' }])
 })
 
+test('the engineer amount follows the picked site', async () => {
+  const rows = [row('e1', 'م. كريم فتحي', 'engineer', { site: null, overrides: [{ site_id: 's1', amount: '50.000000' }] })]
+  saving({ 'GET /api/v1/team-fares': team(rows) })
+  await asHr()
+  await edit('م. كريم فتحي')
+  const dialog = await screen.findByRole('dialog')
+  const amount = within(dialog).getByLabelText('المبلغ اليومي')
+  expect(amount).toHaveValue('50')
+  await user.selectOptions(within(dialog).getByRole('combobox', { name: 'الموقع' }), 's2')
+  expect(amount).toHaveValue('')
+  await user.selectOptions(within(dialog).getByRole('combobox', { name: 'الموقع' }), 's1')
+  expect(amount).toHaveValue('50')
+})
+
 test('a worker with no residence has no pair option', async () => {
   saving()
   await asHr()
   await edit('فتحي سالم')
-  const dialog = await screen.findByRole('dialog')
+  const dialog = await screen.findByRole('dialog', { name: 'تعديل مواصلات فتحي سالم · العامرية' })
   expect(within(dialog).queryByRole('radio', { name: /لكل اللي ساكنين/ })).toBeNull()
   expect(within(dialog).queryByRole('combobox')).toBeNull()
 })
@@ -234,6 +248,25 @@ test('a 422 shows the server message', async () => {
   await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
   expect(await within(dialog).findByText('الفترة مقفولة')).toBeInTheDocument()
   expect(within(dialog).getByLabelText('يسري من')).toHaveAccessibleDescription('الفترة مقفولة')
+})
+
+test('a site_id 422 shows in the banner when the dialog has no site field', async () => {
+  saving({ 'POST /api/v1/employees/w2/fare-overrides': () => json(422, { error: { code: 'validation_failed', message: 'x', details: [{ field: 'site_id', code: 'invalid', message: 'الموقع مش تبعك' }] } }) })
+  await asHr()
+  await edit('سيد إبراهيم')
+  const dialog = await screen.findByRole('dialog')
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('الموقع مش تبعك')
+})
+
+test('an engineer with no residence gets no residence button', async () => {
+  const rows = [row('w4', 'فتحي سالم', 'day_laborer', { residence: null, source: 'no_residence' }), row('e1', 'م. كريم فتحي', 'engineer', { residence: null, site: null })]
+  saving({ 'GET /api/v1/team-fares': team(rows) })
+  await asHr()
+  await screen.findByText('م. كريم فتحي')
+  expect(within(bodyRows()[0]).getByRole('button', { name: 'سجّل السكن' })).toBeInTheDocument()
+  expect(within(bodyRows()[1]).queryByRole('button', { name: 'سجّل السكن' })).toBeNull()
+  expect(within(bodyRows()[1]).getByText('السكن مش متسجل')).toBeInTheDocument()
 })
 
 const patched = () => vi.mocked(fetch).mock.calls.filter(([, i]) => i?.method === 'PATCH').map(([u, i]) => [String(u), JSON.parse(String(i!.body))])

@@ -533,7 +533,7 @@ describe('fares', () => {
     expect(JSON.parse(calls('POST')[0][1]!.body as string)).toEqual({ residence_id: 'r2', site_id: 's2', effective_from: '2026-11-05', amount: '8.5' })
   })
 
-  test('the fares tab needs site.view at all scope, and editing needs fare.manage.all', async () => {
+  test('the fares tab needs site.view at all scope, and editing needs fare.manage', async () => {
     fares()
     const { unmount } = renderWithAuth(<SettingsPage />, ['site.view.own', 'employee.view.own'])
     await screen.findByRole('tab', { name: 'المواقع' })
