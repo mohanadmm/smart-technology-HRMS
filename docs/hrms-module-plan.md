@@ -229,7 +229,7 @@ Status is verified against `main` at `7be93b9` (PR #3 merged) by reading the cod
 ### Site manager's day: owner decisions of 2026-11-05 (PR #22 review)
 - **Open day:** a field day (engineer, permanent worker, day laborer) with an arrival and no departure; office never. The site manager records no later day for that person until it is completed. Past the yesterday window they may still add the departure only, until the period is locked; the arrival and the status stay. Audited, and HR can correct it.
 - **Proposed wage:** approved as built. The site manager types a proposed number and never sees a stored wage; HR sets the wage on approval. The new laborer's gender is entered with them and stays required.
-- **Refused laborer:** HR's refusal ends the laborer that day and takes them off every crew, in one audited transaction. Days already recorded stay for HR to decide (pay a wage for those days, or cancel them); nothing is deleted automatically.
+- **Refused laborer:** HR's refusal ends the laborer that day (an earlier end HR already set stays) and takes them off every crew from that day and off any earlier day with nothing recorded, so the yesterday window adds no new day; one audited transaction. Days already recorded stay for HR to decide (pay a wage for those days, or cancel them); nothing is deleted automatically.
 - **Crew:** a one-day add, move or removal is approved as built; the home site stays HR's. The search takes the exact code or the full name and returns at most one laborer.
 - **Notifications:** at once for a proposed wage and for a departure entered after the window (an edit to a past day); crew changes and open days as counts in the 21:00 alert (`attendance:alert-missing`), never as separate notifications.
 
