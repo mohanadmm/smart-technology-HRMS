@@ -226,4 +226,58 @@ class ViewAsTest extends TestCase
         $this->me($view)->assertStatus(401);
         $this->assertSame(['ended_by' => 'revoked'], $this->auditRow('VIEW_AS_ENDED')[1]);
     }
+
+    /** @return array{0: User, 1: string} the target and the view-as token */
+    private function viewingAsManager(): array
+    {
+        $m = $this->makeUser('manager');
+
+        return [$m, $this->start($this->token($this->makeUser('developer')), $m->id)->json('data.token')];
+    }
+
+    private function assertRevoked(string $view): void
+    {
+        $this->me($view)->assertStatus(401);
+        $this->me($view)->assertStatus(401);
+        $this->assertSame(['ended_by' => 'revoked'], $this->auditRow('VIEW_AS_ENDED')[1]);
+    }
+
+    public function test_deactivating_the_target_revokes_the_view_as(): void
+    {
+        [$m, $view] = $this->viewingAsManager();
+        $this->withToken($this->token($this->makeUser('developer')))->patchJson("/api/v1/users/{$m->id}/deactivate")->assertOk();
+        $this->assertRevoked($view);
+    }
+
+    public function test_setting_the_target_password_revokes_the_view_as(): void
+    {
+        [$m, $view] = $this->viewingAsManager();
+        $this->withToken($this->token($this->makeUser('developer')))->putJson("/api/v1/users/{$m->id}/password", ['password' => 'newpass99'])->assertNoContent();
+        $this->assertRevoked($view);
+    }
+
+    public function test_terminating_the_view_as_session_revokes_it(): void
+    {
+        [$m, $view] = $this->viewingAsManager();
+        $session = DB::table('user_sessions')->where('user_id', $m->id)->value('id');
+        $this->withToken($this->token($this->makeUser('developer')))->deleteJson("/api/v1/users/{$m->id}/sessions/$session")->assertNoContent();
+        $this->assertRevoked($view);
+        $this->assertSame(['session_id' => $session], $this->auditRow('ADMIN_SESSION_TERMINATED')[0]);
+    }
+
+    public function test_locking_the_target_revokes_the_view_as(): void
+    {
+        [$m, $view] = $this->viewingAsManager();
+        User::whereKey($m->id)->update(['locked_until' => now()->addMinutes(15)]);
+        $this->assertRevoked($view);
+    }
+
+    public function test_setting_the_developer_password_revokes_the_view_as(): void
+    {
+        $dev = $this->makeUser('developer');
+        $view = $this->start($this->token($dev), $this->makeUser('manager')->id)->json('data.token');
+        $this->withToken($this->token($this->makeUser('developer')))->putJson("/api/v1/users/{$dev->id}/password", ['password' => 'newpass99'])->assertNoContent();
+        $this->withToken($view)->postJson('/api/v1/auth/view-as/end')->assertStatus(401);
+        $this->assertRevoked($view);
+    }
 }

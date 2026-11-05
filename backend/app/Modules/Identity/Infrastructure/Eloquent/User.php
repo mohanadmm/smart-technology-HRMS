@@ -6,8 +6,10 @@ namespace App\Modules\Identity\Infrastructure\Eloquent;
 
 use App\Modules\Identity\Domain\Authentication\LockoutPolicy;
 use App\Modules\Identity\Domain\Authentication\ViewAs;
+use App\Modules\Identity\Domain\Authentication\ViewAsEnding;
 use App\Support\Database\HasStandardColumns;
 use DateTimeInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -41,5 +43,14 @@ class User extends Authenticatable
     public function canSignIn(DateTimeInterface $now): bool
     {
         return $this->is_active && ! LockoutPolicy::isLocked($this->locked_until, $now);
+    }
+
+    /** Signs this account out everywhere. A view-as on it or by it ends as revoked, so it keeps its VIEW_AS_ENDED. */
+    public function revokeSessions(): void
+    {
+        UserSession::where(fn (Builder $q) => $q->where('impersonator_id', $this->id)
+            ->orWhere(fn (Builder $q) => $q->where('user_id', $this->id)->whereNotNull('impersonator_id')))
+            ->get()->each(fn (UserSession $s) => $s->endViewAs(ViewAsEnding::Revoked));
+        $this->sessions()->delete();
     }
 }

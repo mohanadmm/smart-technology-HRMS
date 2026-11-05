@@ -55,6 +55,10 @@ final class BearerSessionResolver
 
         $user = $session->user;
         if ($user === null || ! $user->canSignIn($now)) {
+            if ($viewAs !== null) {
+                $session->endViewAs(ViewAsEnding::Revoked);
+            }
+
             return null;
         }
         $user->viewAs = $viewAs;
