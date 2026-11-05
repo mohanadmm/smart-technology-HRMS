@@ -40,14 +40,15 @@ final class EmployeeRoster
         and t.effective_from <= greatest(employees.hire_date, least(?::date, employees.termination_date)) order by t.effective_from desc limit 1)';
 
     /**
-     * $ids, when set, narrows to those employees (an empty list gives none).
+     * The employees employed as any of $types within [from, to]. $ids, when set, narrows to those employees (an empty list gives none).
      *
+     * @param  non-empty-list<EmployeeType>  $types
      * @param  array<string>|null  $ids
      * @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}}
      */
-    public function ofType(EmployeeType $type, string $from, string $to, int $perPage, int $page, ?string $managedBy = null, ?array $ids = null): array
+    public function ofType(array $types, string $from, string $to, int $perPage, int $page, ?string $managedBy = null, ?array $ids = null): array
     {
-        return $this->page($this->employedAs($type, $from, $to, $managedBy)->when($ids !== null, fn (Builder $q) => $q->whereIn('id', (array) $ids)), $perPage, $page);
+        return $this->page($this->employedAs($types, $from, $to, $managedBy)->when($ids !== null, fn (Builder $q) => $q->whereIn('id', (array) $ids)), $perPage, $page);
     }
 
     /**
@@ -91,7 +92,7 @@ final class EmployeeRoster
     /** @return list<array<string, mixed>> */
     public function allOfType(EmployeeType $type, string $from, string $to, ?string $managedBy = null): array
     {
-        return $this->rows($this->employedAs($type, $from, $to, $managedBy));
+        return $this->rows($this->employedAs([$type], $from, $to, $managedBy));
     }
 
     /** @return list<array<string, mixed>> the workers employed on $date whose site on $date (that day's crew change, else the home site) is $siteId, by code */
@@ -107,7 +108,7 @@ final class EmployeeRoster
     /** @return list<array<string, mixed>> the engineers employed on $date and assigned to $managerId on $date, by code */
     public function engineersOf(string $managerId, string $date): array
     {
-        return $this->rows(EmployeeReach::apply($this->employedAs(EmployeeType::Engineer, $date, $date, null), $managerId, $date));
+        return $this->rows(EmployeeReach::apply($this->employedAs([EmployeeType::Engineer], $date, $date, null), $managerId, $date));
     }
 
     /** @return array<string, mixed>|null with $withTrashed, a deleted employee too */
@@ -162,10 +163,18 @@ final class EmployeeRoster
         return $this->rows(Employee::with(self::RELATIONS)->whereBetween('hire_date', [$from, $to])->orderBy('code'));
     }
 
-    /** @return Builder<Employee> narrowed, when $managedBy is set, to the employees in that user's reach on min($to, today) (P4) */
-    private function employedAs(EmployeeType $type, string $from, string $to, ?string $managedBy): Builder
+    /**
+     * @param  non-empty-list<EmployeeType>  $types  employed as any of them
+     * @return Builder<Employee> narrowed, when $managedBy is set, to the employees in that user's reach on min($to, today) (P4)
+     */
+    private function employedAs(array $types, string $from, string $to, ?string $managedBy): Builder
     {
-        return Employee::with(self::RELATIONS)->whereRaw(self::EMPLOYED_AS, [$type->value, $from, $to])
+        return Employee::with(self::RELATIONS)
+            ->where(function (Builder $q) use ($types, $from, $to) {
+                foreach ($types as $t) {
+                    $q->orWhereRaw(self::EMPLOYED_AS, [$t->value, $from, $to]);
+                }
+            })
             ->when($managedBy !== null, fn (Builder $q) => EmployeeReach::apply($q, (string) $managedBy, min($to, now('Africa/Cairo')->toDateString())))
             ->orderBy('code');
     }

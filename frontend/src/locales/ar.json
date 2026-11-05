@@ -545,6 +545,7 @@
     "siteFilter": "الموقع",
     "allSites": "كل المواقع",
     "group": {
+      "all": "الكل",
       "office": "موظفو الشركة",
       "engineer": "المهندسون",
       "permanent_worker": "العمال المثبتون",

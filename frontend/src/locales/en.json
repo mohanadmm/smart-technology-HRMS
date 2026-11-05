@@ -541,6 +541,7 @@
     "siteFilter": "Site",
     "allSites": "All sites",
     "group": {
+      "all": "All",
       "office": "Office staff",
       "engineer": "Engineers",
       "permanent_worker": "Permanent workers",
