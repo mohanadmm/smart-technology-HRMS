@@ -1,6 +1,7 @@
 import { Bus, CalendarOff, HardHat, House, MapPin, Plus, type LucideIcon } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DataList } from '@/components/common/DataList'
 import { EmptyState } from '@/components/common/EmptyState'
 import { chipCls, FilterSelect } from '@/components/common/Filters'
 import { RowActions } from '@/components/common/RowActions'
@@ -449,7 +450,7 @@ export function FaresTab() {
   return (
     <ListCard
       title={t('fare.combinedTitle')}
-      description={t('fare.combinedDesc')}
+      description={t(manage ? 'fare.combinedDesc' : 'fare.combinedDescView')}
       action={manage && <FareDialog />}
       err={err}
       loading={fares.loading}
@@ -468,43 +469,36 @@ export function FaresTab() {
       }
       page={{ page, total: fares.rows.length, onPageChange: setPage }}
     >
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('fare.site')}</TableHead>
-            <TableHead>{t('teamFare.col.residence')}</TableHead>
-            <TableHead>{t('teamFare.amount')}</TableHead>
-            <TableHead>{t('teamFare.from')}</TableHead>
-            <TableHead>{t('fare.setBy')}</TableHead>
-            {manage && (
-              <TableHead>
-                <span className="sr-only">{t('common.actions')}</span>
-              </TableHead>
-            )}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {paginate(fares.rows, page, PAGE).map((f) => (
-            <TableRow key={f.id}>
-              <TableCell className="font-medium">{name(sites.rows, f.site_id)}</TableCell>
-              <TableCell>{name(residences.rows, f.residence_id)}</TableCell>
-              <TableCell>
+      <DataList
+        label={t('fare.combinedTitle')}
+        rows={paginate(fares.rows, page, PAGE)}
+        rowKey={(f) => f.id}
+        title={{ header: t('fare.site'), cell: (f) => <span className="font-medium">{name(sites.rows, f.site_id)}</span> }}
+        fields={[
+          { header: t('teamFare.col.residence'), cell: (f) => name(residences.rows, f.residence_id) },
+          {
+            header: t('teamFare.amount'),
+            numeric: true,
+            cell: (f) => (
+              <>
                 {money(f.amount)}
                 {f.previous_amount !== null && <span className="ms-2 text-xs text-muted-foreground">{t('fare.was', { amount: money(f.previous_amount) })}</span>}
-              </TableCell>
-              <TableCell>{ltrDates(f.effective_from)}</TableCell>
-              <TableCell>{f.set_by ? <bdi>{f.set_by.name}</bdi> : <Badge variant="neutral">{t('fare.fromExcel')}</Badge>}</TableCell>
-              {manage && (
-                <TableCell className="text-end">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setEdit(f)}>
-                    {t('fare.edit')}
-                  </Button>
-                </TableCell>
-              )}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+              </>
+            ),
+          },
+          { header: t('teamFare.from'), cell: (f) => ltrDates(f.effective_from) },
+          { header: t('fare.setBy'), cell: (f) => (f.set_by ? <bdi>{f.set_by.name}</bdi> : <Badge variant="neutral">{t('fare.fromExcel')}</Badge>) },
+        ]}
+        actions={
+          manage
+            ? (f) => (
+                <Button type="button" variant="outline" size="sm" onClick={() => setEdit(f)}>
+                  {t('fare.edit')}
+                </Button>
+              )
+            : undefined
+        }
+      />
       {edit && <FareDialog residence={{ id: edit.residence_id, name_ar: name(residences.rows, edit.residence_id) }} site={{ id: edit.site_id, name_ar: name(sites.rows, edit.site_id) }} open onOpenChange={() => setEdit(undefined)} />}
     </ListCard>
   )

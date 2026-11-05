@@ -1,6 +1,7 @@
 import { Bus, Users } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DataList } from '@/components/common/DataList'
 import { EmptyState } from '@/components/common/EmptyState'
 import { chipCls, FilterSelect } from '@/components/common/Filters'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -9,7 +10,6 @@ import { TableSkeleton } from '@/components/layout/PageSkeleton'
 import { Badge, type BadgeVariant } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useAuth } from '@/lib/auth'
 import { useApi, useSave } from '@/lib/query'
 import { NotFoundPage } from './pages'
@@ -21,6 +21,8 @@ export type TeamFares = { sites: Ref[]; rows: TeamFareRow[] }
 const TONE: Partial<Record<TeamFareRow['source'], BadgeVariant>> = { default: 'neutral', override: 'info', none: 'warning' }
 const isEngineer = (r: TeamFareRow) => r.type === 'engineer'
 const missing = (r: TeamFareRow) => !isEngineer(r) && r.amount === null
+/** A stored decimal as a person types it: "35.500000" → "35.5". */
+const typed = (v: string) => v.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
 
 /** «مواصلات التيم»: the team's fare today from residence × site, corrected per worker (mockup 1). HR picks a team lead first. */
 export function TeamFaresPage() {
@@ -70,45 +72,45 @@ function TeamTable({ team }: { team: TeamFares }) {
         ))}
       </div>
       <Card className="overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {(['worker', 'residence', 'site', 'fare', 'source'] as const).map((c) => <TableHead key={c}>{t(`teamFare.col.${c}`)}</TableHead>)}
-              <TableHead>
-                <span className="sr-only">{t('common.actions')}</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {shown.map((r) => (
-              <TableRow key={r.employee_id}>
-                <TableCell>
-                  <div className="font-medium"><bdi>{r.name}</bdi></div>
-                  <div className="text-xs text-muted-foreground">{t(`enum.type.${r.type}`)}</div>
-                </TableCell>
-                <TableCell>{r.residence ? r.residence.name : <Badge variant="danger">{t('teamFare.noResidence')}</Badge>}</TableCell>
-                <TableCell>{isEngineer(r) ? t('teamFare.byDay') : r.site?.name}</TableCell>
-                <TableCell>
-                  {isEngineer(r) ? (r.overrides.length ? r.overrides.map((o) => <div key={o.site_id}>{`${siteName(o.site_id)} ${money(o.amount)}`}</div>) : '—') : money(r.amount)}
-                </TableCell>
-                <TableCell>
-                  {isEngineer(r) ? (
-                    <span className="text-xs text-muted-foreground">{t('teamFare.source.engineer')}</span>
-                  ) : TONE[r.source] ? (
-                    <Badge variant={TONE[r.source]}>{t(`teamFare.source.${r.source}`)}</Badge>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">{t(`teamFare.source.${r.source}`)}</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-end">
-                  <Button type="button" variant="outline" size="sm" aria-label={t('teamFare.edit', { name: r.name })} onClick={() => setEditing(r)}>
-                    {t('fare.edit')}
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <DataList
+          label={t('teamFare.title')}
+          rows={shown}
+          rowKey={(r) => r.employee_id}
+          title={{
+            header: t('teamFare.col.worker'),
+            cell: (r) => (
+              <>
+                <div className="font-medium"><bdi>{r.name}</bdi></div>
+                <div className="text-xs text-muted-foreground">{t(`enum.type.${r.type}`)}</div>
+              </>
+            ),
+          }}
+          fields={[
+            { header: t('teamFare.col.residence'), cell: (r) => (r.residence ? r.residence.name : <Badge variant="danger">{t('teamFare.noResidence')}</Badge>) },
+            { header: t('teamFare.col.site'), cell: (r) => (isEngineer(r) ? t('teamFare.byDay') : r.site?.name) },
+            {
+              header: t('teamFare.col.fare'),
+              numeric: true,
+              cell: (r) => (isEngineer(r) ? (r.overrides.length ? r.overrides.map((o) => <div key={o.site_id}>{`${siteName(o.site_id)} ${money(o.amount)}`}</div>) : '—') : money(r.amount)),
+            },
+          ]}
+          status={{
+            header: t('teamFare.col.source'),
+            cell: (r) =>
+              isEngineer(r) ? (
+                <span className="text-xs text-muted-foreground">{t('teamFare.source.engineer')}</span>
+              ) : TONE[r.source] ? (
+                <Badge variant={TONE[r.source]}>{t(`teamFare.source.${r.source}`)}</Badge>
+              ) : (
+                <span className="text-xs text-muted-foreground">{t(`teamFare.source.${r.source}`)}</span>
+              ),
+          }}
+          actions={(r) => (
+            <Button type="button" variant="outline" size="sm" aria-label={t('teamFare.edit', { name: r.name })} onClick={() => setEditing(r)}>
+              {t('fare.edit')}
+            </Button>
+          )}
+        />
       </Card>
       {editing && <TeamFareDialog row={editing} team={team} open onOpenChange={() => setEditing(undefined)} />}
     </>
@@ -126,6 +128,8 @@ function TeamFareDialog({ row, team, ...dialog }: { row: TeamFareRow; team: Team
   const pair = !engineer && row.residence && row.site ? { residence: row.residence, site: row.site } : null
   const pairCount = pair ? team.rows.filter((r) => !isEngineer(r) && r.residence?.id === pair.residence.id && r.site?.id === pair.site.id).length : 0
   const where = row.site && !engineer ? ` · ${row.residence ? `${row.residence.name} ← ` : ''}${row.site.name}` : ''
+  const site = engineer ? team.sites[0]?.id ?? '' : row.site?.id ?? ''
+  const current = engineer ? row.overrides.find((o) => o.site_id === site)?.amount : row.amount
   const invalidate = ['/team-fares', '/fares']
   const submit = (form: Record<string, string>) =>
     form.scope === 'pair' && pair
@@ -135,7 +139,7 @@ function TeamFareDialog({ row, team, ...dialog }: { row: TeamFareRow; team: Team
     <FormDialog
       {...dialog}
       title={t('teamFare.edit', { name: row.name }) + where}
-      init={{ effective_from: today, amount: '', scope: 'worker', site_id: engineer ? team.sites[0]?.id ?? '' : row.site?.id ?? '' }}
+      init={{ effective_from: today, amount: typed(current ?? row.default_amount ?? ''), scope: 'worker', site_id: site }}
       submit={submit}
       shown={['effective_from', 'amount', 'site_id']}
     >

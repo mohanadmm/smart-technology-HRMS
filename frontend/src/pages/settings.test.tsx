@@ -492,6 +492,9 @@ describe('fares', () => {
     expect(r1.getByText(`كان ${fmt(30)}`)).toBeInTheDocument()
     expect(r1.getByText('2026-11-06')).toHaveAttribute('dir', 'ltr')
     expect(r1.getByText('م. أحمد سامي')).toBeInTheDocument()
+    // below 640 px each row is a card whose lines carry their column names
+    for (const label of ['السكن', 'المبلغ اليومي', 'يسري من', 'حدده']) expect(r1.getByText(label)).toBeInTheDocument()
+    expect(screen.getByText('كل المبالغ اللي حطها مسؤولي التيم. أي خانة تقدر تعدّلها.')).toBeInTheDocument()
     const r2 = within(screen.getByRole('row', { name: /برج العرب/ }))
     expect(r2.getByText('من الإكسيل')).toBeInTheDocument()
     expect(r2.queryByText(/كان/)).toBeNull()
@@ -554,6 +557,8 @@ describe('fares', () => {
     await screen.findByRole('row', { name: /العجمي/ })
     expect(screen.queryByRole('button', { name: 'إضافة' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'تعديل' })).toBeNull()
+    expect(screen.getByText('كل المبالغ اللي حطها مسؤولي التيم.')).toBeInTheDocument()
+    expect(screen.queryByText(/أي خانة/)).toBeNull()
     expect(screen.queryByRole('combobox', { name: 'مسؤول التيم' })).toBeNull()
     expect(fareUrls()).toHaveLength(1)
     expect(vi.mocked(fetch).mock.calls.map(([u]) => String(u)).filter((u) => u.includes('manager-candidates'))).toEqual([])

@@ -50,6 +50,8 @@ test('lists the team with each source label', async () => {
   expect(within(bodyRows()[1]).getByText(fmt(30))).toBeInTheDocument()
   expect(within(bodyRows()[2]).getByText('—')).toBeInTheDocument()
   expect(within(bodyRows()[0]).getByText('عامل مثبت')).toBeInTheDocument()
+  // below 640 px each row is a card whose lines carry their column names
+  for (const label of ['السكن', 'الموقع', 'المواصلات اليومية']) expect(within(bodyRows()[0]).getByText(label)).toBeInTheDocument()
   expect(urls('/team-fares')).toEqual(['/api/v1/team-fares'])
 })
 
@@ -124,7 +126,10 @@ test('editing a worker posts an override by default', async () => {
   const dialog = await screen.findByRole('dialog', { name: 'تعديل مواصلات سيد إبراهيم · كفر الدوار ← العامرية' })
   expect(within(dialog).getByText(`التلقائي ${fmt(35)}`)).toBeInTheDocument()
   expect(within(dialog).getByRole('radio', { name: 'للعامل ده بس' })).toBeChecked()
-  await user.type(within(dialog).getByLabelText('المبلغ اليومي'), '32')
+  const amount = within(dialog).getByLabelText('المبلغ اليومي')
+  expect(amount).toHaveValue('30')
+  await user.clear(amount)
+  await user.type(amount, '32')
   await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(post('/fare-overrides')).toEqual([{ site_id: 's1', effective_from: '2026-11-05', amount: '32' }])
@@ -135,12 +140,43 @@ test('the pair option posts the residence × site fare', async () => {
   renderWithAuth(<TeamFaresPage />, LEAD)
   await edit('محمود عبد الله')
   const dialog = await screen.findByRole('dialog')
-  await user.click(within(dialog).getByRole('radio', { name: 'لكل اللي ساكنين في كفر الدوار وبيشتغلوا في العامرية (2 عمال)' }))
+  await user.click(within(dialog).getByRole('radio', { name: 'لكل اللي ساكنين في كفر الدوار وبيشتغلوا في العامرية (عاملين)' }))
+  await user.clear(within(dialog).getByLabelText('المبلغ اليومي'))
   await user.type(within(dialog).getByLabelText('المبلغ اليومي'), '40')
   await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(post('/fares')).toEqual([{ residence_id: 'r1', site_id: 's1', effective_from: '2026-11-05', amount: '40' }])
   expect(post('/fare-overrides')).toEqual([])
+})
+
+test('the amount starts from what applies, else the default, else empty', async () => {
+  const rows = [
+    row('w1', 'محمود عبد الله', 'permanent_worker', { amount: '35.500000', source: 'override', default_amount: '35.000000' }),
+    row('w2', 'سيد إبراهيم', 'permanent_worker', { default_amount: '40.000000' }),
+    row('w3', 'عادل منصور', 'day_laborer', {}),
+    row('e1', 'م. كريم فتحي', 'engineer', { site: null, overrides: [{ site_id: 's1', amount: '50.000000' }] }),
+  ]
+  mockFetch({ 'GET /api/v1/team-fares': team(rows) })
+  renderWithAuth(<TeamFaresPage />, LEAD)
+  for (const [name, value] of [['محمود عبد الله', '35.5'], ['سيد إبراهيم', '40'], ['عادل منصور', ''], ['م. كريم فتحي', '50']]) {
+    await edit(name)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText('المبلغ اليومي')).toHaveValue(value)
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  }
+})
+
+test('the pair option counts the workers in Arabic plural forms', async () => {
+  const pairOf = (n: number) => Array.from({ length: n }, (_, i) => row(`w${i}`, `عامل ${i}`, 'permanent_worker', {}))
+  for (const [n, label] of [[1, 'عامل واحد'], [3, '3 عمال'], [11, '11 عامل']] as const) {
+    queryClient.clear()
+    mockFetch({ 'GET /api/v1/team-fares': team(pairOf(n)) })
+    const { unmount } = renderWithAuth(<TeamFaresPage />, LEAD)
+    await edit('عامل 0')
+    expect(within(await screen.findByRole('dialog')).getByRole('radio', { name: `لكل اللي ساكنين في كفر الدوار وبيشتغلوا في العامرية (${label})` })).toBeInTheDocument()
+    unmount()
+  }
 })
 
 test('engineers pick a site and have no pair option', async () => {
@@ -152,6 +188,7 @@ test('engineers pick a site and have no pair option', async () => {
   const site = within(dialog).getByRole('combobox', { name: 'الموقع' })
   expect(within(site).getAllByRole('option').map((o) => o.textContent)).toEqual(['العامرية', 'برج العرب'])
   await user.selectOptions(site, 's2')
+  expect(within(dialog).getByLabelText('المبلغ اليومي')).toHaveValue('')
   await user.type(within(dialog).getByLabelText('المبلغ اليومي'), '50')
   await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
@@ -187,6 +224,7 @@ test('a 422 shows the server message', async () => {
   renderWithAuth(<TeamFaresPage />, LEAD)
   await edit('سيد إبراهيم')
   const dialog = await screen.findByRole('dialog')
+  await user.clear(within(dialog).getByLabelText('المبلغ اليومي'))
   await user.type(within(dialog).getByLabelText('المبلغ اليومي'), '32')
   await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
   expect(await within(dialog).findByText('الفترة مقفولة')).toBeInTheDocument()

@@ -254,6 +254,7 @@
     "tooMany": "More than 100 fares exist. Some may not appear in the table.",
     "combinedTitle": "Team leads' transport fares",
     "combinedDesc": "Every amount the team leads set. You can edit any row.",
+    "combinedDescView": "Every amount the team leads set.",
     "site": "Site",
     "was": "was {{amount}}",
     "setBy": "Set by",
@@ -967,7 +968,8 @@
     "from": "Effective from",
     "scope": {
       "worker": "This worker only",
-      "pair": "Everyone living in {{residence}} and working at {{site}} ({{count}} workers)"
+      "pair_one": "Everyone living in {{residence}} and working at {{site}} ({{count}} worker)",
+      "pair_other": "Everyone living in {{residence}} and working at {{site}} ({{count}} workers)"
     },
     "pickLead": "Choose a team lead",
     "empty": "No workers on the team today."
