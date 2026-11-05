@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { json, me, mockFetch, pagination, renderApp } from '@/test-utils'
@@ -117,4 +117,36 @@ test('a manager lands on /site-day', async () => {
   renderApp('/')
   expect(await screen.findByText('لا توجد مواقع مسندة إليك. تواصل مع الموارد البشرية.')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'حضور الموقع' })).toHaveAttribute('aria-current', 'page')
+})
+
+const developer = { ...me(['user.view.all', 'user.impersonate.all']), id: 'u9', name: 'يوسف', role: { id: 'r9', slug: 'developer', name: 'Developer', name_ar: 'المطوّر' } }
+const banner = () => screen.queryByText(/أنت الآن تعرض النظام كـ/)
+
+test('a normal session shows no view-as banner', async () => {
+  signedIn(['employee.view.all'])
+  renderApp('/employees')
+  await screen.findByRole('link', { name: 'الموظفون' })
+  expect(banner()).toBeNull()
+  expect(screen.queryByRole('button', { name: 'العودة إلى حسابي' })).toBeNull()
+})
+
+test('while viewing as an account a banner names it, and Return swaps back to the developer', async () => {
+  localStorage.setItem('hrms.auth.token.v1', 'v'.repeat(64))
+  const end = vi.fn(() => json(201, { data: { token: 'd'.repeat(64), token_type: 'Bearer', idle_timeout_seconds: 28800, user: developer } }))
+  mockFetch({
+    'GET /api/v1/auth/me': () => json(200, { data: { ...me(['employee.view.all']), view_as: { by: { id: 'u9', name: 'يوسف' }, expires_at: '2026-11-05T10:30:00Z' } } }),
+    'GET /api/v1/employees': () => json(200, { data: [], meta: { pagination } }),
+    'GET /api/v1/users': () => json(200, { data: [], meta: { pagination } }),
+    'POST /api/v1/auth/view-as/end': end,
+  })
+  renderApp('/employees')
+  const status = (await screen.findByText(/أنت الآن تعرض النظام كـ/)).closest('[role="status"]')!
+  expect(status).toHaveTextContent('منى')
+  expect(status).toHaveTextContent('الموارد البشرية')
+  expect(status).toHaveTextContent('12:30') // Cairo time of 10:30Z
+  await user.click(within(status as HTMLElement).getByRole('button', { name: 'العودة إلى حسابي' }))
+  await waitFor(() => expect(banner()).toBeNull())
+  expect(end).toHaveBeenCalledOnce()
+  expect(localStorage.getItem('hrms.auth.token.v1')).toBe('d'.repeat(64))
+  await waitFor(() => expect(screen.getByRole('link', { name: 'حسابات المستخدمين' })).toHaveAttribute('aria-current', 'page')) // the developer's own landing page
 })

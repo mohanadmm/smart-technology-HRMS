@@ -5,6 +5,7 @@ import {
   CalendarDays,
   ChevronDown,
   ClipboardCheck,
+  Eye,
   HandCoins,
   Languages,
   LogOut,
@@ -21,10 +22,11 @@ import {
 } from 'lucide-react'
 import { Suspense, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Toaster } from 'sonner'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { toast, Toaster } from 'sonner'
 import logoMark from '@/assets/logo-mark.png'
 import { UserAvatar } from '@/components/common/UserAvatar'
+import { intlLocale } from '@/components/form'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipProvider } from '@/components/ui/misc'
@@ -259,6 +261,32 @@ function ProfileMenu() {
   )
 }
 
+/** Above the header while a developer views the app as `me`: whose view it is, until when (Cairo time), and the way back. */
+function ViewAsBanner() {
+  const { t, i18n } = useTranslation()
+  const { me, endViewAs } = useAuth()
+  const navigate = useNavigate()
+  const [busy, setBusy] = useState(false)
+  if (!me?.view_as) return null
+  const time = new Intl.DateTimeFormat(intlLocale(i18n.language), { timeZone: 'Africa/Cairo', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(me.view_as.expires_at))
+  const role = i18n.language === 'ar' ? me.role.name_ar : me.role.name
+  const back = () => {
+    setBusy(true)
+    endViewAs()
+      .then(() => navigate('/'), (e: Error) => toast.error(e.message))
+      .finally(() => setBusy(false))
+  }
+  return (
+    <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-warning-border bg-warning-bg px-3 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-sm text-foreground sm:px-4">
+      <Eye aria-hidden className="size-4 shrink-0 text-warning" />
+      <p className="min-w-0 flex-1 font-medium">{t('auth.viewingAs', { name: me.name, role, time })}</p>
+      <Button type="button" size="sm" variant="outline" disabled={busy} onClick={back}>
+        {t('auth.endViewAs')}
+      </Button>
+    </div>
+  )
+}
+
 /** The CRM's top context bar: menu (below lg), breadcrumb, then preferences and the account menu. */
 function Navbar({ onOpenMobile }: { onOpenMobile: () => void }) {
   const { t } = useTranslation()
@@ -338,6 +366,7 @@ export function AppLayout() {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
+          <ViewAsBanner />
           <Navbar onOpenMobile={() => setMobileOpen(true)} />
           <main id="page-content" className="mx-auto w-full max-w-[1600px] flex-1 scroll-mt-20 p-4 sm:p-6">
             <Suspense fallback={<TableSkeleton />}>
