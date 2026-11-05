@@ -45,7 +45,8 @@
     "settings": "Settings",
     "attendance": "Attendance",
     "siteDay": "Site attendance",
-    "leave": "Leave"
+    "leave": "Leave",
+    "wageProposals": "Proposed wages"
   },
   "toggle": {
     "language": "Language",
@@ -750,6 +751,35 @@
     "name": "Holiday name",
     "delete": "Delete",
     "deleteConfirm": "Delete the official holiday \"{{name}}\"?"
+  },
+  "wages": {
+    "page": "Proposed wages",
+    "description": "A daily wage a site manager proposed for a day laborer they added. It is not paid until you approve it.",
+    "list": "Proposed wages waiting",
+    "empty": "No proposed wages are waiting",
+    "more": "Showing the first {{shown}} of {{total}}. Approve or refuse some to see the rest.",
+    "gone": "This proposed wage is no longer waiting: it was already approved or refused.",
+    "site": "Site",
+    "proposedBy": "Proposed by",
+    "proposedAt": "Proposed at",
+    "proposed": "Proposed wage",
+    "approved": "Approved wage",
+    "from": "Paid from",
+    "badWage": "Enter a daily wage above zero",
+    "decide": {
+      "title": "Approve the proposed wage"
+    },
+    "approve": {
+      "open": "Approve",
+      "done": "Approved the wage for {{name}}"
+    },
+    "refuse": {
+      "open": "Refuse",
+      "back": "Back",
+      "yes": "Confirm refusal",
+      "confirm": "The laborer ends today and leaves every crew. Their recorded days stay for you to decide: a wage for those days only, or cancel them.",
+      "done": "Refused the proposed wage for {{name}}"
+    }
   },
   "notifications": {
     "title": "Notifications",

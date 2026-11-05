@@ -193,6 +193,26 @@ class SiteDayCrewTest extends TestCase
         $this->actingAs($hr, 'api');
         $this->getJson('/api/v1/employees/wage-proposals?per_page=1')->assertOk()
             ->assertJsonCount(1, 'data')->assertJsonPath('meta.pagination.total', 2)->assertJsonPath('meta.pagination.has_next_page', true);
+        // each row names the site the laborer was added to and the site manager who proposed the wage, oldest first
+        $this->getJson('/api/v1/employees/wage-proposals')->assertOk()
+            ->assertJsonPath('data.0.id', $made['proposal_id'])
+            ->assertJsonPath('data.0.site.name_ar', 'Site-1')
+            ->assertJsonPath('data.0.proposed_by', ['id' => (string) $this->m->id, 'name' => $this->m->name])
+            ->assertJsonPath('data.0.employee.hire_date', '2026-10-22')
+            ->assertJsonMissingPath('data.0.site_id');
+    }
+
+    public function test_hr_refuses_a_proposed_wage_and_it_leaves_the_list_with_no_pay_row(): void
+    {
+        $this->actingAs($this->m, 'api');
+        $made = $this->propose()->assertCreated()->json('data');
+
+        $this->actingAs($this->makeUser('hr'), 'api');
+        $this->postJson("/api/v1/employees/wage-proposals/{$made['proposal_id']}/refuse", ['version' => 1])->assertOk()->assertJsonPath('data.status', 'refused');
+        $this->assertSame(0, DB::table('employee_pay_changes')->where('employee_id', $made['id'])->count());
+        $this->getJson('/api/v1/employees/wage-proposals')->assertOk()->assertJsonCount(0, 'data');
+        $this->postJson("/api/v1/employees/wage-proposals/{$made['proposal_id']}/approve", ['version' => 2])->assertStatus(409);   // decided
+        $this->getJson("/api/v1/employees/{$made['id']}")->assertOk();   // the laborer stays on file
     }
 
     public function test_the_evening_alert_counts_the_days_crew_changes(): void
