@@ -34,14 +34,14 @@ final class FareController
     {
         $data = $request->validate(SiteRules::fare());
 
-        return ApiEnvelope::single($request, $this->fares->addFare($data), 201);
+        return ApiEnvelope::single($request, $this->fares->saveFare($data, RequestScope::ownerId($request)), 201);
     }
 
     public function override(Request $request, string $employee): JsonResponse
     {
         $data = $request->validate(SiteRules::fareOverride());
 
-        return ApiEnvelope::single($request, $this->fares->addOverride($employee, $data), 201);
+        return ApiEnvelope::single($request, $this->fares->saveOverride($employee, $data, RequestScope::ownerId($request)), 201);
     }
 
     public function show(Request $request, string $employee): JsonResponse

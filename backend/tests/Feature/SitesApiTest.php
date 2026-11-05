@@ -120,7 +120,7 @@ class SitesApiTest extends TestCase
         $r2 = $this->residence('العامرية');
         $s = $this->site();
         $this->postJson('/api/v1/fares', ['residence_id' => $r1, 'site_id' => $s, 'effective_from' => '2026-01-01', 'amount' => '40'])->assertCreated()->assertJsonPath('data.amount', '40.000000');
-        $this->postJson('/api/v1/fares', ['residence_id' => $r1, 'site_id' => $s, 'effective_from' => '2026-01-01', 'amount' => '50'])->assertStatus(422);
+        $this->postJson('/api/v1/fares', ['residence_id' => $r1, 'site_id' => $s, 'effective_from' => '2026-01-01', 'amount' => '50'])->assertCreated()->assertJsonPath('data.amount', '50.000000');
         $this->postJson('/api/v1/fares', ['residence_id' => $r2, 'site_id' => $s, 'effective_from' => '2026-01-01', 'amount' => '60'])->assertCreated();
         $this->postJson('/api/v1/fares', ['residence_id' => $r2, 'site_id' => $s, 'effective_from' => '2026-01-01'])->assertStatus(422);
         $this->postJson('/api/v1/fares', ['residence_id' => fake()->uuid(), 'site_id' => $s, 'effective_from' => '2026-02-01', 'amount' => '1'])->assertStatus(422);
@@ -162,8 +162,8 @@ class SitesApiTest extends TestCase
 
         $this->postJson("/api/v1/employees/$emp/fare-overrides", ['site_id' => $s, 'effective_from' => '2026-03-01', 'amount' => '25'])->assertCreated();
         $this->postJson("/api/v1/employees/$emp/fare-overrides", ['site_id' => $s, 'effective_from' => '2026-12-01', 'amount' => '1'])->assertCreated();
-        $this->postJson("/api/v1/employees/$emp/fare-overrides", ['site_id' => $s, 'effective_from' => '2026-03-01', 'amount' => '2'])->assertStatus(422);
-        $this->getJson($url)->assertJsonPath('data.source', 'override')->assertJsonPath('data.amount', '25.000000');
+        $this->postJson("/api/v1/employees/$emp/fare-overrides", ['site_id' => $s, 'effective_from' => '2026-03-01', 'amount' => '2'])->assertCreated();
+        $this->getJson($url)->assertJsonPath('data.source', 'override')->assertJsonPath('data.amount', '2.000000');
         $this->getJson("/api/v1/employees/$emp/fare?site_id=$s&date=2026-02-01")->assertJsonPath('data.source', 'default')->assertJsonPath('data.amount', '40.000000');
 
         $this->getJson("/api/v1/employees/$emp/fare")->assertStatus(422);

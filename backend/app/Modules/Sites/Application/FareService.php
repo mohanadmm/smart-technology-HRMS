@@ -4,12 +4,18 @@ declare(strict_types=1);
 
 namespace App\Modules\Sites\Application;
 
+use App\Modules\Attendance\Domain\Period;
+use App\Modules\Attendance\Infrastructure\PeriodGuard;
+use App\Modules\Employees\Application\EmployeeReach;
+use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Sites\Infrastructure\Eloquent\EmployeeFareOverride;
 use App\Modules\Sites\Infrastructure\Eloquent\Fare;
 use App\Modules\Sites\Infrastructure\Eloquent\Residence;
 use App\Support\Http\Paginates;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /** Residences, residence x site fares and per-employee fare overrides. */
@@ -132,5 +138,56 @@ final class FareService
         }
 
         return $this->row(EmployeeFareOverride::create([...$data, 'employee_id' => $employee->getKey()]));
+    }
+
+    /**
+     * The API write: same (residence, site, effective_from) updates the amount. The importer keeps the strict addFare.
+     *
+     * @param  array{residence_id: string, site_id: string, effective_from: string, amount: string}  $data
+     * @return array<string, mixed>
+     */
+    public function saveFare(array $data, ?string $ownerId): array
+    {
+        // A pair fare is the default of both worker types, so a lock of either refuses it.
+        $this->assertWritable($ownerId, $data['site_id'], $data['effective_from'], EmployeeType::PermanentWorker, EmployeeType::DayLaborer);
+        $key = ['residence_id' => $data['residence_id'], 'site_id' => $data['site_id'], 'effective_from' => $data['effective_from']];
+
+        // ponytail: two first writes of one key in the same instant hit the unique index (500); lock the key if it ever happens
+        return DB::transaction(fn () => $this->row(Fare::updateOrCreate($key, ['amount' => $data['amount']])));
+    }
+
+    /**
+     * @param  array{site_id: string, effective_from: string, amount: string}  $data
+     * @return array<string, mixed>
+     */
+    public function saveOverride(string $employeeId, array $data, ?string $ownerId): array
+    {
+        $date = $data['effective_from'];
+        $employee = Employee::query()->select('employees.*')->selectRaw(Employee::TYPE_ON.' as type_on', [$date])->findOrFail($employeeId);
+        // employee.scope checks reach today; the override must also be in reach on the day it takes effect.
+        if ($ownerId !== null && ! EmployeeReach::reaches($employeeId, $ownerId, $date)) {
+            throw new ModelNotFoundException;
+        }
+        $type = EmployeeType::tryFrom((string) $employee->getAttribute('type_on'));
+        $this->assertWritable($ownerId, $data['site_id'], $date, ...($type === null ? [] : [$type]));
+        $key = ['employee_id' => $employeeId, 'site_id' => $data['site_id'], 'effective_from' => $date];
+
+        return DB::transaction(fn () => $this->row(EmployeeFareOverride::updateOrCreate($key, ['amount' => $data['amount']])));
+    }
+
+    /** Own scope: one of the user's sites, from yesterday (Cairo) on. Every scope: not inside a locked attendance period. */
+    private function assertWritable(?string $ownerId, string $siteId, string $date, EmployeeType ...$types): void
+    {
+        if ($ownerId !== null && ! in_array($siteId, $this->sites->idsManagedBy($ownerId), true)) {
+            throw ValidationException::withMessages(['site_id' => __('errors.fare_site_not_yours')]);
+        }
+        if ($ownerId !== null && $date < now('Africa/Cairo')->subDay()->toDateString()) {
+            throw ValidationException::withMessages(['effective_from' => __('errors.fare_too_early')]);
+        }
+        foreach ($types as $type) {
+            if (PeriodGuard::isLocked(Period::containing($type, $date))) {
+                throw ValidationException::withMessages(['effective_from' => __('errors.fare_period_locked')]);
+            }
+        }
     }
 }
