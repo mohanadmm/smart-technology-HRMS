@@ -1,9 +1,10 @@
-import { MoreHorizontal, UserMinus } from 'lucide-react'
-import { useState } from 'react'
+import { MoreHorizontal, StickyNote, UserMinus } from 'lucide-react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ErrorBanner, isHhmm, localName, type Row, TimeInput } from '@/components/form'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Textarea } from '@/components/ui/input'
 import { useSave } from '@/lib/query'
 import { arrivalDiff, changed, departureDiff, type Draft, type LeaveDayTypes, type Mark, MARKS, MORE, type SiteDayRow } from '@/lib/site-day'
 import { cn } from '@/lib/utils'
@@ -60,6 +61,13 @@ export function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRe
   const arrival = draft?.in_time ?? null
   const late = present && isHhmm(arrival) ? arrivalDiff(arrival, r.shift.start) : null
   const missingOut = present && isHhmm(draft?.in_time ?? null) && !out
+  const [noteOpen, setNoteOpen] = useState(false)
+  const storedNote = r.day.state === 'stored' ? r.day.note : null
+  const noteText = draft?.note !== undefined ? (draft.note ?? '') : (storedNote ?? '')
+  const noteId = useId()
+  // a note goes with a day this site saves: present here or one of the site manager's leave day-types, never a day stored at another
+  // site (its save would be refused; PR #24 review), and not on a departure-only day, where only the departure may change
+  const notable = draft !== null && (present || code !== null) && !r.departure_only
   const remove = async () => {
     setRemoveErr(undefined)
     try {
@@ -132,6 +140,19 @@ export function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRe
           </div>
         ) : <div className="hidden xl:col-span-2 xl:block" />}
       </div>
+      {notable && (
+        <div className="mt-2 min-w-0">
+          <Button type="button" variant="ghost" className="h-auto min-h-11 max-w-full justify-start gap-1.5 px-1 text-[13px] text-muted-foreground" aria-expanded={noteOpen} aria-controls={noteId} onClick={() => setNoteOpen((o) => !o)}>
+            <StickyNote aria-hidden className="shrink-0" />
+            {/* a 500-character note must not push the card wider than a 375 px phone: one line, cut with an ellipsis */}
+            <span className="min-w-0 truncate">{noteText ? t('siteDay.noteShown', { note: noteText }) : t('siteDay.addNote')}</span>
+          </Button>
+          {noteOpen && (
+            <Textarea id={noteId} aria-label={t('siteDay.noteOf', { name })} maxLength={500} rows={2} disabled={off} value={noteText}
+              onChange={(e) => set({ ...draft, note: e.target.value })} className="mt-1" />
+          )}
+        </div>
+      )}
       {removeErr !== undefined && <div className="mt-2"><ErrorBanner err={removeErr} shown={[]} /></div>}
     </li>
   )

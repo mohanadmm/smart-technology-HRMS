@@ -15,6 +15,8 @@ export type SiteDayRow = {
   open_date: string | null
   /** where this site manager can complete that day; null when only HR can (HR's day, or not theirs) */
   open_site_id: string | null
+  /** the day «زي امبارح» copies: the latest day in the 7 before at this site manager's sites or on a leave day-type, Fridays, Saturdays and holidays skipped (P10) */
+  previous?: { date: string; site_id: string | null; leave_code: string | null; in_time: string | null; out_time: string | null } | null
 }
 
 /** One exact path per site and date, so the site tabs, the page and an open day's link share one cache entry. */
@@ -30,8 +32,8 @@ export type Mark = (typeof MARKS)[number]
 /** The rarer leave types behind «⋯»; never annual, casual or unpaid, which need a leave request. */
 export const MORE = ['rest', 'other'] as const
 
-/** What the screen holds for one person before «حفظ اليوم»: the site (a work site or a leave type) and the two times. */
-export type Draft = { site_id: string | null; in_time: string | null; out_time: string | null }
+/** What the screen holds for one person before «حفظ اليوم»: the site (a work site or a leave type), the two times, and a note when typed (undefined: untouched). */
+export type Draft = { site_id: string | null; in_time: string | null; out_time: string | null; note?: string | null }
 export type Drafts = Record<string, Draft>
 
 /** The people whose earlier field day still has no departure: the banner above the list names them. */
@@ -81,12 +83,33 @@ export const checkOutCount = (rows: SiteDayRow[], drafts: Drafts, siteId: string
   return rows.filter((r) => next[r.employee.id] !== drafts[r.employee.id]).length
 }
 
+const noteChanged = (r: SiteDayRow, d: Draft) => d.note !== undefined && (d.note || null) !== (r.day.state === 'stored' ? r.day.note : null)
+
 /** Whether the draft differs from the stored day (only those rows are sent). */
 export function changed(r: SiteDayRow, d: Draft | undefined): boolean {
   if (!d) return false
   const s = stored(r)
-  return !s || s.site_id !== d.site_id || s.in_time !== d.in_time || s.out_time !== d.out_time
+  return !s || s.site_id !== d.site_id || s.in_time !== d.in_time || s.out_time !== d.out_time || noteChanged(r, d)
 }
+
+/**
+ * «زي امبارح»: every editable person with nothing recorded today copies their previous day. A work day at this site becomes present
+ * here from that day's arrival (the departure stays empty until the evening); absent, sick, rest and other stay that leave type;
+ * anything else (a work day at another site, annual, casual, unpaid, or no previous day) stays empty.
+ */
+export function likeYesterday(rows: SiteDayRow[], drafts: Drafts, siteId: string, leave: LeaveDayTypes): Drafts {
+  const next = { ...drafts }
+  for (const r of rows) {
+    const p = r.previous
+    if (!r.can_edit || r.day.state !== 'missing' || drafts[r.employee.id] || !p) continue
+    if (p.leave_code === null && p.site_id === siteId) next[r.employee.id] = { site_id: siteId, in_time: p.in_time ?? r.shift.start, out_time: null }
+    else if (p.leave_code && p.leave_code in leave) next[r.employee.id] = { site_id: leave[p.leave_code as keyof LeaveDayTypes]!, in_time: null, out_time: null }
+  }
+  return next
+}
+
+export const likeYesterdayCount = (rows: SiteDayRow[], drafts: Drafts, siteId: string, leave: LeaveDayTypes) =>
+  Object.keys(likeYesterday(rows, drafts, siteId, leave)).length - Object.keys(drafts).length
 
 /** What is still open on the screen: people with nothing recorded, and present people with no departure. Leave days count as recorded. */
 export function counts(rows: SiteDayRow[], drafts: Drafts, siteId: string) {
@@ -117,7 +140,10 @@ export function saveBody(siteId: string, date: string, rows: SiteDayRow[], draft
     rows: rows.filter((r) => changed(r, drafts[r.employee.id])).map((r) => {
       const d = drafts[r.employee.id]!
       const work = d.site_id === siteId
-      return { employee_id: r.employee.id, version: r.day.version, site_id: d.site_id, in_time: work ? d.in_time : null, out_time: work ? d.out_time : null }
+      return {
+        employee_id: r.employee.id, version: r.day.version, site_id: d.site_id, in_time: work ? d.in_time : null, out_time: work ? d.out_time : null,
+        ...(noteChanged(r, d) && { note: d.note || null }),
+      }
     }),
   }
 }

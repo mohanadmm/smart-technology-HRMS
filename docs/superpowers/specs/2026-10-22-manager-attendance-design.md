@@ -91,7 +91,7 @@ Rules for the row:
 
 **Details panel**
 - **Arrival and leave times** for every field type, in 12-hour form as in the rest of the app **(owner)**.
-  - Lateness and overtime are computed from the times against one **field shift** (08:00–16:00 from settings, with the existing per-employee override), for engineers, permanent workers and day laborers alike **(owner, 2026-10-22)**. Each type keeps its own lateness multiplier.
+  - Lateness and overtime are computed from the times against one **field shift** (08:00–16:00 from settings, with the existing per-employee override), for engineers, permanent workers and day laborers alike **(owner, 2026-10-22)**. *(Superseded 2026-11-04: the field shift is **09:00–16:00**, set by HR in Settings (R19, `docs/calculations.md` §2b).)* Each type keeps its own lateness multiplier.
   - HR can still correct any computed value through the override rule (CLAUDE.md).
   - Engineers' and day laborers' typed minutes remain for imported or historical days, so the October fixtures do not change.
   - This changes `DayRules` and `docs/calculations.md` §2 and §4, in the same PR.

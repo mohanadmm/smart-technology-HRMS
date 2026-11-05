@@ -81,9 +81,11 @@ Each day records: site, arrival and departure, OT minutes, late minutes, minutes
 
 - Arrival/departure default to the field shift on Present (§13). They suggest late = max(0, arrival − shift start) and
   OT = max(0, hours worked − **8** h) as hints, as for permanent workers (§3); the shift is the per-employee shift, else
-  **08:00–17:00** (`worker_shift_start`/`worker_shift_end`), so the default day suggests 60 OT minutes (client question 20).
-  ⚠️ Conflict: the owner set the standard workday at **08:00–16:00** on 2026-11-03 (R19). The setting is still 17:00 since
-  migration `2026_11_02_000001_set_field_shift_end`.
+  the field shift setting (`worker_shift_start`/`worker_shift_end`, §2b). The owner's field shift is **09:00–16:00**
+  (R19, 2026-11-04), which HR sets in Settings at rollout; until then the setting holds **08:00–17:00** (migration
+  `2026_11_02_000001_set_field_shift_end`), where the default day suggests 60 OT minutes (client question 20).
+  ⚠️ At 09:00–16:00 the shift is 7 h but the OT hint still starts after **8** h worked, so up to an hour after the shift end
+  suggests no OT. Confirm with the owner whether OT starts at the shift end or after 8 h.
   HR confirms by entering the minutes; payroll reads only the stored minutes.
 
 - Day extra = OT min × minute rate × **1.5** − chargeable late min × minute rate × the employee's multiplier (§0a; was a flat **1.5**) + outside-Alex min × minute rate
@@ -134,10 +136,10 @@ Applies to engineers, permanent workers and day laborers recorded on the site ma
 Worked example (shift 09:00–16:00, grace 15): arrival 09:25 → 25 late minutes stored, 10 chargeable at payroll; departure 15:00 → 60 minutes early; departure 17:00 → 60 minutes after hours, overtime 0 until HR approves.
 
 ## 3. Permanent workers (عمال مثبتين): 26th → 25th
-Each day records: scheduled in/out (default **08:00–17:00**), actual in/out, site, outside-Alex money, transport (full / half / none), advance. Weekly off **Friday**.
+Each day records: scheduled in/out (default: the field shift, §2b), actual in/out, site, outside-Alex money, transport (full / half / none), advance. Weekly off **Friday**.
 
-- Scheduled in/out are stored on each day; they default to **08:00–17:00** (`worker_shift_start`/`worker_shift_end`) or the pay-row override. Late minutes = max(0, actual in − scheduled in); OT minutes = max(0, time worked − **8** h), as below. Both are shown as hints.
-- ⚠️ Every default Present stores actual in/out 08:00–17:00 (§13), and permanent workers' OT is computed from the times, so each default day pays **60 OT minutes** unless HR edits the times (client question 20).
+- Scheduled in/out are stored on each day; they default to the field shift setting (`worker_shift_start`/`worker_shift_end`: **09:00–16:00** once HR sets it, §2b; seeded **08:00–17:00**) or the pay-row override. Late minutes = max(0, actual in − scheduled in); OT minutes = max(0, time worked − **8** h), as below. Both are shown as hints.
+- ⚠️ While the setting is still 08:00–17:00, every default Present stores actual in/out 08:00–17:00 (§13), and permanent workers' OT is computed from the times, so each default day pays **60 OT minutes** unless HR edits the times (client question 20). At 09:00–16:00 a default day is 7 h and pays none; see the OT question in §2.
 - ⚠️ Late minutes do not wrap around midnight: scheduled 00:00 with arrival 23:50 the day before gives 1,430 late minutes; scheduled 23:50 with arrival 00:10 gives 0. Must a scheduled start that crosses midnight wrap?
 
 - Hours worked = actual out − actual in. If out is earlier than in, the shift crossed midnight: add 24 h.

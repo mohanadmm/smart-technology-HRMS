@@ -23,6 +23,7 @@ use App\Modules\Sites\Domain\LeaveCode;
 use App\Modules\Sites\Domain\SiteKind;
 use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
 
 /**
  * The site manager's day at one of their sites (design Part 2): the site's workers on that date, then the manager's engineers,
@@ -70,7 +71,7 @@ final class SiteDay
      * - hr_day: HR recorded it, or an approved request wrote it; only HR changes it (owner, 2026-11-04);
      * - open_day: an earlier field day has an arrival and no departure. `open_date` names it, and `open_site_id` is where the site
      *   manager can complete it; null when they cannot (HR's day, or not theirs), and then HR completes it.
-     * `leave_day_types` are the leave day-types a site manager may store (P11), by code.
+     * `previous` is the day «زي امبارح» copies (P10). `leave_day_types` are the leave day-types a site manager may store (P11), by code.
      *
      * @return array{site: array{id: string, name_ar: string, name_en: ?string}, date: string, today: string, leave_day_types: array<string, string>, rows: list<array<string, mixed>>}
      */
@@ -81,13 +82,14 @@ final class SiteDay
         $window = $this->windowAllows($date, $settings);
         $locked = [];
         $open = $this->openDays(array_map(fn (array $l) => $l[0], $listed), $date, $managerId);
+        $previous = $this->previousDays(array_map(fn (array $l) => (string) $l[0]['id'], $listed), $date, $managerId);
 
         return [
             'site' => ['id' => (string) $site->getKey(), 'name_ar' => (string) $site->name_ar, 'name_en' => $site->name_en],
             'date' => $date,
             'today' => EffectiveDays::today(),
             'leave_day_types' => $this->managerLeaveDayTypes(),
-            'rows' => array_map(function (array $l) use ($days, $date, $siteId, $settings, $window, $open, &$locked): array {
+            'rows' => array_map(function (array $l) use ($days, $date, $siteId, $settings, $window, $open, $previous, &$locked): array {
                 [$e, $section] = $l;
                 $day = $days[$e['id']][$date];
                 $type = (string) $day['type'];
@@ -111,6 +113,7 @@ final class SiteDay
                     'departure_only' => $whyNot === null && $departureOnly,
                     'open_date' => $open[$e['id']]['date'] ?? null,
                     'open_site_id' => $open[$e['id']]['site_id'] ?? null,
+                    'previous' => $previous[$e['id']] ?? null,
                 ];
             }, $listed),
         ];
@@ -260,6 +263,44 @@ final class SiteDay
     private static function hrDay(array $day): bool
     {
         return $day['state'] === 'stored' && $day['source'] !== 'manager';
+    }
+
+    /**
+     * «زي امبارح» (P10): per employee, the latest day in the 7 before $date at one of this site manager's sites or on a leave day-type,
+     * skipping Friday, Saturday and official holidays. A day at another manager's site never shows (PR #24 review: a worker HR moved
+     * here today would show their week at the other site), and a day of request-only leave (annual, casual, unpaid) gives nothing to
+     * copy: those days need a request.
+     *
+     * @param  list<string>  $employeeIds
+     * @return array<string, array{date: string, site_id: ?string, leave_code: ?string, in_time: ?string, out_time: ?string}>
+     */
+    private function previousDays(array $employeeIds, string $date, string $managerId): array
+    {
+        if ($employeeIds === []) {
+            return [];
+        }
+        $from = (new \DateTimeImmutable($date))->modify('-7 days')->format('Y-m-d');
+        $off = [LeaveCode::Friday->value, LeaveCode::Saturday->value, LeaveCode::OfficialHoliday->value];
+        $mine = $this->sites->idsManagedBy($managerId);
+        $rows = DB::table('attendance_days as d')->join('sites as s', 's.id', '=', 'd.site_id')
+            ->whereNull('d.deleted_at')->whereIn('d.employee_id', $employeeIds)->where('d.date', '>=', $from)->where('d.date', '<', $date)
+            ->where(fn ($q) => $q->whereIn('d.site_id', $mine)->orWhere(fn ($l) => $l->where('s.kind', SiteKind::Leave->value)->whereNotIn('s.leave_code', $off)))
+            ->selectRaw('distinct on (d.employee_id) d.employee_id, d.date, d.site_id, s.leave_code, d.in_time, d.out_time')
+            ->orderBy('d.employee_id')->orderByDesc('d.date')->get();
+        $requestOnly = [LeaveCode::Annual->value, LeaveCode::Casual->value, LeaveCode::Unpaid->value];
+        $hhmm = fn (?string $t) => $t === null ? null : substr($t, 0, 5);
+        $out = [];
+        foreach ($rows as $r) {
+            if (in_array($r->leave_code, $requestOnly, true)) {
+                continue;
+            }
+            $out[(string) $r->employee_id] = [
+                'date' => substr((string) $r->date, 0, 10), 'site_id' => (string) $r->site_id,
+                'leave_code' => $r->leave_code, 'in_time' => $hhmm($r->in_time), 'out_time' => $hhmm($r->out_time),
+            ];
+        }
+
+        return $out;
     }
 
     /**
