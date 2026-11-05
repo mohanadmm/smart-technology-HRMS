@@ -39,10 +39,15 @@ final class EmployeeRoster
     private const TYPE_IN_YEAR = '(select t.type from employee_type_changes t where t.employee_id = employees.id and t.deleted_at is null
         and t.effective_from <= greatest(employees.hire_date, least(?::date, employees.termination_date)) order by t.effective_from desc limit 1)';
 
-    /** @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}} */
-    public function ofType(EmployeeType $type, string $from, string $to, int $perPage, int $page, ?string $managedBy = null): array
+    /**
+     * $ids, when set, narrows to those employees (an empty list gives none).
+     *
+     * @param  array<string>|null  $ids
+     * @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}}
+     */
+    public function ofType(EmployeeType $type, string $from, string $to, int $perPage, int $page, ?string $managedBy = null, ?array $ids = null): array
     {
-        return $this->page($this->employedAs($type, $from, $to, $managedBy), $perPage, $page);
+        return $this->page($this->employedAs($type, $from, $to, $managedBy)->when($ids !== null, fn (Builder $q) => $q->whereIn('id', (array) $ids)), $perPage, $page);
     }
 
     /**

@@ -108,15 +108,14 @@ test('the header shows the notification bell before the account menu', async () 
   expect(bell.compareDocumentPosition(profile) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })
 
-test('a manager lands on /site-day', async () => {
+test('a manager lands on /employees, the first item they may open', async () => {
   localStorage.setItem('hrms.auth.token.v1', 't'.repeat(64))
   mockFetch({
     'GET /api/v1/auth/me': () => json(200, { data: me(['attendance.record.own', 'employee.view.own', 'site.view.own']) }),
-    'GET /api/v1/sites': () => json(200, { data: [], meta: { pagination: { ...pagination, total: 0 } } }),
+    'GET /api/v1/employees': () => json(200, { data: [], meta: { pagination } }),
   })
   renderApp('/')
-  expect(await screen.findByText('لا توجد مواقع مسندة إليك. تواصل مع الموارد البشرية.')).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: 'حضور الموقع' })).toHaveAttribute('aria-current', 'page')
+  await waitFor(() => expect(screen.getByRole('link', { name: 'الموظفون' })).toHaveAttribute('aria-current', 'page'))
 })
 
 const developer = { ...me(['user.view.all', 'user.impersonate.all']), id: 'u9', name: 'يوسف', role: { id: 'r9', slug: 'developer', name: 'Developer', name_ar: 'المطوّر' } }
@@ -149,4 +148,34 @@ test('while viewing as an account a banner names it, and Return swaps back to th
   expect(end).toHaveBeenCalledOnce()
   expect(localStorage.getItem('hrms.auth.token.v1')).toBe('d'.repeat(64))
   await waitFor(() => expect(screen.getByRole('link', { name: 'حسابات المستخدمين' })).toHaveAttribute('aria-current', 'page')) // the developer's own landing page
+})
+
+const ALL_NAV = ['employee.view.all', 'attendance.view.all', 'attendance.record.all', 'leave.view.all', 'employee.approve_wage.all', 'fare.manage.all']
+test('the HR group lists employees, attendance, site day, leave, wage proposals, then team fares; Settings follows', async () => {
+  signedIn(ALL_NAV)
+  renderApp('/employees')
+  const nav = await screen.findByRole('navigation', { name: 'القائمة الرئيسية' })
+  await within(nav).findByRole('link', { name: 'الموظفون' })
+  expect(within(nav).getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual(['/employees', '/attendance', '/site-day', '/leave', '/wage-proposals', '/team-fares', '/settings'])
+})
+
+const MANAGER = ['employee.view.own', 'site.view.own', 'attendance.record.own', 'leave.view.own', 'leave.request.own', 'employee.crew.own', 'employee.propose_laborer.own']
+test.each(['/settings', '/wage-proposals', '/console/accounts', '/console/roles', '/console/audit', '/console/logs', '/employees/new'])('a site manager opening %s by URL sees the not-found page', async (path) => {
+  signedIn(MANAGER)
+  renderApp(path)
+  expect(await screen.findByRole('heading', { name: 'الصفحة غير موجودة' })).toBeInTheDocument()
+})
+
+test('a site manager has no Settings item in the nav', async () => {
+  signedIn(MANAGER)
+  renderApp('/employees')
+  const nav = await screen.findByRole('navigation', { name: 'القائمة الرئيسية' })
+  await within(nav).findByRole('link', { name: 'الموظفون' })
+  expect(within(nav).queryByRole('link', { name: 'الإعدادات' })).toBeNull()
+})
+
+test('the Settings page opens for a user with any of its abilities', async () => {
+  signedIn(['attendance.view.all'])
+  renderApp('/settings')
+  expect(await screen.findByRole('heading', { level: 1, name: 'الإعدادات' })).toBeInTheDocument()
 })
