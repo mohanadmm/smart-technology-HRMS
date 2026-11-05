@@ -12,6 +12,7 @@ use App\Modules\Identity\Domain\Authentication\ViewAs;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
 use App\Modules\Identity\Infrastructure\Eloquent\UserSession;
 use App\Modules\Identity\Infrastructure\RolePermissions;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -45,7 +46,10 @@ final class StartViewAs
 
         return DB::transaction(function () use ($developer, $developerSessionId, $target, $reason, $ip, $userAgent): array {
             $now = now();
-            UserSession::whereKey($developerSessionId)->where('user_id', $developer->id)->delete();
+            // A concurrent start from the same session finds it gone and gets 401, so one session yields one view-as.
+            if (UserSession::whereKey($developerSessionId)->where('user_id', $developer->id)->delete() === 0) {
+                throw new AuthenticationException;
+            }
             $viewAs = new ViewAs((string) $developer->id, $developer->name, ViewAs::expiresAt($now));
             $token = SessionToken::issue();
             $session = $target->sessions()->create([
