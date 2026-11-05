@@ -24,13 +24,13 @@ final class AuditLog
         $userAgent = $request->userAgent();
         // hasUser(): a save inside the bearer guard must not re-enter it.
         $signedIn = Auth::hasUser() ? Auth::user() : null;
-        $viewed = $actorId === null && $signedIn instanceof User && $signedIn->viewAs !== null ? $signedIn : null;
+        $target = $actorId === null && $signedIn instanceof User && $signedIn->viewAs !== null ? $signedIn : null;
 
         DB::table('audit_log')->insert([
             'id' => (string) Str::uuid7(),
-            'user_id' => $actorId ?? $viewed?->viewAs->byId ?? $signedIn?->getAuthIdentifier(),
+            'user_id' => $actorId ?? $target?->viewAs->byId ?? $signedIn?->getAuthIdentifier(),
             // Only when set: migrations that ran before the column existed write audit rows too.
-            ...($viewed === null ? [] : ['on_behalf_of' => (string) $viewed->id]),
+            ...($target === null ? [] : ['on_behalf_of' => (string) $target->id]),
             'event' => $event,
             'entity_type' => $entityType,
             'entity_id' => $entityId,

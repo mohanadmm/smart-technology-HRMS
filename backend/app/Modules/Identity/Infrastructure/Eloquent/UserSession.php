@@ -35,14 +35,14 @@ class UserSession extends Model
     }
 
     /** Soft-deletes this view-as session and records it as the developer; false (and no row) when it had already ended. */
-    public function endViewAs(ViewAsEnding $by, ?string $developerSessionId = null): bool
+    public function endViewAs(ViewAsEnding $ending, ?string $developerSessionId = null): bool
     {
-        return DB::transaction(function () use ($by, $developerSessionId): bool {
+        return DB::transaction(function () use ($ending, $developerSessionId): bool {
             if (self::whereKey($this->id)->delete() === 0) {
                 return false;
             }
             AuditLog::record(IdentityAuditEvents::VIEW_AS_ENDED, 'users', (string) $this->user_id, ['session_id' => (string) $this->id],
-                ['ended_by' => $by->value, ...($developerSessionId === null ? [] : ['session_id' => $developerSessionId])], (string) $this->impersonator_id);
+                ['ended_by' => $ending->value, ...($developerSessionId === null ? [] : ['session_id' => $developerSessionId])], (string) $this->impersonator_id);
 
             return true;
         });
