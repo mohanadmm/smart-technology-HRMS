@@ -14,6 +14,7 @@ use App\Modules\Notifications\Application\Notifier;
 use App\Modules\Sites\Infrastructure\Eloquent\EmployeeFareOverride;
 use App\Modules\Sites\Infrastructure\Eloquent\Fare;
 use App\Modules\Sites\Infrastructure\Eloquent\Residence;
+use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use App\Support\Http\Paginates;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,10 +27,13 @@ final class FareService
 {
     use Paginates;
 
+    private const HOME_SITE = '(select s.site_id from employee_site_assignments s where s.employee_id = employees.id and s.deleted_at is null and s.effective_from <= ?::date order by s.effective_from desc limit 1)';
+
     public function __construct(
         private readonly SiteService $sites,
         private readonly PermissionHolders $holders,
         private readonly Notifier $notifier,
+        private readonly FareLookup $lookup,
     ) {}
 
     /**
@@ -145,6 +149,60 @@ final class FareService
         }
 
         return $this->row(EmployeeFareOverride::create([...$data, 'employee_id' => $employee->getKey()]));
+    }
+
+    /**
+     * A team lead's team on a date (EmployeeReach, employed on the date) with the fare in force: workers at their home site;
+     * engineers by their overrides at the manager's sites, since they never take the residence x site default.
+     * ponytail: unpaginated with per-row lookups (~3 queries a worker); a team is tens of rows, one joined query if one passes a few hundred
+     *
+     * @return array{sites: list<array{id: string, name: string}>, rows: list<array<string, mixed>>}
+     */
+    public function team(string $managerId, string $date): array
+    {
+        $siteIds = $this->sites->idsManagedBy($managerId);
+        $sites = Site::whereKey($siteIds)->orderBy('name_ar')->get()->map(fn (Site $s) => ['id' => (string) $s->getKey(), 'name' => (string) $s->name_ar])->all();
+        $siteNames = array_column($sites, 'name', 'id');
+        $employees = EmployeeReach::apply(Employee::query()->select('employees.*')
+            ->selectRaw(Employee::TYPE_ON.' as type_on', [$date])
+            ->selectRaw(self::HOME_SITE.' as home_site_id', [$date]), $managerId, $date)
+            ->where(fn (Builder $q) => $q->whereNull('hire_date')->orWhere('hire_date', '<=', $date))
+            ->where(fn (Builder $q) => $q->whereNull('termination_date')->orWhere('termination_date', '>=', $date))
+            ->orderBy('code')->get();
+        $residences = Residence::whereKey($employees->pluck('residence_id')->filter()->unique()->values()->all())->pluck('name_ar', 'id')->all();
+
+        $rows = $employees->map(function (Employee $e) use ($date, $siteIds, $siteNames, $residences): array {
+            $type = (string) $e->getAttribute('type_on');
+            $residenceId = $e->residence_id === null ? null : (string) $e->residence_id;
+            $row = [
+                'employee_id' => (string) $e->getKey(), 'code' => (int) $e->code, 'name' => (string) $e->name_ar, 'type' => $type,
+                'residence' => $residenceId === null ? null : ['id' => $residenceId, 'name' => (string) $residences[$residenceId]],
+                'site' => null, 'amount' => null, 'source' => 'none', 'default_amount' => null, 'overrides' => [],
+            ];
+            if ($type === EmployeeType::Engineer->value) {
+                $inForce = EmployeeFareOverride::where('employee_id', $e->getKey())->whereIn('site_id', $siteIds)->where('effective_from', '<=', $date)
+                    ->orderByDesc('effective_from')->get()->unique('site_id')->keyBy('site_id');
+                foreach (array_keys($siteNames) as $siteId) {
+                    if (isset($inForce[$siteId])) {
+                        $row['overrides'][] = ['site_id' => $siteId, 'amount' => (string) $inForce[$siteId]->amount];
+                    }
+                }
+
+                return $row;
+            }
+            $siteId = (string) $e->getAttribute('home_site_id');
+            $fare = $this->lookup->describe((string) $e->getKey(), $siteId, $date);
+
+            return [
+                ...$row,
+                'site' => ['id' => $siteId, 'name' => $siteNames[$siteId]],
+                'amount' => in_array($fare['source'], ['override', 'default'], true) ? $fare['amount'] : null,
+                'source' => $fare['source'],
+                'default_amount' => $fare['default_amount'],
+            ];
+        })->all();
+
+        return ['sites' => array_values($sites), 'rows' => array_values($rows)];
     }
 
     /**

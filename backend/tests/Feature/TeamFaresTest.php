@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Modules\Sites\Infrastructure\Eloquent\EmployeeFareOverride;
 use App\Modules\Sites\Infrastructure\Eloquent\Fare;
 use App\Modules\Sites\Infrastructure\Eloquent\Residence;
+use App\Modules\Employees\Application\EmployeeService;
 use App\Modules\Identity\Infrastructure\Eloquent\Permission;
 use App\Modules\Identity\Infrastructure\Eloquent\Role;
 use App\Modules\Notifications\Infrastructure\Eloquent\Notification;
@@ -299,5 +300,73 @@ class TeamFaresTest extends TestCase
         ksort($expected);
         ksort($actual);
         $this->assertSame($expected, $actual);
+    }
+
+    public function test_team_fares_lists_the_team(): void
+    {
+        [$s1, $s2, $s3] = [$this->workSite('S-1'), $this->workSite('S-2'), $this->workSite('S-3')];
+        [$r, $r2] = [$this->residence('R-1'), $this->residence('R-2')];
+        $this->fare($r, $s1, '2026-01-01', '35');
+        $this->signIn('hr');
+        $lead = $this->managerOf($s1, $s3);
+        $other = $this->managerOf($s2);
+        $homed = function (string $type, ?string $residence, string $site, array $more = []): string {
+            $id = $this->employee($type, '2026-01-01', ['residence_id' => $residence, ...$more]);
+            $this->homeSite($id, $site, '2026-01-01');
+
+            return $id;
+        };
+        $byDefault = $homed('permanent_worker', $r, $s1);
+        $overridden = $homed('day_laborer', $r, $s1);
+        EmployeeFareOverride::create(['employee_id' => $overridden, 'site_id' => $s1, 'effective_from' => '2026-01-01', 'amount' => '30']);
+        $homed('day_laborer', null, $s1);
+        $homed('permanent_worker', $r2, $s1);
+        $engineer = $this->employee('engineer', '2026-01-01', ['residence_id' => $r]);
+        app(EmployeeService::class)->assignManager($engineer, ['manager_id' => $lead->id, 'effective_from' => '2026-01-01']);
+        EmployeeFareOverride::create(['employee_id' => $engineer, 'site_id' => $s1, 'effective_from' => '2026-01-01', 'amount' => '50']);
+        EmployeeFareOverride::create(['employee_id' => $engineer, 'site_id' => $s2, 'effective_from' => '2026-01-01', 'amount' => '60']);
+        $homed('permanent_worker', $r, $s2);
+        $homed('permanent_worker', $r, $s1, ['termination_date' => '2026-10-31']);
+
+        $this->actingAs($lead, 'api');
+        $res = $this->getJson('/api/v1/team-fares')->assertOk()
+            ->assertJsonPath('data.sites', [['id' => $s1, 'name' => 'S-1'], ['id' => $s3, 'name' => 'S-3']])
+            ->assertJsonCount(5, 'data.rows')
+            ->assertJsonPath('data.rows.0.employee_id', $byDefault)
+            ->assertJsonPath('data.rows.0.type', 'permanent_worker')
+            ->assertJsonPath('data.rows.0.residence', ['id' => $r, 'name' => 'R-1'])
+            ->assertJsonPath('data.rows.0.site', ['id' => $s1, 'name' => 'S-1'])
+            ->assertJsonPath('data.rows.0.amount', '35.000000')
+            ->assertJsonPath('data.rows.0.source', 'default')
+            ->assertJsonPath('data.rows.0.default_amount', '35.000000')
+            ->assertJsonPath('data.rows.0.overrides', [])
+            ->assertJsonPath('data.rows.1.employee_id', $overridden)
+            ->assertJsonPath('data.rows.1.amount', '30.000000')
+            ->assertJsonPath('data.rows.1.source', 'override')
+            ->assertJsonPath('data.rows.1.default_amount', '35.000000')
+            ->assertJsonPath('data.rows.2.residence', null)
+            ->assertJsonPath('data.rows.2.amount', null)
+            ->assertJsonPath('data.rows.2.source', 'no_residence')
+            ->assertJsonPath('data.rows.3.residence.name', 'R-2')
+            ->assertJsonPath('data.rows.3.amount', null)
+            ->assertJsonPath('data.rows.3.source', 'none')
+            ->assertJsonPath('data.rows.3.default_amount', null)
+            ->assertJsonPath('data.rows.4.employee_id', $engineer)
+            ->assertJsonPath('data.rows.4.type', 'engineer')
+            ->assertJsonPath('data.rows.4.site', null)
+            ->assertJsonPath('data.rows.4.amount', null)
+            ->assertJsonPath('data.rows.4.source', 'none')
+            ->assertJsonPath('data.rows.4.default_amount', null)
+            ->assertJsonPath('data.rows.4.overrides', [['site_id' => $s1, 'amount' => '50.000000']]);
+        $this->assertIsInt($res->json('data.rows.0.code'));
+        $this->assertSame('Worker-1', $res->json('data.rows.0.name'));
+        $this->getJson("/api/v1/team-fares?manager_id={$other->id}")->assertOk()->assertJsonCount(5, 'data.rows');
+
+        $this->signIn('hr');
+        $this->getJson('/api/v1/team-fares')->assertStatus(422)->assertJsonPath('error.details.0.field', 'manager_id');
+        $this->getJson("/api/v1/team-fares?manager_id={$lead->id}&date=2026-11-05")->assertOk()->assertJsonCount(5, 'data.rows')
+            ->assertJsonPath('data.rows.4.employee_id', $engineer);
+        $this->signIn('ceo');
+        $this->getJson("/api/v1/team-fares?manager_id={$lead->id}")->assertForbidden();
     }
 }

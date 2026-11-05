@@ -11,6 +11,7 @@ use App\Modules\Sites\Application\SiteRules;
 use App\Support\Http\ApiEnvelope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 final class FareController
 {
@@ -49,5 +50,17 @@ final class FareController
         $q = $request->validate(['site_id' => SiteRules::fareOverride()['site_id'], 'date' => ['sometimes', 'date_format:Y-m-d']]);
 
         return ApiEnvelope::single($request, $this->lookup->describe($employee, $q['site_id'], $q['date'] ?? now('Africa/Cairo')->toDateString()));
+    }
+
+    public function team(Request $request): JsonResponse
+    {
+        $ownerId = RequestScope::ownerId($request);
+        $q = $request->validate([
+            'date' => ['sometimes', 'date_format:Y-m-d'],
+            'manager_id' => [Rule::requiredIf($ownerId === null), 'uuid'],
+        ]);
+
+        // An own-scope user always gets their own team, whatever manager_id says.
+        return ApiEnvelope::single($request, $this->fares->team($ownerId ?? $q['manager_id'], $q['date'] ?? now('Africa/Cairo')->toDateString()));
     }
 }
