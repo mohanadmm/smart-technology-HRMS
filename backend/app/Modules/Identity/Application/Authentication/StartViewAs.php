@@ -6,7 +6,6 @@ namespace App\Modules\Identity\Application\Authentication;
 
 use App\Modules\Audit\Infrastructure\AuditLog;
 use App\Modules\Identity\Domain\Authentication\IdentityAuditEvents;
-use App\Modules\Identity\Domain\Authentication\LockoutPolicy;
 use App\Modules\Identity\Domain\Authentication\SessionToken;
 use App\Modules\Identity\Domain\Authentication\ViewAs;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
@@ -37,7 +36,7 @@ final class StartViewAs
             $target->is($developer) => 'self',
             RolePermissions::holds((string) $target->role_id, ViewAs::ABILITY) => 'not_allowed',
             // A locked target's session would be refused on the next request, signing the developer out.
-            ! $target->is_active || LockoutPolicy::isLocked($target->locked_until, now()) => 'inactive',
+            ! $target->canSignIn(now()) => 'inactive',
             default => null,
         };
         if ($refusal !== null) {

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Modules\Identity\Infrastructure\Eloquent;
 
+use App\Modules\Identity\Domain\Authentication\LockoutPolicy;
 use App\Modules\Identity\Domain\Authentication\ViewAs;
 use App\Support\Database\HasStandardColumns;
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -33,5 +35,11 @@ class User extends Authenticatable
     public function sessions(): HasMany
     {
         return $this->hasMany(UserSession::class);
+    }
+
+    /** Active and not locked; login checks these one by one, in its own order. */
+    public function canSignIn(DateTimeInterface $now): bool
+    {
+        return $this->is_active && ! LockoutPolicy::isLocked($this->locked_until, $now);
     }
 }

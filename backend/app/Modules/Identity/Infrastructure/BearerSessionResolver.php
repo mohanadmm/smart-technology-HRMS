@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Modules\Identity\Infrastructure;
 
 use App\Modules\Identity\Domain\Authentication\IdleTimeout;
-use App\Modules\Identity\Domain\Authentication\LockoutPolicy;
 use App\Modules\Identity\Domain\Authentication\SessionAttribute;
 use App\Modules\Identity\Domain\Authentication\SessionToken;
 use App\Modules\Identity\Domain\Authentication\ViewAs;
@@ -55,7 +54,7 @@ final class BearerSessionResolver
         }
 
         $user = $session->user;
-        if ($user === null || ! $user->is_active || LockoutPolicy::isLocked($user->locked_until, $now)) {
+        if ($user === null || ! $user->canSignIn($now)) {
             return null;
         }
         $user->viewAs = $viewAs;
@@ -76,8 +75,7 @@ final class BearerSessionResolver
             ($session->expires_at ?? throw new LogicException('A view-as session always has expires_at.'))->toDateTimeImmutable());
         $ending = match (true) {
             $viewAs->hasExpired($now) => ViewAsEnding::Expired,
-            $by === null || ! $by->is_active || LockoutPolicy::isLocked($by->locked_until, $now)
-                || ! RolePermissions::holds((string) $by->role_id, ViewAs::ABILITY) => ViewAsEnding::Revoked,
+            $by === null || ! $by->canSignIn($now) || ! RolePermissions::holds((string) $by->role_id, ViewAs::ABILITY) => ViewAsEnding::Revoked,
             default => null,
         };
         if ($ending !== null) {
