@@ -23,7 +23,6 @@ final class FareController
             'site_id' => ['sometimes', 'uuid'],
             'date' => ['sometimes', 'date_format:Y-m-d'],
             'manager_id' => ['sometimes', 'uuid'],
-            'changed_since' => ['sometimes', 'date_format:Y-m-d'],
             'per_page' => ['sometimes', 'integer', 'min:1'],
         ]), RequestScope::ownerId($request));
 
@@ -34,14 +33,14 @@ final class FareController
     {
         $data = $request->validate(SiteRules::fare());
 
-        return ApiEnvelope::single($request, $this->fares->saveFare($data, RequestScope::ownerId($request)), 201);
+        return ApiEnvelope::single($request, $this->fares->saveFare($data), 201);
     }
 
     public function override(Request $request, string $employee): JsonResponse
     {
         $data = $request->validate(SiteRules::fareOverride());
 
-        return ApiEnvelope::single($request, $this->fares->saveOverride($employee, $data, RequestScope::ownerId($request)), 201);
+        return ApiEnvelope::single($request, $this->fares->saveOverride($employee, $data), 201);
     }
 
     public function show(Request $request, string $employee): JsonResponse

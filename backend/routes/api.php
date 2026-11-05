@@ -85,7 +85,7 @@ Route::middleware('auth')->group(function (): void {
         Route::post('/', 'store')->middleware('permission:fare.manage');
     });
 
-    Route::get('team-fares', [FareController::class, 'team'])->middleware('permission:fare.manage');
+    Route::get('team-fares', [FareController::class, 'team'])->middleware('permission:employee.view');
 
     Route::prefix('attendance')->controller(AttendanceController::class)->group(function (): void {
         Route::get('period', 'period')->middleware('permission:attendance.view');

@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-// Team leads set the transport fare for their own sites; HR and the developer for any (owner, 2026-11-05, option A).
+// HR and the developer set every transport fare; team leads only read their team's (owner, 2026-11-05, option C).
 // `all` goes to every role that holds site.manage.all now, so a role the developer renamed or added keeps working.
 return new class extends Migration
 {
@@ -12,17 +12,11 @@ return new class extends Migration
     {
         $now = now();
         $all = $this->insert('all', $now);
-        $own = $this->insert('own', $now);
 
         $managers = DB::table('role_permissions as rp')->join('permissions as p', 'p.id', '=', 'rp.permission_id')
             ->where(['p.resource' => 'site', 'p.action' => 'manage', 'p.scope' => 'all'])->whereNull('p.deleted_at')
             ->pluck('rp.role_id');
         DB::table('role_permissions')->insert($managers->map(fn ($roleId) => ['role_id' => $roleId, 'permission_id' => $all])->all());
-
-        $teamLead = DB::table('roles')->where('slug', 'manager')->value('id');
-        if ($teamLead !== null) {
-            DB::table('role_permissions')->insert(['role_id' => $teamLead, 'permission_id' => $own]);
-        }
     }
 
     public function down(): void

@@ -3,8 +3,6 @@
 namespace Tests\Feature;
 
 use App\Modules\Employees\Application\EmployeeService;
-use App\Modules\Identity\Infrastructure\Eloquent\Permission;
-use App\Modules\Identity\Infrastructure\Eloquent\Role;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
 use App\Modules\Notifications\Infrastructure\Eloquent\Notification;
 use App\Modules\Sites\Infrastructure\Eloquent\EmployeeFareOverride;
@@ -83,7 +81,7 @@ class TeamFaresTest extends TestCase
         $this->assertSame(['40.000000', '20.000000', '30.000000', '10.000000'], array_column($this->getJson('/api/v1/fares')->assertOk()->json('data'), 'amount'));
     }
 
-    public function test_fares_carry_set_by_and_previous_amount(): void
+    public function test_fares_carry_set_by(): void
     {
         $s1 = $this->workSite('S-1');
         $r = $this->residence();
@@ -94,11 +92,10 @@ class TeamFaresTest extends TestCase
         $this->getJson('/api/v1/fares?date=2026-11-05')->assertOk()
             ->assertJsonPath('data.0.set_by.id', $hr->id)
             ->assertJsonPath('data.0.set_by.name', $hr->name)
-            ->assertJsonPath('data.0.previous_amount', '30.000000')
+            ->assertJsonMissingPath('data.0.previous_amount')
             ->assertJsonMissingPath('data.0.set_by_id');
         $this->getJson('/api/v1/fares?date=2026-10-15')->assertOk()
-            ->assertJsonPath('data.0.set_by', null)
-            ->assertJsonPath('data.0.previous_amount', null);
+            ->assertJsonPath('data.0.set_by', null);
     }
 
     public function test_starting_fares_read_as_from_excel(): void
@@ -115,21 +112,6 @@ class TeamFaresTest extends TestCase
         $this->getJson('/api/v1/fares?date=2026-11-05')->assertOk()->assertJsonPath('data.0.set_by', null);
         $this->assertNull(EmployeeFareOverride::find($override)?->created_by);
         $this->assertNull(EmployeeFareOverride::find($override)?->updated_by);
-    }
-
-    public function test_changed_since_is_a_cairo_date(): void
-    {
-        $s1 = $this->workSite('S-1');
-        $r = $this->residence();
-        $this->cairo('2026-10-20 10:00');
-        $this->fare($r, $s1, '2026-01-01', '30');
-        $this->cairo('2026-11-05 00:30');
-        $late = $this->fare($r, $s1, '2026-11-05', '35');
-        $this->cairo('2026-11-05 10:00');
-
-        $this->signIn('hr');
-        $this->getJson('/api/v1/fares?changed_since=2026-11-05')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $late);
-        $this->getJson('/api/v1/fares?changed_since=05-11-2026')->assertStatus(422);
     }
 
     private function describe(string $employee, string $site): TestResponse
@@ -168,19 +150,6 @@ class TeamFaresTest extends TestCase
         return $this->postJson('/api/v1/fares', $body);
     }
 
-    public function test_a_team_lead_writes_only_their_sites(): void
-    {
-        [$s1, $s2, $r, $lead, $worker] = $this->team();
-        $this->actingAs($lead, 'api');
-
-        $this->postFare(['residence_id' => $r, 'site_id' => $s2, 'effective_from' => '2026-11-05', 'amount' => '30'])
-            ->assertStatus(422)->assertJsonPath('error.details.0.field', 'site_id');
-        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertCreated();
-        $this->postJson("/api/v1/employees/{$worker}/fare-overrides", ['site_id' => $s2, 'effective_from' => '2026-11-05', 'amount' => '30'])
-            ->assertStatus(422)->assertJsonPath('error.details.0.field', 'site_id');
-        $this->postJson("/api/v1/employees/{$worker}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertCreated();
-    }
-
     public function test_a_team_lead_reads_an_employee_fare_only_at_their_sites(): void
     {
         [$s1, $s2, , $lead] = $this->team();
@@ -192,19 +161,7 @@ class TeamFaresTest extends TestCase
         $this->describe($laborer, $s1)->assertJsonPath('data.source', 'no_residence')->assertJsonPath('data.amount', '0.000000');
     }
 
-    public function test_a_team_lead_cannot_date_before_yesterday(): void
-    {
-        [$s1, , $r, $lead] = $this->team();
-        $this->actingAs($lead, 'api');
-
-        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-03', 'amount' => '30'])
-            ->assertStatus(422)->assertJsonPath('error.details.0.field', 'effective_from');
-        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-04', 'amount' => '30'])->assertCreated();
-        $this->signIn('hr');
-        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-01-01', 'amount' => '30'])->assertCreated();
-    }
-
-    public function test_a_locked_period_refuses_every_scope(): void
+    public function test_a_locked_period_refuses_a_write(): void
     {
         [$s1, , $r, , $worker] = $this->team();
         $laborer = $this->employee('day_laborer', '2026-01-01', ['residence_id' => $r]);
@@ -215,22 +172,51 @@ class TeamFaresTest extends TestCase
             ->assertStatus(422)->assertJsonPath('error.details.0.field', 'effective_from');
         $this->postJson("/api/v1/employees/{$laborer}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])
             ->assertStatus(422)->assertJsonPath('error.details.0.field', 'effective_from');
+        $this->assertSame([0, 0], [Fare::count(), EmployeeFareOverride::count()]);
         $this->postJson("/api/v1/employees/{$worker}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertCreated();
+        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-10-06', 'amount' => '30'])->assertCreated();
     }
 
-    public function test_reach_is_checked_on_the_effective_date(): void
+    public function test_a_team_lead_reads_their_team_and_writes_nothing(): void
     {
-        [$s1, $s2, , $lead] = $this->team();
-        $moved = $this->employee('day_laborer');
-        $this->homeSite($moved, $s2, '2026-01-01');
-        $this->homeSite($moved, $s1, '2026-11-05');
-        $outside = $this->employee('day_laborer');
-        $this->homeSite($outside, $s2, '2026-01-01');
+        [$s1, $s2, $r, $lead, $worker] = $this->team();
+        $other = $this->managerOf($s2);
         $this->actingAs($lead, 'api');
 
-        $this->postJson("/api/v1/employees/{$moved}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-04', 'amount' => '30'])->assertNotFound();
-        $this->postJson("/api/v1/employees/{$moved}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertCreated();
-        $this->postJson("/api/v1/employees/{$outside}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertNotFound();
+        $this->getJson("/api/v1/team-fares?manager_id={$other->id}")->assertOk()
+            ->assertJsonCount(1, 'data.rows')->assertJsonPath('data.rows.0.employee_id', $worker);
+        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertForbidden();
+        $this->postJson("/api/v1/employees/{$worker}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertForbidden();
+        $this->assertSame([0, 0], [Fare::count(), EmployeeFareOverride::count()]);
+    }
+
+    public function test_hr_fills_a_residence_and_the_pair_fare_applies(): void
+    {
+        $s1 = $this->workSite('S-1');
+        [$r, $r2] = [$this->residence('R-1'), $this->residence('R-2')];
+        $this->fare($r, $s1, '2026-01-01', '35');
+        $this->signIn('hr');
+        $lead = $this->managerOf($s1);
+        [$first, $second] = [$this->employee('day_laborer'), $this->employee('day_laborer')];
+        $this->homeSite($first, $s1, '2026-01-01');
+        $this->homeSite($second, $s1, '2026-01-01');
+        $team = fn () => $this->getJson("/api/v1/team-fares?manager_id={$lead->id}")->assertOk();
+
+        $team()->assertJsonPath('data.rows.0.source', 'no_residence');
+        $this->patchJson("/api/v1/employees/{$first}", ['residence_id' => $r])->assertOk();
+        $this->patchJson("/api/v1/employees/{$second}", ['residence_id' => $r2])->assertOk();
+        $team()->assertJsonPath('data.rows.0.source', 'default')->assertJsonPath('data.rows.0.amount', '35.000000')
+            ->assertJsonPath('data.rows.1.source', 'none')->assertJsonPath('data.rows.1.amount', null);
+    }
+
+    public function test_a_fare_write_notifies_nobody(): void
+    {
+        [$s1, , $r, , $worker] = $this->team();
+        $before = Notification::count();
+
+        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertCreated();
+        $this->postJson("/api/v1/employees/{$worker}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertCreated();
+        $this->assertSame($before, Notification::count());
     }
 
     public function test_same_key_updates_in_place_and_is_audited(): void
@@ -259,48 +245,6 @@ class TeamFaresTest extends TestCase
         $this->assertSame(0, bccomp((string) json_decode((string) $rows[1]->new_values, true)['amount'], '35', 6));
     }
 
-    public function test_a_manager_without_fare_manage_is_refused(): void
-    {
-        [$s1, , $r] = $this->team();
-        $role = Role::create(['slug' => 'viewer', 'name' => 'viewer', 'name_ar' => 'viewer']);
-        $role->permissions()->attach(Permission::where(['resource' => 'site', 'action' => 'view', 'scope' => 'own'])->value('id'));
-        $this->signIn('viewer');
-
-        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertForbidden();
-    }
-
-    public function test_every_team_lead_write_notifies_hr(): void
-    {
-        [$s1, , $r, $lead, $worker] = $this->team();
-        $hr = auth()->user();
-        $this->fare($r, $s1, '2026-10-01', '30');
-        $this->actingAs($lead, 'api');
-
-        $id = $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '35'])->assertCreated()->json('data.id');
-        $sent = Notification::where(['user_id' => $hr?->getAuthIdentifier(), 'type' => 'fare_changed'])->get();
-        $this->assertCount(1, $sent);
-        $this->assertSame('2026-11-05', substr((string) $sent[0]->date, 0, 10));
-        $this->assertSame($id, $sent[0]->ref);
-        $this->assertSameData(['kind' => 'fare', 'site_id' => $s1, 'residence_id' => $r, 'effective_from' => '2026-11-05', 'old_amount' => '30.000000', 'new_amount' => '35.000000', 'by' => $lead->id], $sent[0]->data);
-        $sent[0]->update(['read_at' => now()]);
-
-        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '40'])->assertCreated();
-        $again = Notification::where(['user_id' => $hr?->getAuthIdentifier(), 'type' => 'fare_changed'])->sole();
-        $this->assertNull($again->read_at);
-        $this->assertSame(['30.000000', '40.000000'], [$again->data['old_amount'], $again->data['new_amount']]);
-
-        $this->signIn('hr');
-        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-06', 'amount' => '45'])->assertCreated();
-        $this->assertSame(1, Notification::where('type', 'fare_changed')->where('user_id', $hr?->getAuthIdentifier())->count());
-
-        $this->actingAs($lead, 'api');
-        $oid = $this->postJson("/api/v1/employees/{$worker}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '25'])->assertCreated()->json('data.id');
-        $this->assertSameData(
-            ['kind' => 'override', 'site_id' => $s1, 'employee_id' => $worker, 'effective_from' => '2026-11-05', 'old_amount' => '40.000000', 'new_amount' => '25.000000', 'by' => $lead->id],
-            Notification::where(['user_id' => $hr?->getAuthIdentifier(), 'ref' => $oid])->firstOrFail()->data,
-        );
-    }
-
     public function test_a_concurrent_first_write_of_one_key_updates_it(): void
     {
         [$s1, , $r] = $this->team();
@@ -317,19 +261,6 @@ class TeamFaresTest extends TestCase
         $this->postFare([...$key, 'amount' => '35'])->assertCreated()->assertJsonPath('data.amount', '35.000000');
         $this->assertTrue($raced);
         $this->assertSame('35.000000', Fare::sole()->amount);
-    }
-
-    /**
-     * jsonb stores keys in its own order.
-     *
-     * @param  array<string, mixed>  $expected
-     * @param  array<string, mixed>  $actual
-     */
-    private function assertSameData(array $expected, array $actual): void
-    {
-        ksort($expected);
-        ksort($actual);
-        $this->assertSame($expected, $actual);
     }
 
     public function test_team_fares_lists_the_team(): void
@@ -397,7 +328,9 @@ class TeamFaresTest extends TestCase
         $this->getJson("/api/v1/team-fares?manager_id={$lead->id}&date=2026-11-05")->assertOk()->assertJsonCount(5, 'data.rows')
             ->assertJsonPath('data.rows.4.employee_id', $engineer);
         $this->signIn('ceo');
-        $this->getJson("/api/v1/team-fares?manager_id={$lead->id}")->assertForbidden();
+        $this->getJson('/api/v1/team-fares')->assertStatus(422)->assertJsonPath('error.details.0.field', 'manager_id');
+        $this->getJson("/api/v1/team-fares?manager_id={$lead->id}")->assertOk()->assertJsonCount(5, 'data.rows');
+        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertForbidden();
     }
 
     public function test_team_fares_name_a_deleted_residence_and_site(): void

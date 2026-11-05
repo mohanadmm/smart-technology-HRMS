@@ -9,16 +9,12 @@ use App\Modules\Attendance\Infrastructure\PeriodGuard;
 use App\Modules\Employees\Application\EmployeeReach;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
-use App\Modules\Identity\Application\Rbac\PermissionHolders;
-use App\Modules\Notifications\Application\Notifier;
 use App\Modules\Sites\Infrastructure\Eloquent\EmployeeFareOverride;
 use App\Modules\Sites\Infrastructure\Eloquent\Fare;
 use App\Modules\Sites\Infrastructure\Eloquent\Residence;
 use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use App\Support\Http\Paginates;
-use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -31,8 +27,6 @@ final class FareService
 
     public function __construct(
         private readonly SiteService $sites,
-        private readonly PermissionHolders $holders,
-        private readonly Notifier $notifier,
         private readonly FareLookup $lookup,
     ) {}
 
@@ -78,16 +72,15 @@ final class FareService
     }
 
     /**
-     * Rows carry `set_by` (the last writer; null = the starting values from Excel) and `previous_amount` (the same pair's row just before).
+     * Rows carry `set_by` (the last writer; null = the starting values from Excel).
      *
-     * @param  array{residence_id?: string, site_id?: string, date?: string, manager_id?: string, changed_since?: string, per_page?: int}  $filters
+     * @param  array{residence_id?: string, site_id?: string, date?: string, manager_id?: string, per_page?: int}  $filters
      * @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}}
      */
     public function listFares(array $filters, ?string $ownerId = null): array
     {
         $query = Fare::query()->select('fares.*')
             ->selectRaw('fares.updated_by as set_by_id, (select u.name from users u where u.id = fares.updated_by) as set_by_name')
-            ->selectRaw('(select p.amount from fares p where p.residence_id = fares.residence_id and p.site_id = fares.site_id and p.deleted_at is null and p.effective_from < fares.effective_from order by p.effective_from desc limit 1) as previous_amount')
             // by name, as HR reads the list; the names of a deleted site or residence still sort its rows
             ->orderByRaw('(select s.name_ar from sites s where s.id = fares.site_id), (select r.name_ar from residences r where r.id = fares.residence_id), fares.effective_from');
         foreach (['residence_id', 'site_id'] as $col) {
@@ -101,10 +94,6 @@ final class FareService
                 $query->whereIn('site_id', $this->sites->idsManagedBy($managerId));
             }
         }
-        if (isset($filters['changed_since'])) {
-            $query->where('updated_at', '>=', CarbonImmutable::parse($filters['changed_since'], 'Africa/Cairo')->startOfDay()->utc());
-        }
-
         if (isset($filters['date'])) {
             // only the row in force on that date per (residence, site)
             $query->whereIn('id', fn ($q) => $q->from('fares')->selectRaw('distinct on (residence_id, site_id) id')
@@ -227,45 +216,28 @@ final class FareService
      * @param  array{residence_id: string, site_id: string, effective_from: string, amount: string}  $data
      * @return array<string, mixed>
      */
-    public function saveFare(array $data, ?string $ownerId): array
+    public function saveFare(array $data): array
     {
         // A pair fare is the default of both worker types, so a lock of either refuses it.
-        $this->assertWritable($ownerId, $data['site_id'], $data['effective_from'], EmployeeType::PermanentWorker, EmployeeType::DayLaborer);
-        $pair = ['residence_id' => $data['residence_id'], 'site_id' => $data['site_id']];
-        $key = [...$pair, 'effective_from' => $data['effective_from']];
+        $this->assertUnlocked($data['effective_from'], EmployeeType::PermanentWorker, EmployeeType::DayLaborer);
+        $key = ['residence_id' => $data['residence_id'], 'site_id' => $data['site_id'], 'effective_from' => $data['effective_from']];
 
         // updateOrCreate inserts in a savepoint and, losing a race on the unique key, updates the winner's row.
-        return DB::transaction(function () use ($key, $pair, $data, $ownerId): array {
-            $old = Fare::where($pair)->where('effective_from', '<=', $data['effective_from'])->orderByDesc('effective_from')->value('amount');
-            $fare = Fare::updateOrCreate($key, ['amount' => $data['amount']]);
-            $this->notifyHr($ownerId, $fare, ['kind' => 'fare', ...$pair, 'effective_from' => $data['effective_from'], 'old_amount' => $old]);
-
-            return $this->row($fare);
-        });
+        return DB::transaction(fn (): array => $this->row(Fare::updateOrCreate($key, ['amount' => $data['amount']])));
     }
 
     /**
      * @param  array{site_id: string, effective_from: string, amount: string}  $data
      * @return array<string, mixed>
      */
-    public function saveOverride(string $employeeId, array $data, ?string $ownerId): array
+    public function saveOverride(string $employeeId, array $data): array
     {
         $date = $data['effective_from'];
         $employee = Employee::query()->select('employees.*')->selectRaw(Employee::TYPE_ON.' as type_on', [$date])->findOrFail($employeeId);
-        // employee.scope checks reach today; the override must also be in reach on the day it takes effect.
-        if ($ownerId !== null && ! EmployeeReach::reaches($employeeId, $ownerId, $date)) {
-            throw new ModelNotFoundException;
-        }
-        $this->assertWritable($ownerId, $data['site_id'], $date, ...array_filter([EmployeeType::tryFrom((string) $employee->getAttribute('type_on'))]));
+        $this->assertUnlocked($date, ...array_filter([EmployeeType::tryFrom((string) $employee->getAttribute('type_on'))]));
         $key = ['employee_id' => $employeeId, 'site_id' => $data['site_id'], 'effective_from' => $date];
 
-        return DB::transaction(function () use ($key, $data, $date, $employeeId, $ownerId): array {
-            $old = $this->lookup->describe($employeeId, $data['site_id'], $date)['amount'];
-            $override = EmployeeFareOverride::updateOrCreate($key, ['amount' => $data['amount']]);
-            $this->notifyHr($ownerId, $override, ['kind' => 'override', 'site_id' => $data['site_id'], 'employee_id' => $employeeId, 'effective_from' => $date, 'old_amount' => $old]);
-
-            return $this->row($override);
-        });
+        return DB::transaction(fn (): array => $this->row(EmployeeFareOverride::updateOrCreate($key, ['amount' => $data['amount']])));
     }
 
     /**
@@ -287,35 +259,12 @@ final class FareService
         }
     }
 
-    /** Own scope: one of the user's sites, from yesterday (Cairo) on. Every scope: not inside a locked attendance period. */
-    private function assertWritable(?string $ownerId, string $siteId, string $date, EmployeeType ...$types): void
+    private function assertUnlocked(string $date, EmployeeType ...$types): void
     {
-        $this->assertOwnSite($ownerId, $siteId);
-        if ($ownerId !== null && $date < now('Africa/Cairo')->subDay()->toDateString()) {
-            throw ValidationException::withMessages(['effective_from' => __('errors.fare_too_early')]);
-        }
         foreach ($types as $type) {
             if (PeriodGuard::isLocked(Period::containing($type, $date))) {
                 throw ValidationException::withMessages(['effective_from' => __('errors.fare_period_locked')]);
             }
-        }
-    }
-
-    /**
-     * Every team-lead write tells every holder of fare.manage.all: one notification per row a day, a repeat refreshes its new_amount
-     * and `by` (the writer's user id) and marks it unread (the first old_amount stays; the audit log keeps every write). HR writes notify nobody.
-     *
-     * @param  array<string, mixed>  $data
-     */
-    private function notifyHr(?string $ownerId, Fare|EmployeeFareOverride $row, array $data): void
-    {
-        if ($ownerId === null) {
-            return;
-        }
-        $today = now('Africa/Cairo')->toDateString();
-        foreach ($this->holders->userIds('fare.manage.all') as $userId) {
-            $latest = ['new_amount' => $row->amount, 'by' => $ownerId];
-            $this->notifier->notifyOrRefresh($userId, 'fare_changed', $today, [...$data, ...$latest], (string) $row->getKey(), $latest);
         }
     }
 }
