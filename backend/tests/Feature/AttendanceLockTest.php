@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Modules\Attendance\Domain\Period;
 use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceDay;
+use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Settings\Application\BusinessRules;
 use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -40,6 +42,26 @@ class AttendanceLockTest extends TestCase
     private function lock(array $body = []): TestResponse
     {
         return $this->postJson('/api/v1/attendance/locks', ['group' => 'engineer', 'period_start' => '2026-09-26', ...$body]);
+    }
+
+    public function test_lock_refuses_a_permanent_workers_day_with_an_arrival_and_no_departure(): void
+    {
+        $worker = $this->employee('permanent_worker');
+        $p = Period::containing(EmployeeType::PermanentWorker, '2026-10-20');
+        $this->putDay($worker, '2026-10-20', ['site_id' => $this->site, 'in_time' => '08:00'])->assertOk();   // the site manager's morning save
+
+        $lock = fn () => $this->postJson('/api/v1/attendance/locks', ['group' => 'permanent_worker', 'period_start' => $p->start, 'confirm_missing' => true]);
+        $lock()->assertStatus(422)->assertJsonPath('error.code', 'open_days');
+        $this->putDay($worker, '2026-10-20', ['version' => 1, 'site_id' => $this->site, 'in_time' => '08:00', 'out_time' => '16:00'])->assertOk();
+        $lock()->assertSuccessful();
+    }
+
+    public function test_lock_refuses_an_engineers_day_with_an_arrival_and_no_departure(): void
+    {
+        $this->putDay($this->eng, '2026-10-01', ['site_id' => $this->site, 'in_time' => '08:00'])->assertOk();
+        $this->lock(['confirm_missing' => true])->assertStatus(422)->assertJsonPath('error.code', 'open_days');
+        $this->putDay($this->eng, '2026-10-01', ['version' => 1, 'site_id' => $this->site, 'in_time' => '08:00', 'out_time' => '16:00'])->assertOk();
+        $this->lock(['confirm_missing' => true])->assertSuccessful();
     }
 
     public function test_lock_lists_missing_days_and_needs_confirmation(): void

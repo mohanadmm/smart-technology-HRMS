@@ -146,6 +146,26 @@ final class SiteService
         return array_values(DB::table('manager_sites')->where('manager_id', $managerId)->pluck('site_id')->map(fn ($id) => (string) $id)->all());
     }
 
+    /**
+     * The names of these sites, deleted ones included (a notification or a past day may still name one).
+     *
+     * @param  list<string>  $ids
+     * @return array<array{id: string, name_ar: string, name_en: ?string}> by site id
+     */
+    public function names(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        $names = [];
+        foreach (Site::withTrashed()->whereKey(array_values(array_unique($ids)))->get(['id', 'name_ar', 'name_en']) as $site) {
+            $names[(string) $site->id] = ['id' => (string) $site->id, 'name_ar' => (string) $site->name_ar, 'name_en' => $site->name_en];
+        }
+
+        return $names;
+    }
+
     /** @return Builder<Site> */
     private function visibleTo(?string $ownerId): Builder
     {

@@ -4,9 +4,11 @@ use App\Modules\Attendance\Presentation\AttendanceController;
 use App\Modules\Attendance\Presentation\AttendanceLockController;
 use App\Modules\Attendance\Presentation\HolidayController;
 use App\Modules\Attendance\Presentation\SiteDayController;
+use App\Modules\Attendance\Presentation\SiteDayCrewController;
 use App\Modules\Audit\Presentation\AuditLogController;
 use App\Modules\Employees\Presentation\EmployeeController;
 use App\Modules\Employees\Presentation\EmployeeDocumentController;
+use App\Modules\Employees\Presentation\WageProposalController;
 use App\Modules\Identity\Presentation\AuthController;
 use App\Modules\Identity\Presentation\RoleController;
 use App\Modules\Identity\Presentation\UserController;
@@ -30,6 +32,12 @@ Route::middleware('auth')->group(function (): void {
     Route::prefix('auth')->controller(AuthController::class)->group(function (): void {
         Route::post('logout', 'logout');
         Route::get('me', 'me');
+    });
+
+    Route::prefix('employees/wage-proposals')->controller(WageProposalController::class)->whereUuid('proposal')->group(function (): void {
+        Route::get('/', 'index')->middleware('permission:employee.approve_wage');
+        Route::post('{proposal}/approve', 'approve')->middleware('permission:employee.approve_wage');
+        Route::post('{proposal}/refuse', 'refuse')->middleware('permission:employee.approve_wage');
     });
 
     Route::prefix('employees')->controller(EmployeeController::class)->group(function (): void {
@@ -104,6 +112,12 @@ Route::middleware('auth')->group(function (): void {
     });
 
     Route::get('attendance/site-day', [SiteDayController::class, 'show'])->middleware('permission:attendance.record');
+    Route::post('attendance/site-day', [SiteDayController::class, 'store'])->middleware('permission:attendance.record');
+    Route::prefix('attendance/site-day')->controller(SiteDayCrewController::class)->group(function (): void {
+        Route::get('laborers', 'search')->middleware(['permission:attendance.record', 'permission:employee.crew']);
+        Route::post('crew', 'update')->middleware(['permission:attendance.record', 'permission:employee.crew']);
+        Route::post('laborers', 'store')->middleware(['permission:attendance.record', 'permission:employee.propose_laborer']);
+    });
 
     Route::prefix('attendance/locks')->controller(AttendanceLockController::class)->group(function (): void {
         Route::post('/', 'store')->middleware('permission:attendance.lock');

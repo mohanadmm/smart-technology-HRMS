@@ -55,7 +55,8 @@ class DayRulesTest extends TestCase
     {
         $this->assertSame([['field' => 'out_time', 'code' => 'out_before_in']], DayRules::violations(EmployeeType::Engineer, self::WORK, ['in_time' => '20:00', 'out_time' => '04:00']));
         $this->assertSame([['field' => 'out_time', 'code' => 'out_before_in']], DayRules::violations(EmployeeType::DayLaborer, self::WORK, ['in_time' => '17:00', 'out_time' => '08:00']));
-        $this->assertSame([['field' => 'out_time', 'code' => 'times_need_both']], DayRules::violations(EmployeeType::PermanentWorker, self::WORK, ['in_time' => '08:00']));
+        $this->assertSame([], DayRules::violations(EmployeeType::PermanentWorker, self::WORK, ['in_time' => '08:00']));   // an open day
+        $this->assertSame([['field' => 'in_time', 'code' => 'times_need_both']], DayRules::violations(EmployeeType::PermanentWorker, self::WORK, ['out_time' => '16:00']));
         $this->assertSame([], DayRules::violations(EmployeeType::PermanentWorker, self::WORK, ['in_time' => '20:00', 'out_time' => '04:00']));
     }
 

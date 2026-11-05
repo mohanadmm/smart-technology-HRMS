@@ -5,7 +5,7 @@ import { type ReactNode, useId } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { localName, ltrDates } from '@/components/form'
+import { formatTime, localName, ltrDates } from '@/components/form'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/misc'
 import { queryKey, useList, useSave } from '@/lib/query'
@@ -13,14 +13,17 @@ import { cn, FOCUS } from '@/lib/utils'
 
 type Named = { id: string; code: number; name_ar: string; name_en: string | null } | null
 type Base = { id: string; date: string; ref: string | null; read_at: string | null }
-type MissingDays = Base & { type: 'attendance_missing_days'; data: { date: string; groups: { group: string; period_start: string; period_end: string; missing: number }[] } }
+// open and crew_changes since 2026-11-05: an older alert has missing days only
+type MissingDays = Base & { type: 'attendance_missing_days'; data: { date: string; groups: { group: string; period_start: string; period_end: string; missing: number; open?: number; crew_changes?: number }[] } }
 type LeaveAnniversary = Base & { type: 'leave_anniversary'; data: { employee_id: string; hire_date: string }; employee: Named }
 type RequestData = { employee_id: string; request_id: string; kind: string; from_date: string; to_date: string; days: number }
 type LeaveRequested = Base & { type: 'leave_requested'; data: RequestData; employee: Named }
 type LeaveEscalated = Base & { type: 'leave_escalated'; data: RequestData; employee: Named }
 type LeaveDecided = Base & { type: 'leave_decided'; data: RequestData & { status: 'approved' | 'refused' }; employee: Named }
 type LeaveCancelled = Base & { type: 'leave_cancelled'; data: RequestData; employee: Named }
-type Notification = MissingDays | LeaveAnniversary | LeaveRequested | LeaveEscalated | LeaveDecided | LeaveCancelled
+type WageProposed = Base & { type: 'wage_proposed'; data: { employee_id: string; daily_wage: string; site_name_ar: string; site_name_en: string | null }; employee: Named }
+type PastEdit = Base & { type: 'attendance_past_edit'; data: { employee_id: string; date: string; out_time: string; site_name_ar: string; site_name_en: string | null; group: string; period_start: string }; employee: Named }
+type Notification = MissingDays | LeaveAnniversary | LeaveRequested | LeaveEscalated | LeaveDecided | LeaveCancelled | WageProposed | PastEdit
 
 /** One clickable line: what it says, the muted line under it, and where it opens (null: it only marks the notification read). */
 type Line = { key: string; text: ReactNode; detail: string; to: string | null }
@@ -47,7 +50,12 @@ const VIEWS: { [K in Notification['type']]: (n: Extract<Notification, { type: K 
     title: t('notifications.missingDays.title', { date: n.data.date }),
     lines: n.data.groups.map((g) => ({
       key: `${g.group}-${g.period_start}`,
-      text: t('notifications.missingDays.line', { group: t(`attendance.group.${g.group}`), count: g.missing }),
+      // the unrecorded days, then the open days and the day's crew changes when there are any (owner, 2026-11-05)
+      text: [
+        g.missing > 0 ? t('notifications.missingDays.line', { group: t(`attendance.group.${g.group}`), count: g.missing }) : t('notifications.missingDays.group', { group: t(`attendance.group.${g.group}`) }),
+        ...(g.open ? [t('notifications.missingDays.open', { count: g.open })] : []),
+        ...(g.crew_changes ? [t('notifications.missingDays.crew', { count: g.crew_changes })] : []),
+      ].join(' · '),
       detail: t('notifications.missingDays.period', { start: g.period_start, end: g.period_end }),
       to: `/attendance?${new URLSearchParams({ group: g.group, period: g.period_start, tab: 'grid' })}`,
     })),
@@ -65,6 +73,26 @@ const VIEWS: { [K in Notification['type']]: (n: Extract<Notification, { type: K 
   leave_escalated: (n, ctx) => requestLine('notifications.leaveEscalated', n, ctx),
   leave_decided: (n, ctx) => requestLine(`notifications.leaveDecided.${n.data.status}`, n, ctx),
   leave_cancelled: (n, ctx) => requestLine('notifications.leaveCancelled', n, ctx),
+  // a site manager's new day laborer: HR reviews the proposed wage on the employee's page (its approval screen is a follow-up)
+  wage_proposed: (n, ctx) => ({
+    lines: [{
+      key: n.id,
+      text: named('notifications.wageProposed', n.employee, ctx),
+      detail: ctx.t('notifications.wageProposed.detail', { amount: n.data.daily_wage, site: ctx.lang === 'en' ? n.data.site_name_en || n.data.site_name_ar : n.data.site_name_ar }),
+      to: n.employee && `/employees/${n.employee.id}`,
+    }],
+  }),
+  // a departure the site manager entered after the yesterday window: an edit to a past day, which HR can correct (owner, 2026-11-05)
+  attendance_past_edit: (n, ctx) => ({
+    lines: [{
+      key: n.id,
+      text: n.employee
+        ? <Trans i18nKey="notifications.pastEdit.line" values={{ date: n.data.date }} components={{ name: <bdi>{localName(n.employee, ctx.lang)}</bdi>, code: <bdi dir="ltr">{n.employee.code}</bdi> }} />
+        : ctx.t('notifications.pastEdit.unknown', { date: n.data.date }),
+      detail: ctx.t('notifications.pastEdit.detail', { time: formatTime(n.data.out_time, ctx.lang), site: ctx.lang === 'en' ? n.data.site_name_en || n.data.site_name_ar : n.data.site_name_ar }),
+      to: `/attendance?${new URLSearchParams({ group: n.data.group, period: n.data.period_start, tab: 'grid' })}`,
+    }],
+  }),
 }
 const view = (n: Notification, ctx: Ctx) => (VIEWS[n.type] as (n: Notification, ctx: Ctx) => View)(n, ctx)
 

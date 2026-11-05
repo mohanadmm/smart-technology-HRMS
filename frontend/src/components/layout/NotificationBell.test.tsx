@@ -13,7 +13,7 @@ afterEach(async () => {
   await i18n.changeLanguage('ar')
 })
 
-const missing = (id: string, read_at: string | null, groups: { group: string; period_start: string; period_end: string; missing: number }[]) => ({
+const missing = (id: string, read_at: string | null, groups: { group: string; period_start: string; period_end: string; missing: number; open?: number; crew_changes?: number }[]) => ({
   id, type: 'attendance_missing_days', date: '2026-10-20', read_at, data: { date: '2026-10-20', groups },
 })
 // the engineers' previous and current periods are both open, so the group appears twice
@@ -45,7 +45,7 @@ test('the bell shows the unread count and the missing-days lines', async () => {
   expect(items[1]).toHaveTextContent('2026-09-26 – 2026-10-25')
   expect(items[0]).toHaveTextContent('أيام غير مسجلة — المهندسون: 3')
   expect(items[2]).toHaveTextContent('أيام غير مسجلة — عمال اليومية: 4')
-  expect(screen.getByText(/أيام حضور غير مسجلة حتى/, { selector: '.font-semibold' })).toBeInTheDocument() // the unread one is bold
+  expect(screen.getByText(/متابعة الحضور حتى/, { selector: '.font-semibold' })).toBeInTheDocument() // the unread one is bold
 })
 
 test('choosing a line marks it read and opens the grid', async () => {
@@ -116,7 +116,7 @@ test('each notification is a group named by its title, and unread lines say so',
   mockFetch({ 'GET /api/v1/notifications': inbox([unread, read]) })
   renderWithAuth(<NotificationBell />, [])
   await user.click(await screen.findByRole('button', { name: 'فتح الإشعارات (1 غير مقروء)' }))
-  const groups = await screen.findAllByRole('group', { name: 'أيام حضور غير مسجلة حتى 2026-10-20' })
+  const groups = await screen.findAllByRole('group', { name: 'متابعة الحضور حتى 2026-10-20' })
   expect(groups).toHaveLength(2)
   // the unread word comes first, then a pause; a separator in the DOM keeps the count and the range apart in every screen reader
   const line = within(groups[0]).getByRole('menuitem', { name: /المهندسون: 22/ })
@@ -282,4 +282,28 @@ test('a cancelled leave request about someone the reader cannot name reads as a 
   renderWithAuth(<NotificationBell />, [])
   await user.click(await screen.findByRole('button', { name: 'Open notifications (1 unread)' }))
   expect(await screen.findByRole('menuitem')).toHaveAccessibleName(/^unread, A leave request was cancelled,\s*Annual leave: 2026-11-10 – 2026-11-12$/)
+})
+
+test('the evening alert adds the open days and the crew changes to a group\'s line, and a past-day departure has its own line', async () => {
+  mockFetch({
+    'GET /api/v1/notifications': inbox([
+      missing('m1', null, [
+        { group: 'day_laborer', period_start: '2026-10-16', period_end: '2026-10-31', missing: 3, open: 2, crew_changes: 4 },
+        { group: 'engineer', period_start: '2026-09-26', period_end: '2026-10-25', missing: 0, open: 1, crew_changes: 0 },
+      ]),
+      { id: 'w1', type: 'wage_proposed', date: '2026-11-04', ref: 'p1', read_at: null, data: { employee_id: 'e1', daily_wage: '350', site_name_ar: 'Site-1', site_name_en: null }, employee: ahmed },
+      { id: 'x1', type: 'attendance_past_edit', date: '2026-11-04', ref: 'd1', read_at: null, data: { employee_id: 'e1', date: '2026-11-02', out_time: '16:00', site_name_ar: 'Site-1', site_name_en: null, group: 'engineer', period_start: '2026-10-26' }, employee: ahmed },
+    ]),
+    'PATCH /api/v1/notifications/x1/read': () => json(200, { data: {} }),
+  })
+  renderWithAuth(<><NotificationBell /><Where /></>, [])
+  await user.click(await screen.findByRole('button', { name: /فتح الإشعارات/ }))
+  const items = (await screen.findAllByRole('menuitem')).map((i) => i.textContent)
+  expect(items[0]).toContain('أيام غير مسجلة — عمال اليومية: 3 · بلا انصراف: 2 · تغييرات الطاقم: 4')
+  expect(items[1]).toContain('المهندسون · بلا انصراف: 1')
+  expect(items[2]).toContain('أجر يومي مقترح لـ أحمد علي (1042)')
+  expect(items[3]).toContain('انصراف أحمد علي (1042) ليوم 2026-11-02 بعد المهلة')
+  expect(items[3]).toContain('Site-1')
+  await user.click(screen.getByRole('menuitem', { name: /بعد المهلة/ }))
+  expect(screen.getByRole('status')).toHaveTextContent('/attendance?group=engineer&period=2026-10-26&tab=grid')
 })

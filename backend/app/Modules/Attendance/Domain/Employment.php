@@ -27,6 +27,13 @@ final class Employment
     /** @param  array<string, mixed>  $employee */
     public static function homeSiteOn(array $employee, string $date): ?string
     {
+        // A day's crew change wins for that date only (null: off every crew); otherwise the home site in force.
+        foreach ($employee['crew'] ?? [] as $c) {
+            if ($c['date'] === $date) {
+                return $c['site_id'];
+            }
+        }
+
         return EffectiveDated::at($employee['sites'], $date)['site_id'] ?? null;
     }
 

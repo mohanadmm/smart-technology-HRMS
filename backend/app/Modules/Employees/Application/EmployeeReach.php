@@ -10,13 +10,14 @@ use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Who a manager reaches on a date D, by the employee's type on D (design Part 1): an engineer assigned to them on D, or a worker whose
- * home site on D is one of their sites (P1: manager_sites is undated). Office staff are in no manager's reach (P2).
+ * site on D (that day's crew change, else the home site) is one of their sites (P1: manager_sites is undated). Office staff are in no manager's reach (P2).
  */
 final class EmployeeReach
 {
     private const ENGINEER = '(select m.manager_id from employee_manager_assignments m where m.employee_id = employees.id and m.deleted_at is null and m.effective_from <= ?::date order by m.effective_from desc limit 1) = ?';
 
-    private const WORKER = 'exists (select 1 from manager_sites ms where ms.manager_id = ? and ms.site_id = (select s.site_id from employee_site_assignments s where s.employee_id = employees.id and s.deleted_at is null and s.effective_from <= ?::date order by s.effective_from desc limit 1))';
+    /** The worker's site on D: that day's crew change, else the home site (Employee::SITE_ON). */
+    private const WORKER = 'exists (select 1 from manager_sites ms where ms.manager_id = ? and ms.site_id = '.Employee::SITE_ON.')';
 
     /**
      * @param  Builder<Employee>  $employees
@@ -30,8 +31,8 @@ final class EmployeeReach
             [
                 $date,
                 EmployeeType::Engineer->value, $date, $managerId,
-                EmployeeType::PermanentWorker->value, $managerId, $date,
-                EmployeeType::DayLaborer->value, $managerId, $date,
+                EmployeeType::PermanentWorker->value, $managerId, $date, $date, $date,
+                EmployeeType::DayLaborer->value, $managerId, $date, $date, $date,
             ],
         );
     }
