@@ -7,7 +7,6 @@ namespace App\Modules\Audit\Application;
 use App\Modules\Audit\Infrastructure\Eloquent\AuditLogEntry;
 use App\Support\Http\Paginates;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Carbon;
 
 final class AuditLogQuery
 {
@@ -25,12 +24,7 @@ final class AuditLogQuery
                 $query->where($key, $filters[$key]);
             }
         }
-        if (isset($filters['from'])) {
-            $query->where('occurred_at', '>=', Carbon::parse($filters['from'], 'Africa/Cairo')->startOfDay()->utc());
-        }
-        if (isset($filters['to'])) {
-            $query->where('occurred_at', '<', Carbon::parse($filters['to'], 'Africa/Cairo')->addDay()->startOfDay()->utc());
-        }
+        CairoDates::apply($query, $filters);
 
         return $this->page($query, $filters['per_page'] ?? 20);
     }

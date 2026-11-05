@@ -26,7 +26,8 @@ class HotPathTest extends TestCase
         $this->withToken($token)->getJson($uri)->assertOk();
         DB::disableQueryLog();
 
-        return array_column(DB::getQueryLog(), 'query');
+        // The request log's own insert (and its savepoint) runs after the response; it is not part of the request's cost.
+        return array_values(array_filter(array_column(DB::getQueryLog(), 'query'), fn (string $q) => ! str_contains($q, 'request_log') && ! str_contains(strtoupper($q), 'SAVEPOINT')));
     }
 
     private function token(string $roleSlug): string

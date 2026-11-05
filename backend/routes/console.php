@@ -10,3 +10,4 @@ Artisan::command('inspire', function () {
 
 Schedule::command('attendance:alert-missing')->dailyAt('21:00')->timezone('Africa/Cairo');
 Schedule::command('leave:alert-anniversary')->dailyAt('08:00')->timezone('Africa/Cairo');
+Schedule::command('logs:prune')->dailyAt('03:00')->timezone('Africa/Cairo');

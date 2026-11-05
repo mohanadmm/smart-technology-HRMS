@@ -2,9 +2,12 @@
 
 use App\Http\Middleware\AddRequestId;
 use App\Http\Middleware\ForgetResolvedGuards;
+use App\Http\Middleware\RecordRequest;
 use App\Http\Middleware\SetLocaleFromRequest;
 use App\Modules\Attendance\Domain\AttendanceRefused;
 use App\Modules\Attendance\Presentation\AlertMissingDaysCommand;
+use App\Modules\Audit\Infrastructure\SystemLog;
+use App\Modules\Audit\Presentation\PruneLogsCommand;
 use App\Modules\Employees\Domain\EmployeeCodeTaken;
 use App\Modules\Employees\Presentation\EnsureEmployeeInScope;
 use App\Modules\Employees\Presentation\ImportMasterDataCommand;
@@ -36,10 +39,12 @@ return Application::configure(basePath: dirname(__DIR__))
         apiPrefix: 'api/v1',
         commands: __DIR__.'/../routes/console.php',
     )
-    ->withCommands([CreateUserCommand::class, AlertMissingDaysCommand::class, ImportMasterDataCommand::class, AlertAnniversaryCommand::class])
+    ->withCommands([CreateUserCommand::class, AlertMissingDaysCommand::class, ImportMasterDataCommand::class, AlertAnniversaryCommand::class, PruneLogsCommand::class])
     ->withMiddleware(function (Middleware $middleware): void {
         // Global, not api-group: unmatched routes (404) never enter the api group.
         $middleware->prepend(AddRequestId::class);
+        // Outermost (prepended last): its duration covers every other middleware, and any refusal they render is logged.
+        $middleware->prepend(RecordRequest::class);
         $middleware->append(ForgetResolvedGuards::class);
         $middleware->api(prepend: [SetLocaleFromRequest::class]);
         // No login route to redirect to: an API guest gets the 401 envelope.
@@ -47,6 +52,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias(['permission' => AuthorizePermission::class, 'employee.scope' => EnsureEmployeeInScope::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Every reported exception gets an error_log row; no ->stop(), so the default log still gets it too.
+        $exceptions->report(fn (Throwable $e) => SystemLog::error($e));
+
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );

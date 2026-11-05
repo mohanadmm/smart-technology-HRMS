@@ -106,7 +106,7 @@ Code lives under `backend/app/Modules/<Module>/{Domain,Application,Infrastructur
 - Every business table has a UUIDv7 primary key, foreign keys, and audit columns as required by the audit design.
 - Add indexes for each new join, permission scope (manager → assigned employees), filter, sort, and common lookup (employee × date, period × type). Verify them with realistic query plans for high-volume paths such as attendance and payroll.
 - Use transactions for every operation touching more than one table: record mutation plus audit entry, period close, advance creation plus its schedule, type or manager reassignment, and file metadata attachment.
-- Do not physically `DELETE` employees, attendance, payroll, advances, audit records, or files. Use documented deactivation, termination, or soft-delete behavior.
+- Do not physically `DELETE` employees, attendance, payroll, advances, audit records, or files. Use documented deactivation, termination, or soft-delete behavior. One exception: `logs:prune` deletes audit rows older than 1 year (owner decision 2026-11-04); the `audit_log` trigger still refuses any younger row.
 - **A closed payroll period is read-only.** Every write path (attendance edit, advance repayment, override, import) must check period state inside the same transaction. Only HR can reopen, and must give a reason; close and reopen are audited. A write against a closed period fails with a stable error code, never silently.
 - Use optimistic locking (version column) on records that HR and managers can edit concurrently, such as attendance days, timesheets, and requests. A stale write returns `409 concurrency_conflict`; it never silently overwrites current data.
 - Seed data is versioned and repeatable: roles, permissions, settings defaults, leave day-types, and test users must be reproducible in non-production environments.
@@ -137,7 +137,7 @@ Code lives under `backend/app/Modules/<Module>/{Domain,Application,Infrastructur
 
 ## 10. Audit, Logging, and Events
 
-- Audit logs are append-only. Clients never write or alter them directly.
+- Audit logs are append-only. Clients never write or alter them directly. The one exception is the 1-year retention: `logs:prune` deletes older rows and records a `PRUNED` entry; the trigger enforces the cutoff.
 - Every create, update, delete, approval, override, login, and period lock or reopen writes an audit entry with the actor, event, entity, before and after values, timestamp, IP, device, request ID, and correlation ID where available.
 - Always audit the critical events: overrides (with their reason), period close and reopen (with the reopen reason), role or permission change, account creation and password set, employee type change, manager reassignment, payout marks, advance changes, and edits to past days.
 - Every manager action notifies HR: instantly for requests, warnings, and edits to past days; in a daily digest for routine attendance.

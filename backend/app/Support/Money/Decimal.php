@@ -14,7 +14,7 @@ final class Decimal
     public static function of(string $value, string $what): string
     {
         if (preg_match('/^-?\d+(\.\d+)?$/D', $value) !== 1 || ! is_numeric($value)) {
-            throw new InvalidArgumentException("{$what} must be a plain decimal string, not '{$value}'.");
+            throw new InvalidArgumentException("{$what} must be a plain decimal string.");
         }
 
         return $value;
@@ -25,7 +25,7 @@ final class Decimal
         $decimal = self::of($value, $what);
 
         if (bccomp($decimal, '0', 8) !== 1 || ! is_numeric($value)) {
-            throw new InvalidArgumentException("{$what} must be greater than zero, not '{$value}'.");
+            throw new InvalidArgumentException("{$what} must be greater than zero.");
         }
 
         return $decimal;

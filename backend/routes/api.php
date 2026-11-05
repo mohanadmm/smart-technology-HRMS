@@ -6,6 +6,8 @@ use App\Modules\Attendance\Presentation\HolidayController;
 use App\Modules\Attendance\Presentation\SiteDayController;
 use App\Modules\Attendance\Presentation\SiteDayCrewController;
 use App\Modules\Audit\Presentation\AuditLogController;
+use App\Modules\Audit\Presentation\ErrorLogController;
+use App\Modules\Audit\Presentation\RequestLogController;
 use App\Modules\Employees\Presentation\EmployeeController;
 use App\Modules\Employees\Presentation\EmployeeDocumentController;
 use App\Modules\Employees\Presentation\WageProposalController;
@@ -142,6 +144,8 @@ Route::middleware('auth')->group(function (): void {
     });
 
     Route::get('audit-log', [AuditLogController::class, 'index'])->middleware('permission:audit_log.view');
+    Route::get('request-log', [RequestLogController::class, 'index'])->middleware('permission:system_log.view');
+    Route::get('error-log', [ErrorLogController::class, 'index'])->middleware('permission:system_log.view');
 
     Route::get('settings', [SettingController::class, 'index'])->middleware('permission:setting.view');
     Route::put('settings', [SettingController::class, 'update'])->middleware('permission:setting.manage');
