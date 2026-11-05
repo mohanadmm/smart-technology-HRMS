@@ -185,8 +185,9 @@ final class DayCrew
 
     /**
      * HR decides a proposal; a decided or changed proposal is a 409. Approving writes the pay row from the hire date, at HR's $wage or
-     * else the proposed one. Refusing ends the laborer on $today and takes them off every crew from then (owner, 2026-11-05): from the
-     * next day they are on no list, in no search and on no crew. Days already recorded stay; HR decides what to do with them. Audited.
+     * else the proposed one. Refusing ends the laborer on $today (or keeps an earlier end) and takes them off every crew from then, and
+     * off any earlier day with nothing recorded (owner, 2026-11-05): they are on no list, in no search, on no crew and get no new day.
+     * Days already recorded stay; HR decides what to do with them. Audited.
      */
     public function decide(string $proposalId, int $version, bool $approve, ?string $wage, string $hrId, string $today): void
     {
@@ -200,9 +201,13 @@ final class DayCrew
                 $from = (string) ($employee->hire_date ?? $p->created_at?->toDateString());
                 $employee->payChanges()->create(['effective_from' => $from, 'daily_wage' => $wage ?? (string) $p->daily_wage]);
             } else {
-                $employee->termination_date = max($today, (string) $employee->hire_date);
+                // An earlier end HR already set stays; never before the hire date (PR #22 review).
+                $employee->termination_date = max((string) $employee->hire_date, min($today, (string) ($employee->termination_date ?? $today)));
                 $employee->save();
-                DayCrewChange::where('employee_id', $employee->id)->where('date', '>=', $today)->get()->each(fn (DayCrewChange $c) => $c->delete());
+                // Off every crew from today, and off any earlier day with nothing recorded, so the yesterday window adds no new day.
+                $recorded = DB::table('attendance_days')->where('employee_id', $employee->id)->whereNull('deleted_at')->pluck('date')->map(fn ($d) => (string) $d)->all();
+                DayCrewChange::where('employee_id', $employee->id)->where(fn (Builder $q) => $q->where('date', '>=', $today)->orWhereNotIn('date', $recorded))
+                    ->get()->each(fn (DayCrewChange $c) => $c->delete());
             }
             $p->fill(['status' => $approve ? WageProposalStatus::Approved : WageProposalStatus::Refused, 'decided_by' => $hrId, 'decided_at' => now(), 'version' => $version + 1]);
             $p->save();
