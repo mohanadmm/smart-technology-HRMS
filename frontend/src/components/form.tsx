@@ -49,6 +49,13 @@ export const ltrDates = (text: string) => text.split(/(\d{4}-\d{2}-\d{2})/).map(
 /** Today's date in Cairo as YYYY-MM-DD. */
 export const cairoToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' })
 
+/** `date` minus `days` days, both YYYY-MM-DD. */
+export const daysBefore = (date: string, days: number) => {
+  const d = new Date(`${date}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - days)
+  return d.toISOString().slice(0, 10)
+}
+
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 /** The `weekday.*` / `weekdayShort.*` key of an ISO date, read in UTC so no time zone moves it to another day. */
 export const weekdayOf = (date: string) => WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]

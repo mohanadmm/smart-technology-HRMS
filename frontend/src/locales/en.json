@@ -251,9 +251,7 @@
     "add": "Add residence"
   },
   "fare": {
-    "amount": "Fare",
     "tooMany": "More than 100 fares exist. Some may not appear in the table.",
-    "residence": "Residence",
     "combinedTitle": "Team leads' transport fares",
     "combinedDesc": "Every amount the team leads set. You can edit any row.",
     "site": "Site",
@@ -461,7 +459,6 @@
       "sites": "Places where attendance days are recorded.",
       "residences": "Areas employees travel from to reach a site.",
       "leaveTypes": "Days recorded instead of a work site, such as Fridays, official holidays and absences.",
-      "fares": "The fare from each residence to each site, effective from its date.",
       "rules": "The numbers payroll, lateness and leave calculations rely on.",
       "holidays": "Days recorded automatically as an official holiday for everyone."
     }

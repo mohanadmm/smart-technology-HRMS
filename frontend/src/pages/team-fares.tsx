@@ -2,9 +2,9 @@ import { Bus, Users } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmptyState } from '@/components/common/EmptyState'
-import { FilterSelect } from '@/components/common/Filters'
+import { chipCls, FilterSelect } from '@/components/common/Filters'
 import { PageHeader } from '@/components/common/PageHeader'
-import { cairoToday, type Controlled, ErrorBanner, FormDialog, SelectField, TextField, useMoney } from '@/components/form'
+import { cairoToday, type Controlled, daysBefore, ErrorBanner, FormDialog, SelectField, TextField, useMoney } from '@/components/form'
 import { TableSkeleton } from '@/components/layout/PageSkeleton'
 import { Badge, type BadgeVariant } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,6 @@ import { Card } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useAuth } from '@/lib/auth'
 import { useApi, useSave } from '@/lib/query'
-import { cn } from '@/lib/utils'
 import { NotFoundPage } from './pages'
 
 export type Ref = { id: string; name: string }
@@ -22,7 +21,6 @@ export type TeamFares = { sites: Ref[]; rows: TeamFareRow[] }
 const TONE: Partial<Record<TeamFareRow['source'], BadgeVariant>> = { default: 'neutral', override: 'info', none: 'warning' }
 const isEngineer = (r: TeamFareRow) => r.type === 'engineer'
 const missing = (r: TeamFareRow) => !isEngineer(r) && r.amount === null
-const CHIP = 'min-h-tap rounded-full border px-3 text-[13px] font-medium transition-colors outline-none hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-primary'
 
 /** «مواصلات التيم»: the team's fare today from residence × site, corrected per worker (mockup 1). HR picks a team lead first. */
 export function TeamFaresPage() {
@@ -67,7 +65,7 @@ function TeamTable({ team }: { team: TeamFares }) {
     <>
       <div className="flex flex-wrap gap-2">
         {chips.map(([value, label]) => (
-          <button key={value} type="button" aria-pressed={chip === value} onClick={() => setChip(value)} className={cn(CHIP, 'bg-card text-muted-foreground')}>
+          <button key={value} type="button" aria-pressed={chip === value} onClick={() => setChip(value)} className={chipCls}>
             {label}
           </button>
         ))}
@@ -118,13 +116,6 @@ function TeamTable({ team }: { team: TeamFares }) {
   )
 }
 
-/** `date` minus one day, both YYYY-MM-DD. */
-const dayBefore = (date: string) => {
-  const d = new Date(`${date}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() - 1)
-  return d.toISOString().slice(0, 10)
-}
-
 /** One worker's fare from a date: an override for this worker (default), or the residence × site fare for everyone in that pair. Engineers only get an override, at a site they pick. */
 function TeamFareDialog({ row, team, ...dialog }: { row: TeamFareRow; team: TeamFares } & Controlled) {
   const { t } = useTranslation()
@@ -155,7 +146,7 @@ function TeamFareDialog({ row, team, ...dialog }: { row: TeamFareRow; team: Team
           {engineer && <SelectField name="site_id" label={t('teamFare.col.site')} options={team.sites.map((s) => [s.id, s.name])} {...f} />}
           <TextField name="amount" label={t('teamFare.amount')} inputMode="decimal" {...f} />
           {/* a team lead may backdate one day only; the server enforces it too */}
-          <TextField name="effective_from" label={t('teamFare.from')} type="date" min={can('fare.manage.all') ? undefined : dayBefore(today)} {...f} />
+          <TextField name="effective_from" label={t('teamFare.from')} type="date" min={can('fare.manage.all') ? undefined : daysBefore(today, 1)} {...f} />
           {pair && (
             <div className="grid gap-2">
               {(['worker', 'pair'] as const).map((scope) => (
