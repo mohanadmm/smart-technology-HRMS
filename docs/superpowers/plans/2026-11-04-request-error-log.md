@@ -71,7 +71,7 @@
 ### Task 2: Tables and permission
 
 **Files:**
-- Create: `backend/database/migrations/2026_11_04_200000_create_request_and_error_log.php`, `backend/database/migrations/2026_11_04_200001_add_system_log_permission.php`, `backend/app/Modules/Audit/Infrastructure/Eloquent/RequestLogEntry.php`, `backend/app/Modules/Audit/Infrastructure/Eloquent/ErrorLogEntry.php`
+- Create: `backend/database/migrations/2026_11_04_210000_create_request_and_error_log.php`, `backend/database/migrations/2026_11_04_210001_add_system_log_permission.php`, `backend/app/Modules/Audit/Infrastructure/Eloquent/RequestLogEntry.php`, `backend/app/Modules/Audit/Infrastructure/Eloquent/ErrorLogEntry.php`
 - Modify: `backend/tests/Feature/RbacTest.php` (count 34 → 35; developer has `system_log.view.all`; ceo, hr, manager do not)
 
 **Interfaces:**
@@ -184,7 +184,7 @@
 ### Task 8: Retention
 
 **Files:**
-- Create: `backend/database/migrations/2026_11_04_200002_allow_pruning_old_audit_rows.php`, `backend/app/Modules/Audit/Presentation/PruneLogsCommand.php`
+- Create: `backend/database/migrations/2026_11_04_210002_allow_pruning_old_audit_rows.php`, `backend/app/Modules/Audit/Presentation/PruneLogsCommand.php`
 - Modify: `RequestLogEntry`, `ErrorLogEntry`, `AuditLogEntry` (add `MassPrunable` + `prunable()`), `backend/bootstrap/app.php` (`withCommands`), `backend/routes/console.php` (`Schedule::command('logs:prune')->dailyAt('03:00')->timezone('Africa/Cairo')`), `backend/CLAUDE.md` (one "Scheduled:" line), `docs/hrms-module-plan.md` (mark the two Release 1 item 2 bullets done, the same way other finished items are marked)
 - Test: `backend/tests/Feature/LogRetentionTest.php`
 
