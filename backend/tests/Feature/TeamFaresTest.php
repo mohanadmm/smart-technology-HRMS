@@ -6,7 +6,7 @@ use App\Modules\Sites\Infrastructure\Eloquent\EmployeeFareOverride;
 use App\Modules\Sites\Infrastructure\Eloquent\Fare;
 use App\Modules\Sites\Infrastructure\Eloquent\Residence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Testing\TestResponse;
 use Tests\AttendanceFixtures;
 use Tests\TestCase;
 
@@ -108,5 +108,44 @@ class TeamFaresTest extends TestCase
         $this->signIn('hr');
         $this->getJson('/api/v1/fares?changed_since=2026-11-05')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $late);
         $this->getJson('/api/v1/fares?changed_since=05-11-2026')->assertStatus(422);
+    }
+
+    private function describe(string $employee, string $site): TestResponse
+    {
+        return $this->getJson("/api/v1/employees/{$employee}/fare?site_id={$site}&date=2026-11-05")->assertOk();
+    }
+
+    public function test_an_engineer_never_takes_the_residence_default(): void
+    {
+        $s1 = $this->workSite('S-1');
+        $r = $this->residence();
+        $this->fare($r, $s1, '2026-01-01', '40');
+        $this->signIn('hr');
+        $engineer = $this->employee('engineer', '2026-01-01', ['residence_id' => $r]);
+
+        $this->describe($engineer, $s1)->assertJsonPath('data.source', 'none')->assertJsonPath('data.amount', '0.000000')->assertJsonPath('data.default_amount', null);
+        $this->postJson("/api/v1/employees/{$engineer}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-01', 'amount' => '25'])->assertCreated();
+        $this->describe($engineer, $s1)->assertJsonPath('data.source', 'override')->assertJsonPath('data.amount', '25.000000');
+    }
+
+    public function test_a_worker_without_residence_is_no_residence(): void
+    {
+        $s1 = $this->workSite('S-1');
+        $this->signIn('hr');
+        $laborer = $this->employee('day_laborer');
+
+        $this->describe($laborer, $s1)->assertJsonPath('data.source', 'no_residence')->assertJsonPath('data.amount', '0.000000');
+    }
+
+    public function test_default_amount_is_the_residence_site_fare(): void
+    {
+        $s1 = $this->workSite('S-1');
+        $r = $this->residence();
+        $this->fare($r, $s1, '2026-01-01', '35');
+        $this->signIn('hr');
+        $worker = $this->employee('permanent_worker', '2026-01-01', ['residence_id' => $r]);
+        $this->postJson("/api/v1/employees/{$worker}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-01', 'amount' => '30'])->assertCreated();
+
+        $this->describe($worker, $s1)->assertJsonPath('data.source', 'override')->assertJsonPath('data.amount', '30.000000')->assertJsonPath('data.default_amount', '35.000000');
     }
 }

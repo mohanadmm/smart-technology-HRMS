@@ -193,11 +193,11 @@ class SitesApiTest extends TestCase
         $this->postJson('/api/v1/employees', [...$base, 'residence_id' => $res])->assertStatus(422);
     }
 
-    public function test_employee_without_residence_gets_none(): void
+    public function test_employee_without_residence_gets_no_residence(): void
     {
         $s = $this->site();
         $emp = $this->employee();
-        $this->getJson("/api/v1/employees/$emp/fare?site_id=$s&date=2026-06-15")->assertJsonPath('data.source', 'none');
+        $this->getJson("/api/v1/employees/$emp/fare?site_id=$s&date=2026-06-15")->assertJsonPath('data.source', 'no_residence');
     }
 
     public function test_deleting_a_residence_nulls_employee_fk(): void
