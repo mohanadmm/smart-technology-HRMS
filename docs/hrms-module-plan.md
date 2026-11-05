@@ -225,7 +225,7 @@ Status is verified against `main` at `7be93b9` (PR #3 merged) by reading the cod
 - **Forms:** the existing Word and PDF forms print as PDFs in their planned release. Releases 1–2 come first: employees and sites, attendance and leave, then payroll, fingerprint import, advances and payslips.
 - **Migration:** a full historical migration is no longer assumed. Release 2 item 8 (the historical payroll archive) and the parity re-run from migrated data wait on R29 (go-live date, opening balances, archive or not).
 - **Transport:** separate from the wage. Fares and site allowances are never part of the lateness wage basis (§0a). The fare's dependence on residence, actual site and override stays as in `calculations.md` §4.
-- **Transport fare (2026-11-05, option A):** the team lead sets fares for their sites (override per worker by default, or the residence × site default), applied at once; HR sees every change on Settings → Fares and gets `fare_changed`. The team lead never sets or sees wages. Spec: `docs/superpowers/specs/2026-11-05-team-lead-fares-design.md`.
+- **Transport fare (2026-11-05, option C, replaces option A):** HR sets every fare (the residence × site default, plus per-worker overrides) from the team transport page, per team lead, and fills a missing residence there. The team lead reads their own team's fares and never sets fares or sees wages. Engineers get a fare only by override; a day laborer with no fare gets 0. Spec: `docs/superpowers/specs/2026-11-05-team-lead-fares-design.md`.
 
 ### Changes to the work plan
 - **Youssef:**

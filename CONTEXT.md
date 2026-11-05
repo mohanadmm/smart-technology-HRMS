@@ -124,7 +124,7 @@ _Avoid_: bonus, extra
 
 **Fare** (المواصلات):
 The transport amount paid for travelling from a residence to a site, full or half.
-Set by the team lead for their own sites, or by HR for any. The residence × site amount is the **default**; a per-worker **override** wins over it. Engineers get a fare only by override.
+HR sets every fare; the team lead reads their own team's. The residence × site amount is the **default**; a per-worker **override** wins over it. Engineers get a fare only by override; a day laborer with no fare gets 0.
 _Avoid_: الأجرة; transport allowance (for office tower trips, see Tower transport)
 
 **Tower transport** (بدل انتقالات البرج):
