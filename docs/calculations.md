@@ -132,7 +132,7 @@ Each day records a site, arrival and departure (§2 defaults and hints), OT and 
 |---|---|
 | Daily wage | the worker's daily wage. 0 on non-work days (Friday, absent غ, rest) |
 | Allowance (بدل) | the site's allowance rule: a share of the wage (e.g. Alex Apparel = wage × 0.25, Nestlé Sharm = wage × 2) or a fixed amount. Most sites 0 |
-| Transport | fare: the worker's override for that site if set, else the residence × site fare, else 0 (no fare, or no residence). Engineers get transport only from an override, never the residence × site fare (owner default, 2026-11-05). HR sets every fare (the residence × site default, plus per-worker overrides); the team lead reads their own team's fares (2026-11-05: option C replaces option A). ⚠️ the October Excel pays 0 transport to every day laborer: the October fixture runs with no day-laborer fares, and the difference goes in the Excel-difference report. |
+| Transport | fare: the worker's override for that site if set, else the residence × site fare, else 0 (no fare, or no residence). Engineers get transport only from an override, never the residence × site fare (owner default, 2026-11-05). HR sets every fare (the residence × site default, plus per-worker overrides); the team lead reads their own team's fares. ⚠️ the October Excel pays 0 transport to every day laborer: the October fixture runs with no day-laborer fares, and the difference goes in the Excel-difference report. |
 | OT money | OT min × (wage ÷ 8 ÷ 60) × **1.5** |
 | Lateness | chargeable late min × wage ÷ 480 × the worker's multiplier (§0a; 2 in October) |
 | Day total | wage + allowance + transport + OT − lateness |

@@ -10,7 +10,7 @@ Owner of the touched files: Youssef (Sites & rates, `routes/api.php`, `App.tsx`,
   - fills a missing residence inline (through the existing `PATCH /employees/{id}` and `employee.edit`); the residence × site amount then applies on its own;
   - sets the residence × site amount (the dialog's «لكل اللي ساكنين في … وبيشتغلوا في …» option);
   - sets a per-worker override (the dialog's default «للعامل ده بس»).
-  Settings → Fares stays HR's flat list of every residence × site amount, with who set it.
+  Settings → Fares stays HR's flat list of every residence × site amount, with who set it. It is shown to `site.view.all` (HR, CEO); team leads read fares on `/team-fares` only.
 - **Team lead** (role `manager`) sees the same page read-only, for their own team and sites only: no edit button, no residence button. They never see or set wages.
 - **CEO** has no team-fares page (the only team-lead list, `/sites/manager-candidates`, needs `site.assign_manager`); the CEO reads every residence × site amount on Settings → Fares, as before.
 - **Fix kept from option A**: `GET /fares` returns a manager only their own sites' rows.
@@ -38,20 +38,22 @@ Engineers never take the residence × site default: only an override. The team l
 ## Permission
 
 `fare.manage.all` only, granted by migration `2026_11_05_000001` to every role that holds `site.manage.all` (developer, HR). There is no `fare.manage.own`: the migration is edited in this PR (it has not run anywhere but throwaway databases).
-The team lead reads through `employee.view.own`, which the role already holds: the team-fares rows are employees reached through `EmployeeReach`, the reach of that permission. Databases that ran the option A version of the migration need `delete from permissions where resource='fare' and action='manage' and scope='own';` (the grant cascades) and `php artisan cache:clear`.
+The team lead reads through `employee.view.own`, which the role already holds: the team-fares rows are employees reached through `EmployeeReach`, the reach of that permission. Databases that ran the option A version of 000001 still hold `fare.manage.own` granted to `manager`; migration `2026_11_05_000003_drop_fare_manage_own` deletes that permission (the grant cascades, and the grant cache is cleared after every migrate). It is a no-op on a fresh database.
 
 ## API
 
 | Route | Permission | Behaviour |
 |---|---|---|
 | `GET /fares` | `site.view` | Own scope: only the user's sites. Filter `manager_id` (that manager's sites). Rows add `set_by` (`{id, name}` or null = from Excel). |
-| `POST /fares` | `fare.manage` (was `site.manage`) | Same (residence, site, effective_from) updates the amount in place. Refused (422 `effective_from`) inside a locked attendance period of either worker type. |
-| `POST /employees/{employee}/fare-overrides` | `fare.manage` + `employee.scope` (was `employee.edit`) | Same key updates in place. Refused inside a locked period of the employee's type on that date. |
+| `POST /fares` | `fare.manage` (was `site.manage`) | Same (residence, site, effective_from) updates the amount in place. Refused when a locked period of either worker type ends on or after `effective_from`. |
+| `POST /employees/{employee}/fare-overrides` | `fare.manage` + `employee.scope` (was `employee.edit`) | Same key updates in place. Refused when a locked period of the employee's type on that date (every type, if they have none then) ends on or after `effective_from`. |
 | `GET /employees/{employee}/fare?site_id=&date=` | `employee.view` + `employee.scope` | Own scope: a `site_id` outside the user's sites is refused (422 `site_id`). |
-| `GET /team-fares?date=&manager_id=` | `employee.view` (was `fare.manage`) | Own scope: the user's own team (`manager_id` ignored). All scope: `manager_id` required. `date` defaults to today (Cairo). |
+| `GET /team-fares?date=&manager_id=` | `employee.view` (was `fare.manage`) | Own scope: the user's own team (`manager_id` ignored). All scope: `manager_id` required. `date` defaults to today (Cairo). Unpaginated by decision: a team is tens of rows (ponytail note in `FareService::team`). |
 | `PATCH /employees/{employee}` | `employee.edit` + `employee.scope` | Unchanged; the screen sends `{residence_id}` only. |
 
 Writes have no date floor and no reach check (HR reaches everyone). A write records CREATED, or UPDATED with before and after (`Audited`). No notification.
+
+Locked periods: with no later row, a fare or override governs every period after its date, so a write is refused (422 `effective_from`, `errors.fare_period_locked`) when any locked, not reopened, attendance period of a relevant type ends on or after `effective_from`. The check runs inside the write's transaction and holds `attendance_locks` in share mode until the commit (`PeriodGuard::lockedFrom`), so a lock or reopen taken meanwhile waits for the write.
 
 ### `GET /team-fares` row
 
