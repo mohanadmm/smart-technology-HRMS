@@ -70,6 +70,19 @@ class TeamFaresTest extends TestCase
         $this->getJson('/api/v1/fares?manager_id=nope')->assertStatus(422);
     }
 
+    public function test_fares_list_by_site_name_then_residence_name_then_date(): void
+    {
+        [$b, $a] = [$this->workSite('Site B'), $this->workSite('Site A')];
+        [$r2, $r1] = [$this->residence('Res 2'), $this->residence('Res 1')];
+        $this->fare($r2, $b, '2026-01-01', '10');
+        $this->fare($r1, $a, '2026-02-01', '20');
+        $this->fare($r2, $a, '2026-01-01', '30');
+        $this->fare($r1, $a, '2026-01-01', '40');
+
+        $this->signIn('hr');
+        $this->assertSame(['40.000000', '20.000000', '30.000000', '10.000000'], array_column($this->getJson('/api/v1/fares')->assertOk()->json('data'), 'amount'));
+    }
+
     public function test_fares_carry_set_by_and_previous_amount(): void
     {
         $s1 = $this->workSite('S-1');
@@ -268,7 +281,7 @@ class TeamFaresTest extends TestCase
         $this->assertCount(1, $sent);
         $this->assertSame('2026-11-05', substr((string) $sent[0]->date, 0, 10));
         $this->assertSame($id, $sent[0]->ref);
-        $this->assertSameData(['kind' => 'fare', 'site_id' => $s1, 'residence_id' => $r, 'effective_from' => '2026-11-05', 'old_amount' => '30.000000', 'new_amount' => '35.000000'], $sent[0]->data);
+        $this->assertSameData(['kind' => 'fare', 'site_id' => $s1, 'residence_id' => $r, 'effective_from' => '2026-11-05', 'old_amount' => '30.000000', 'new_amount' => '35.000000', 'by' => $lead->id], $sent[0]->data);
         $sent[0]->update(['read_at' => now()]);
 
         $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '40'])->assertCreated();
@@ -283,7 +296,7 @@ class TeamFaresTest extends TestCase
         $this->actingAs($lead, 'api');
         $oid = $this->postJson("/api/v1/employees/{$worker}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '25'])->assertCreated()->json('data.id');
         $this->assertSameData(
-            ['kind' => 'override', 'site_id' => $s1, 'employee_id' => $worker, 'effective_from' => '2026-11-05', 'old_amount' => '40.000000', 'new_amount' => '25.000000'],
+            ['kind' => 'override', 'site_id' => $s1, 'employee_id' => $worker, 'effective_from' => '2026-11-05', 'old_amount' => '40.000000', 'new_amount' => '25.000000', 'by' => $lead->id],
             Notification::where(['user_id' => $hr?->getAuthIdentifier(), 'ref' => $oid])->firstOrFail()->data,
         );
     }

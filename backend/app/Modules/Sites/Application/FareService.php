@@ -88,7 +88,8 @@ final class FareService
         $query = Fare::query()->select('fares.*')
             ->selectRaw('fares.updated_by as set_by_id, (select u.name from users u where u.id = fares.updated_by) as set_by_name')
             ->selectRaw('(select p.amount from fares p where p.residence_id = fares.residence_id and p.site_id = fares.site_id and p.deleted_at is null and p.effective_from < fares.effective_from order by p.effective_from desc limit 1) as previous_amount')
-            ->orderBy('residence_id')->orderBy('site_id')->orderBy('effective_from');
+            // by name, as HR reads the list; the names of a deleted site or residence still sort its rows
+            ->orderByRaw('(select s.name_ar from sites s where s.id = fares.site_id), (select r.name_ar from residences r where r.id = fares.residence_id), fares.effective_from');
         foreach (['residence_id', 'site_id'] as $col) {
             if (isset($filters[$col])) {
                 $query->where($col, $filters[$col]);
@@ -302,7 +303,7 @@ final class FareService
 
     /**
      * Every team-lead write tells every holder of fare.manage.all: one notification per row a day, a repeat refreshes its new_amount
-     * and marks it unread (the first old_amount stays; the audit log keeps every write). HR writes notify nobody.
+     * and `by` (the writer's user id) and marks it unread (the first old_amount stays; the audit log keeps every write). HR writes notify nobody.
      *
      * @param  array<string, mixed>  $data
      */
@@ -313,7 +314,8 @@ final class FareService
         }
         $today = now('Africa/Cairo')->toDateString();
         foreach ($this->holders->userIds('fare.manage.all') as $userId) {
-            $this->notifier->notifyOrRefresh($userId, 'fare_changed', $today, [...$data, 'new_amount' => $row->amount], (string) $row->getKey(), ['new_amount' => $row->amount]);
+            $latest = ['new_amount' => $row->amount, 'by' => $ownerId];
+            $this->notifier->notifyOrRefresh($userId, 'fare_changed', $today, [...$data, ...$latest], (string) $row->getKey(), $latest);
         }
     }
 }
