@@ -262,7 +262,7 @@
     "setBy": "Set by",
     "fromExcel": "From Excel",
     "allLeads": "All",
-    "lead": "Team lead",
+    "lead": "Site manager",
     "add": "Add",
     "edit": "Edit",
     "pairTitle": "{{residence}} → {{site}}"
@@ -538,6 +538,8 @@
   "attendance": {
     "subtitle": "Each employee's days, by their group's period.",
     "groupLabel": "Group",
+    "siteFilter": "Site",
+    "allSites": "All sites",
     "group": {
       "office": "Office staff",
       "engineer": "Engineers",
@@ -1072,7 +1074,7 @@
   },
   "teamFare": {
     "title": "Team transport",
-    "subtitle": "Choose a team lead, record missing residences, and set the fare for each residence at each site.",
+    "subtitle": "Choose a site manager, record missing residences, and set the fare for each residence at each site.",
     "subtitleView": "The team's workers' fares by residence and site.",
     "all": "Whole team ({{count}})",
     "missing": "No amount ({{count}})",
@@ -1105,7 +1107,7 @@
       "pair_one": "Everyone living in {{residence}} and working at {{site}} ({{count}} worker)",
       "pair_other": "Everyone living in {{residence}} and working at {{site}} ({{count}} workers)"
     },
-    "pickLead": "Choose a team lead",
+    "pickLead": "Pick a site manager",
     "empty": "No workers on the team today."
   },
   "logs": {

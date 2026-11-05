@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Alert } from '@/components/common/Alert'
 import { EmptyState } from '@/components/common/EmptyState'
+import { FilterSelect } from '@/components/common/Filters'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { cairoToday, Dates, ErrorBanner, Field, FormDialog, localName, ltrDates, type Row, SelectField, useCairoTime, weekdayOf } from '@/components/form'
@@ -18,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn, OFF } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
-import { SITES, useApi, useList, useSave } from '@/lib/query'
+import { SITES, useApi, useList, useSave, WORK_SITES } from '@/lib/query'
 import { DayEditor } from './attendance-day'
 import { ImportTab } from './attendance-import'
 import { DaySheet } from './attendance-sheet'
@@ -51,9 +52,9 @@ function pickDate(s: string | null) {
   return s && s <= today && !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s ? s : today
 }
 
-/** HR's attendance page, URL state `?group=&period=&date=&tab=`; the group defaults to engineers, the grid's period to the current one, the sheet's date to today. */
+/** HR's attendance page, URL state `?group=&period=&date=&tab=&site=` (site: the grid's filter, field groups only); the group defaults to engineers, the grid's period to the current one, the sheet's date to today. */
 export function AttendancePage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [params, setParams] = useSearchParams()
   const group = GROUPS.find((g) => g === params.get('group')) ?? 'engineer'
   const chosen = params.get('period')
@@ -69,6 +70,9 @@ export function AttendancePage() {
       return p
     }, { replace: true })
   const allowed = can('attendance.view') // without it nothing is fetched and the page is not found
+  const siteFilter = allowed && tab === 'grid' && group !== 'office'
+  const site = siteFilter ? params.get('site') ?? '' : ''
+  const { data: workSites } = useApi<Row[]>(siteFilter ? WORK_SITES : null)
   // the sheet's period is the one holding its date; the grid's is the chosen one
   // the sheet keeps the last period while the next date's loads, so the header does not blink inside one period; a kept period
   // of another group, or one not holding the date, is not current: the header shows loading and offers no arrows or lock until the real one arrives
@@ -87,8 +91,11 @@ export function AttendancePage() {
     <>
       <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-end">
         <div className="sm:w-56">
-          <SelectField name="group" label={t('attendance.groupLabel')} values={{ group }} set={(_, v) => set({ group: v, period: null })} errs={{}} options={GROUPS.map((g) => [g, t(`attendance.group.${g}`)])} />
+          <SelectField name="group" label={t('attendance.groupLabel')} values={{ group }} set={(_, v) => set({ group: v, period: null, site: null })} errs={{}} options={GROUPS.map((g) => [g, t(`attendance.group.${g}`)])} />
         </div>
+        {siteFilter && (
+          <FilterSelect value={site} onChange={(v) => set({ site: v || null })} label={t('attendance.siteFilter')} allLabel={t('attendance.allSites')} options={(workSites ?? []).map((s) => [s.id, localName(s, i18n.language)])} />
+        )}
         <div className="flex flex-wrap items-center gap-1">
           <Button variant="outline" size="icon" disabled={!period} onClick={() => period && move(period.prev_start)} aria-label={t('attendance.prevPeriod')}>
             <ChevronLeft className="rtl:-scale-x-100" aria-hidden />
@@ -155,7 +162,7 @@ export function AttendancePage() {
         <TabsContent value="grid">
           <Card className="overflow-hidden">
             {bar}
-            {start ? <Grid key={`${group}/${start}`} group={group} start={start} onOpenDay={openDay} /> : !err && <TableSkeleton rows={8} />}
+            {start ? <Grid key={`${group}/${start}/${site}`} group={group} start={start} site={site} onOpenDay={openDay} /> : !err && <TableSkeleton rows={8} />}
           </Card>
         </TabsContent>
         {can('attendance.edit') && (
@@ -206,10 +213,10 @@ function showToday(table: HTMLTableElement | null) {
 }
 
 /** One page of the period grid: a sticky employee column, then one button per day; a column is off when some row's day is derived. */
-function Grid({ group, start, onOpenDay }: { group: string; start: string; onOpenDay: (employee: Row, date: string) => void }) {
+function Grid({ group, start, site, onOpenDay }: { group: string; start: string; site: string; onOpenDay: (employee: Row, date: string) => void }) {
   const { t, i18n } = useTranslation()
   const [page, setPage] = useState(1)
-  const { rows, total, err, loading } = useList(`/attendance/grid?${new URLSearchParams({ group, period_start: start, page: String(page), per_page: String(PER_PAGE) })}`)
+  const { rows, total, err, loading } = useList(`/attendance/grid?${new URLSearchParams({ group, period_start: start, ...(site && { site_id: site }), page: String(page), per_page: String(PER_PAGE) })}`)
   const { data: sites = [], loading: sitesLoading } = useApi<Row[]>(SITES)
   const grid = rows as GridRow[]
   const today = cairoToday()

@@ -47,11 +47,16 @@ final class AttendanceGrid
         ];
     }
 
-    /** @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}} */
-    public function grid(EmployeeType $g, ?string $start, int $perPage, int $page, ?string $date = null, ?string $ownerId = null): array
+    /**
+     * $siteId keeps the employees with a live stored day at that site in the period (owner: who worked at the site in the period).
+     *
+     * @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}}
+     */
+    public function grid(EmployeeType $g, ?string $start, int $perPage, int $page, ?string $date = null, ?string $ownerId = null, ?string $siteId = null): array
     {
         $p = $this->periodAt($g, $start, $date);
-        $roster = $this->roster->ofType($g, $p->start, $p->end, $perPage, $page, $ownerId);
+        $ids = $siteId === null ? null : AttendanceDay::where('site_id', $siteId)->whereBetween('date', [$p->start, $p->end])->distinct()->pluck('employee_id')->map(fn ($id) => (string) $id)->all();
+        $roster = $this->roster->ofType($g, $p->start, $p->end, $perPage, $page, $ownerId, $ids);
         $days = $this->days->forPeriod($p, $roster['data']);
 
         return [

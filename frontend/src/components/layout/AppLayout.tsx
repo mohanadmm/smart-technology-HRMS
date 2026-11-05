@@ -38,20 +38,20 @@ import { NotificationBell } from './NotificationBell'
 import { TableSkeleton } from './PageSkeleton'
 import { SegmentedControl } from './SegmentedControl'
 
-/** An item shows when the user has any of its `abilities`. */
+/** An item shows when the user has any of its `abilities`; App's route guard reads the same list (`navAbilities`). */
 export const NAV: { group: string; items: { path: string; key: string; icon: LucideIcon; abilities: string[] }[] }[] = [
   {
     group: 'nav.group.hr',
     items: [
-      { path: '/site-day', key: 'nav.siteDay', icon: ClipboardCheck, abilities: ['attendance.record'] },
-      { path: '/team-fares', key: 'nav.teamFares', icon: Bus, abilities: ['fare.manage', 'employee.view.own'] },
       { path: '/employees', key: 'nav.employees', icon: Users, abilities: ['employee.view'] },
       { path: '/attendance', key: 'nav.attendance', icon: CalendarCheck, abilities: ['attendance.view'] },
+      { path: '/site-day', key: 'nav.siteDay', icon: ClipboardCheck, abilities: ['attendance.record'] },
       { path: '/leave', key: 'nav.leave', icon: CalendarDays, abilities: ['leave.view'] },
       { path: '/wage-proposals', key: 'nav.wageProposals', icon: HandCoins, abilities: ['employee.approve_wage'] },
+      { path: '/team-fares', key: 'nav.teamFares', icon: Bus, abilities: ['fare.manage', 'employee.view.own'] },
     ],
   },
-  { group: 'nav.group.settings', items: [{ path: '/settings', key: 'nav.settings', icon: Settings, abilities: ['site.view', 'setting.view', 'attendance.view'] }] },
+  { group: 'nav.group.settings', items: [{ path: '/settings', key: 'nav.settings', icon: Settings, abilities: ['site.view.all', 'setting.view', 'attendance.view'] }] },
   {
     group: 'nav.group.admin',
     items: [
@@ -62,6 +62,8 @@ export const NAV: { group: string; items: { path: string; key: string; icon: Luc
     ],
   },
 ]
+
+export const navAbilities = (path: string) => NAV.flatMap((g) => g.items).find((n) => n.path === path)?.abilities ?? []
 
 /** The first page the user may open; the fallback is the 1a landing page. */
 export const homePath = (can: (ability: string) => boolean) =>

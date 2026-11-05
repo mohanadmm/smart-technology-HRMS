@@ -226,6 +226,22 @@ class AttendanceDaysTest extends TestCase
         $this->assertCount(30, $r->json('data.0.days'));
     }
 
+    public function test_grid_site_filter_lists_only_who_worked_at_the_site_in_the_period(): void
+    {
+        $a = $this->employee('engineer');
+        $b = $this->employee('engineer');
+        $c = $this->employee('engineer');
+        $this->putDay($a, '2026-10-01', ['site_id' => $this->site]);
+        $this->putDay($b, '2026-10-01', ['site_id' => $this->workSite('Site-3')]);
+        $this->putDay($c, '2026-10-01', ['site_id' => $this->site]);
+        $this->deleteJson("/api/v1/attendance/days/{$c}/2026-10-01?version=1")->assertOk();   // a cleared day does not count
+        $this->getJson("/api/v1/attendance/grid?group=engineer&period_start=2026-09-26&site_id={$this->site}")->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)->assertJsonCount(1, 'data')->assertJsonPath('data.0.employee.id', $a);
+        $this->getJson("/api/v1/attendance/grid?group=engineer&period_start=2026-08-26&site_id={$this->site}")
+            ->assertOk()->assertJsonPath('meta.pagination.total', 0);                                    // the day is outside that period
+        $this->getJson('/api/v1/attendance/grid?group=engineer&site_id=nope')->assertStatus(422)->assertJsonPath('error.details.0.field', 'site_id');
+    }
+
     public function test_period_navigation(): void
     {
         $this->getJson('/api/v1/attendance/period?group=engineer')->assertJsonPath('data.start', '2026-09-26')->assertJsonPath('data.end', '2026-10-25')
