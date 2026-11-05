@@ -1,7 +1,9 @@
 import { Bus, CalendarOff, HardHat, House, MapPin, Plus, type LucideIcon } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DataList } from '@/components/common/DataList'
 import { EmptyState } from '@/components/common/EmptyState'
+import { FilterSelect } from '@/components/common/Filters'
 import { RowActions } from '@/components/common/RowActions'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { cairoToday, type Controlled, ErrorBanner, FormDialog, ltrDates, type Row, SelectField, TextField, useList, useMoney } from '@/components/form'
@@ -13,7 +15,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/ca
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useAuth } from '@/lib/auth'
-import { RESIDENCES, useApi, useSave } from '@/lib/query'
+import { RESIDENCES, SITES, useApi, useSave } from '@/lib/query'
 
 const LEAVE_CODES = ['friday', 'saturday', 'official_holiday', 'annual', 'casual', 'sick', 'unpaid', 'rest', 'absent', 'other']
 const MODES = ['none', 'share_of_wage', 'fixed']
@@ -395,82 +397,99 @@ export function ResidencesTab() {
   )
 }
 
-/** Fares keyed by residence x site. `?date=` already makes the server send only the row in force per pair; the date check here is a redundant guard. */
-function inForce(fares: Row[], today: string) {
-  const best = new Map<string, Row>()
-  for (const f of fares) {
-    const k = `${f.residence_id}|${f.site_id}`
-    if (f.effective_from <= today && (!best.has(k) || f.effective_from > best.get(k)!.effective_from)) best.set(k, f)
-  }
-  return best
-}
-
-function FareDialog({ residence, site, children }: { residence: Row; site: Row; children: React.ReactNode }) {
+function FareDialog({ residence, site, ...dialog }: { residence?: Row; site?: Row } & Controlled) {
   const { t } = useTranslation()
   const send = useSave()
+  const { rows: sites } = useList(SITES)
+  const { rows: residences } = useList(RESIDENCES)
+  const pick = !residence || !site
   return (
     <FormDialog
-      title={`${residence.name_ar} / ${site.name_ar}`}
-      trigger={<Button type="button" variant="soft" size="sm" className="min-w-20 tabular-nums">{children}</Button>}
-      init={{}}
-      submit={(form) => send('/fares', { body: { residence_id: residence.id, site_id: site.id, effective_from: form.effective_from, amount: form.amount } })}
-      onDone={() => {}}
-      shown={['effective_from', 'amount']}
+      {...dialog}
+      title={pick ? t('fare.add') : t('fare.pairTitle', { residence: residence.name_ar, site: site.name_ar })}
+      trigger={pick ? <Button type="button" variant="outline" size="sm"><Plus />{t('fare.add')}</Button> : undefined}
+      init={{ effective_from: cairoToday(), residence_id: residence?.id ?? '', site_id: site?.id ?? '' }}
+      submit={(form) => send('/fares', { body: form }, ['/fares', '/team-fares'])}
+      shown={['residence_id', 'site_id', 'effective_from', 'amount']}
     >
       {(f) => (
         <>
-          <TextField name="effective_from" label={t('change.effective_from')} type="date" {...f} />
-          <TextField name="amount" label={t('fare.amount')} inputMode="decimal" {...f} />
+          {pick && (
+            <>
+              <SelectField name="residence_id" label={t('teamFare.col.residence')} blank options={residences.map((r) => [r.id, r.name_ar])} {...f} />
+              <SelectField name="site_id" label={t('fare.site')} blank options={sites.filter((x) => x.kind === 'work' && x.active).map((x) => [x.id, x.name_ar])} {...f} />
+            </>
+          )}
+          <TextField name="amount" label={t('teamFare.amount')} inputMode="decimal" {...f} />
+          <TextField name="effective_from" label={t('teamFare.from')} type="date" {...f} />
         </>
       )}
     </FormDialog>
   )
 }
 
+/** Every residence × site fare in force today, with who set it (mockup 3a). Editing needs fare.manage. */
 export function FaresTab() {
   const { t } = useTranslation()
+  const { can } = useAuth()
   const money = useMoney()
   const today = cairoToday()
-  const lists = [useList(`/sites${LIST}&kind=work&active=true`), useList(RESIDENCES), useList(`/fares${LIST}&date=${today}`)]
-  const [sites, residences, fares] = lists
-  const err = lists.find((l) => l.err)?.err
-  const ready = !err && !lists.some((l) => l.loading) // one failed list leaves just the banner
-  const best = inForce(fares.rows, today)
+  const manage = can('fare.manage')
+  const [lead, setLead] = useState('')
+  const [page, setPage] = useState(1)
+  const [edit, setEdit] = useState<Row>()
+  const query = new URLSearchParams({ per_page: '100', date: today, ...(lead && { manager_id: lead }) })
+  const fares = useList(`/fares?${query}`)
+  const sites = useList(SITES)
+  const residences = useList(RESIDENCES)
+  const leads = useApi<Row[]>(can('site.assign_manager') ? '/sites/manager-candidates' : null)
+  const err = fares.err ?? sites.err ?? residences.err ?? leads.err
+  const name = (list: Row[], id: string) => list.find((x) => x.id === id)?.name_ar ?? ''
   return (
     <ListCard
-      title={t('settings.tab.fares')}
-      description={t('settings.desc.fares')}
+      title={t('fare.combinedTitle')}
+      description={t(manage ? 'fare.combinedDesc' : 'fare.combinedDescView')}
+      action={manage && <FareDialog />}
       err={err}
-      loading={!ready && !err}
-      empty={ready && (!sites.rows.length || !residences.rows.length)}
+      loading={fares.loading}
+      empty={!fares.rows.length}
       icon={Bus}
-      // ponytail: one 100-row page of in-force fares; paginate if a site x residence grid ever exceeds it
-      notice={<Notice show={lists.some((l) => l.total > l.rows.length)} text={t('fare.tooMany')} />}
+      notice={
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            {leads.data && <FilterSelect value={lead} onChange={(v) => { setLead(v); setPage(1) }} label={t('fare.lead')} allLabel={t('fare.allLeads')} options={leads.data.map((m) => [m.id, m.name])} />}
+          </div>
+          <Notice show={fares.total > fares.rows.length} text={t('fare.tooMany')} />
+        </>
+      }
+      page={{ page, total: fares.rows.length, onPageChange: setPage }}
     >
-      {ready && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="sticky start-0 z-10 bg-muted">{t('fare.residence')}</TableHead>
-              {sites.rows.map((s) => <TableHead key={s.id}>{s.name_ar}</TableHead>)}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {residences.rows.map((r) => (
-              <TableRow key={r.id}>
-                <TableCell className="sticky start-0 z-10 bg-card font-medium">{r.name_ar}</TableCell>
-                {sites.rows.map((s) => (
-                  <TableCell key={s.id}>
-                    <FareDialog residence={r} site={s}>
-                      {best.has(`${r.id}|${s.id}`) ? money(best.get(`${r.id}|${s.id}`)!.amount) : '—'}
-                    </FareDialog>
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+      <DataList
+        label={t('fare.combinedTitle')}
+        rows={paginate(fares.rows, page, PAGE)}
+        rowKey={(f) => f.id}
+        title={{ header: t('fare.site'), cell: (f) => <span className="font-medium">{name(sites.rows, f.site_id)}</span> }}
+        fields={[
+          { header: t('teamFare.col.residence'), cell: (f) => name(residences.rows, f.residence_id) },
+          {
+            header: t('teamFare.amount'),
+            numeric: true,
+            cell: (f) => money(f.amount),
+          },
+          { header: t('teamFare.from'), cell: (f) => ltrDates(f.effective_from) },
+          { header: t('fare.setBy'), cell: (f) => (f.set_by ? <bdi>{f.set_by.name}</bdi> : <Badge variant="neutral">{t('fare.fromExcel')}</Badge>) },
+        ]}
+        actions={
+          manage
+            ? (f) => (
+                <Button type="button" variant="outline" size="sm" onClick={() => setEdit(f)}>
+                  {t('fare.edit')}
+                </Button>
+              )
+            : undefined
+        }
+      />
+      {edit && <FareDialog residence={{ id: edit.residence_id, name_ar: name(residences.rows, edit.residence_id) }} site={{ id: edit.site_id, name_ar: name(sites.rows, edit.site_id) }} open onOpenChange={() => setEdit(undefined)} />}
     </ListCard>
   )
 }

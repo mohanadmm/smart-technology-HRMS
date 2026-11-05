@@ -6,6 +6,7 @@ namespace App\Modules\Employees\Application;
 
 use App\Modules\Employees\Domain\EffectiveDated;
 use App\Modules\Employees\Domain\EmployeeType;
+use App\Modules\Employees\Infrastructure\Eloquent\DayCrewChange;
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeePayChange;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
@@ -17,13 +18,13 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * Read model of live employees with their dated types and shifts, so other modules never query Employees' tables.
  * A row is {id: string, code: int, name_ar: string, name_en: ?string, department: ?string, hire_date: ?string, termination_date: ?string,
- * types: list<{type, effective_from}>, shifts: list<{effective_from, shift_start: ?HH:MM, shift_end: ?HH:MM}>, sites: list<{site_id, effective_from}>}.
+ * types: list<{type, effective_from}>, shifts: list<{effective_from, shift_start: ?HH:MM, shift_end: ?HH:MM}>, sites: list<{site_id, effective_from}>, crew: list<{date, site_id: ?string}>}.
  */
 final class EmployeeRoster
 {
     use Paginates;
 
-    private const RELATIONS = ['typeChanges', 'payChanges', 'siteAssignments'];
+    private const RELATIONS = ['typeChanges', 'payChanges', 'siteAssignments', 'crewChanges'];
 
     /**
      * Some type row of $type overlaps [from, to] and the employment window; greatest/least skip a null hire date, termination date or next change.
@@ -37,8 +38,6 @@ final class EmployeeRoster
     /** The type in force on typeInYear's read date D; the bound `?` is min(Dec 31 of the year, today). greatest/least skip a null hire or termination date. */
     private const TYPE_IN_YEAR = '(select t.type from employee_type_changes t where t.employee_id = employees.id and t.deleted_at is null
         and t.effective_from <= greatest(employees.hire_date, least(?::date, employees.termination_date)) order by t.effective_from desc limit 1)';
-
-    private const HOME_SITE = '(select s.site_id from employee_site_assignments s where s.employee_id = employees.id and s.deleted_at is null and s.effective_from <= ?::date order by s.effective_from desc limit 1) = ?';
 
     /** @return array{data: list<array<string, mixed>>, pagination: array{page: int, per_page: int, total: int, total_pages: int, has_next_page: bool, has_previous_page: bool}} */
     public function ofType(EmployeeType $type, string $from, string $to, int $perPage, int $page, ?string $managedBy = null): array
@@ -90,13 +89,13 @@ final class EmployeeRoster
         return $this->rows($this->employedAs($type, $from, $to, $managedBy));
     }
 
-    /** @return list<array<string, mixed>> the workers employed on $date whose home site on $date is $siteId, by code */
+    /** @return list<array<string, mixed>> the workers employed on $date whose site on $date (that day's crew change, else the home site) is $siteId, by code */
     public function onSite(string $siteId, string $date): array
     {
         return $this->rows(Employee::with(self::RELATIONS)
             ->where(fn (Builder $q) => $q->whereRaw(self::EMPLOYED_AS, [EmployeeType::PermanentWorker->value, $date, $date])
                 ->orWhereRaw(self::EMPLOYED_AS, [EmployeeType::DayLaborer->value, $date, $date]))
-            ->whereRaw(self::HOME_SITE, [$date, $siteId])
+            ->whereRaw(Employee::SITE_ON.' = ?', [$date, $date, $date, $siteId])
             ->orderBy('code'));
     }
 
@@ -197,6 +196,9 @@ final class EmployeeRoster
             ])->all()),
             'sites' => array_values($e->siteAssignments->sortBy('effective_from')->map(fn (EmployeeSiteAssignment $s) => [
                 'site_id' => (string) $s->site_id, 'effective_from' => (string) $s->effective_from,
+            ])->all()),
+            'crew' => array_values($e->crewChanges->map(fn (DayCrewChange $c) => [
+                'date' => (string) $c->date, 'site_id' => $c->site_id === null ? null : (string) $c->site_id,
             ])->all()),
         ];
     }

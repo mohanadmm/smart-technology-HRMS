@@ -57,9 +57,11 @@ final class AttendanceLocks
             $derived = [];
             $onHolidays = [];
             $missing = 0;
+            $open = 0;
             foreach ($this->days->forPeriod($p, $employees) as $days) {
                 foreach ($days as $day) {
                     $missing += $day['state'] === 'missing' ? 1 : 0;
+                    $open += $day['state'] === 'stored' && $day['in_time'] !== null && $day['out_time'] === null && $day['leave_code'] === null ? 1 : 0;
                     if ($day['state'] === 'derived') {
                         $derived[] = $day;
                     }
@@ -68,6 +70,10 @@ final class AttendanceLocks
                         $onHolidays[] = ['employee_id' => $e['id'], 'code' => $e['code'], 'name_ar' => $e['name_ar'], 'name_en' => $e['name_en'], 'date' => $day['date'], 'leave_code' => $day['leave_code']];
                     }
                 }
+            }
+            // An arrival with no departure must be completed first, for every field type (owner, 2026-11-04); no confirmation skips it.
+            if ($open > 0 && $p->group !== EmployeeType::Office) {
+                throw AttendanceRefused::because(AttendanceRefusal::OpenDays, ['count' => (string) $open]);
             }
             if ($missing > 0 && ! $confirmMissing) {
                 throw AttendanceRefused::because(AttendanceRefusal::MissingDaysUnconfirmed);

@@ -13,9 +13,10 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * The missing-days bell (hrms-module-plan, 1c): per open period, how many days are still unrecorded up to $date,
- * sent once per (user, date) to each holder of attendance.edit.all. Counts only, never names (§9).
- * Counts are cumulative, so the next day's run also covers a day whose run failed.
+ * The 21:00 alert (hrms-module-plan, 1c; owner, 2026-11-05): one notification per (user, date) to each holder of attendance.edit.all,
+ * listing per open period the unrecorded days, the open field days (an arrival and no departure) and the day's crew changes
+ * (AttendanceGrid::missingCounts). Counts only, never names (§9). Counts are cumulative, so the next day's run also covers a day
+ * whose run failed.
  */
 final class SendMissingDaysAlert implements ShouldQueue
 {
@@ -37,7 +38,7 @@ final class SendMissingDaysAlert implements ShouldQueue
 
     public function handle(AttendanceGrid $grid, Notifier $notifier, PermissionHolders $holders): void
     {
-        $groups = array_values(array_filter($grid->missingCounts($this->date), fn (array $g) => $g['missing'] > 0));
+        $groups = array_values(array_filter($grid->missingCounts($this->date), fn (array $g) => $g['missing'] + $g['open'] + $g['crew_changes'] > 0));
         if ($groups === []) {
             return;
         }

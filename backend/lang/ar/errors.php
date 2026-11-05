@@ -28,6 +28,8 @@ return [
     'document_too_large' => 'حجم الملف أكبر من :max ميجابايت.',
     'payload_too_large' => 'حجم الملف المرفوع كبير جدًا.',
     'document_type' => 'يُقبل فقط ملف PDF أو JPG أو PNG أو WEBP.',
+    'fare_site_not_yours' => 'هذا الموقع ليس من مواقعك.',
+    'fare_period_locked' => 'هذا التاريخ داخل فترة حضور مقفلة.',
     'employee_type' => [
         'office' => 'موظف مثبت شركة',
         'engineer' => 'مهندس',

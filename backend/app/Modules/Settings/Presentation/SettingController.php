@@ -34,6 +34,7 @@ final class SettingController
         'office_shift_end' => self::TIME,
         'worker_shift_start' => self::TIME,
         'worker_shift_end' => self::TIME,
+        'manager_yesterday_until' => self::TIME,
         'weekly_off_office' => self::DAYS,
         'weekly_off_field' => self::DAYS,
         'leave_days_under_one_year' => self::INTEGER,

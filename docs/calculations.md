@@ -81,9 +81,11 @@ Each day records: site, arrival and departure, OT minutes, late minutes, minutes
 
 - Arrival/departure default to the field shift on Present (§13). They suggest late = max(0, arrival − shift start) and
   OT = max(0, hours worked − **8** h) as hints, as for permanent workers (§3); the shift is the per-employee shift, else
-  **08:00–17:00** (`worker_shift_start`/`worker_shift_end`), so the default day suggests 60 OT minutes (client question 20).
-  ⚠️ Conflict: the owner set the standard workday at **08:00–16:00** on 2026-11-03 (R19). The setting is still 17:00 since
-  migration `2026_11_02_000001_set_field_shift_end`.
+  the field shift setting (`worker_shift_start`/`worker_shift_end`, §2b). The owner's field shift is **09:00–16:00**
+  (R19, 2026-11-04), which HR sets in Settings at rollout; until then the setting holds **08:00–17:00** (migration
+  `2026_11_02_000001_set_field_shift_end`), where the default day suggests 60 OT minutes (client question 20).
+  ⚠️ At 09:00–16:00 the shift is 7 h but the OT hint still starts after **8** h worked, so up to an hour after the shift end
+  suggests no OT. Confirm with the owner whether OT starts at the shift end or after 8 h.
   HR confirms by entering the minutes; payroll reads only the stored minutes.
 
 - Day extra = OT min × minute rate × **1.5** − chargeable late min × minute rate × the employee's multiplier (§0a; was a flat **1.5**) + outside-Alex min × minute rate
@@ -93,6 +95,8 @@ Each day records: site, arrival and departure, OT minutes, late minutes, minutes
 - Net = salary + Σ day extra − absence − deduction − insurance − tax − advance installments
 
 Outside-Alex minutes are paid at ×1, with no multiplier, as in the Excel.
+
+On the site manager's screen (§2b): an engineer's stored late minutes are the raw minutes after the field shift start, recomputed only when the arrival changes; an open day (arrival, no departure) blocks the next day and the period lock.
 
 ## 2a. Derived off days
 - Weekly off per type: **Friday + Saturday** for office staff, **Friday** for the field types.
@@ -107,11 +111,35 @@ Outside-Alex minutes are paid at ×1, with no multiplier, as in the Excel.
   - a re-lock lists the holiday days removed and the holidays added or changed since the last lock, and separately the leave days (annual, casual, sick, unpaid) that now fall on a holiday. It does not change those leave days; HR reviews them.
 - A derived day is never an absence.
 
-## 3. Permanent workers (عمال مثبتين): 26th → 25th
-Each day records: scheduled in/out (default **08:00–17:00**), actual in/out, site, outside-Alex money, transport (full / half / none), advance. Weekly off **Friday**.
+## 2b. Field shift and the site manager's day — decided 2026-11-04
 
-- Scheduled in/out are stored on each day; they default to **08:00–17:00** (`worker_shift_start`/`worker_shift_end`) or the pay-row override. Late minutes = max(0, actual in − scheduled in); OT minutes = max(0, time worked − **8** h), as below. Both are shown as hints.
-- ⚠️ Every default Present stores actual in/out 08:00–17:00 (§13), and permanent workers' OT is computed from the times, so each default day pays **60 OT minutes** unless HR edits the times (client question 20).
+Applies to engineers, permanent workers and day laborers recorded on the site manager's screen (`/site-day`). Minutes only; money is §0a and §2–§4.
+
+**Shift**
+- The field shift is **09:00–16:00** (owner, 2026-11-04). It lives in Settings → Rules (`worker_shift_start`, `worker_shift_end`), which HR sets at rollout; no migration changes it. An employee's own shift on their pay row wins.
+- «حضور الكل» fills the shift start as the arrival and leaves the departure empty. «انصراف الكل» fills the shift end for everyone present with an arrival and no departure. Typed times are kept.
+
+**What a day stores**
+
+| | Rule |
+|---|---|
+| Arrival | Required on a present day. A departure without an arrival, or before it, is refused. |
+| Late minutes (engineers, day laborers) | **Raw**: max(0, arrival − shift start), with no grace. §0a subtracts the 15-minute grace once at payroll. Recomputed only when the arrival changes. Permanent workers' lateness comes from `scheduled_in` and the arrival at payroll (§3). |
+| Early departure | Not a stored field: payroll reads it from the departure and the shift end (`scheduled_out` for permanent workers). |
+| Overtime | Departure after the shift end is shown as a difference only. Engineers' and day laborers' `ot_minutes` are stored as **0** until HR approves the overtime (Slice 3), and reset to 0 only when a time changes. |
+| Missing departure | A field day with an arrival and no departure is **open** (office days never are). The site manager cannot save a later day for that person until it is completed. After the yesterday window (`manager_yesterday_until`, 12:00) the site manager may still enter the **departure only**, until the period is locked: the arrival and the status stay, the late minutes stay as stored, and HR hears of each such save at once (owner, 2026-11-05). A day HR recorded, or one outside the site manager's reach that day, is HR's to complete. An open day in a locked period never blocks. HR gets the count of open days in the 21:00 alert. Locking a period is refused while any field day in it is open, and payroll counts no open day. |
+
+**Who changes a day**
+- A day HR recorded, imported or materialized, or one an approved leave request wrote (sick included, even over a sick day the site manager wrote first), is read-only for the site manager.
+- The site manager clears only their own days, at the site they are working on or on one of their leave types (absent, sick, rest, other).
+
+Worked example (shift 09:00–16:00, grace 15): arrival 09:25 → 25 late minutes stored, 10 chargeable at payroll; departure 15:00 → 60 minutes early; departure 17:00 → 60 minutes after hours, overtime 0 until HR approves.
+
+## 3. Permanent workers (عمال مثبتين): 26th → 25th
+Each day records: scheduled in/out (default: the field shift, §2b), actual in/out, site, outside-Alex money, transport (full / half / none), advance. Weekly off **Friday**.
+
+- Scheduled in/out are stored on each day; they default to the field shift setting (`worker_shift_start`/`worker_shift_end`: **09:00–16:00** once HR sets it, §2b; seeded **08:00–17:00**) or the pay-row override. Late minutes = max(0, actual in − scheduled in); OT minutes = max(0, time worked − **8** h), as below. Both are shown as hints.
+- ⚠️ While the setting is still 08:00–17:00, every default Present stores actual in/out 08:00–17:00 (§13), and permanent workers' OT is computed from the times, so each default day pays **60 OT minutes** unless HR edits the times (client question 20). At 09:00–16:00 a default day is 7 h and pays none; see the OT question in §2.
 - ⚠️ Late minutes do not wrap around midnight: scheduled 00:00 with arrival 23:50 the day before gives 1,430 late minutes; scheduled 23:50 with arrival 00:10 gives 0. Must a scheduled start that crosses midnight wrap?
 
 - Hours worked = actual out − actual in. If out is earlier than in, the shift crossed midnight: add 24 h.
@@ -119,11 +147,13 @@ Each day records: scheduled in/out (default **08:00–17:00**), actual in/out, s
 - Lateness money = chargeable late minutes × minute rate × the employee's multiplier (§0a; was late hours × hour rate × a flat **2**, with no grace)
 - OT hours = max(0, hours worked − **8**)
 - OT money = OT hours × hour rate × **1.5** + outside-Alex money
-- Transport = fare (section 4 fare rule) for full, fare ÷ 2 for half. HR picks per day for now (1c), the manager later; default full, including on a missing or future work day. A leave day stores none.
+- Transport = fare (section 4 fare rule; HR sets every fare) for full, fare ÷ 2 for half. HR picks per day for now (1c), the manager later; default full, including on a missing or future work day. A leave day stores none.
 - Day cost = day rate + OT money (site costing)
 - Net = salary + Σ OT money + Σ transport − Σ lateness − absence − deduction − insurance − tax − advance installments
 
 The Excel worker template **adds** lateness to the net (Excel error #4) and leaves transport out. The system subtracts lateness and pays transport.
+
+On the site manager's screen (§2b): a permanent worker's open day (arrival, no departure) blocks the next day and the period lock, as for the other field types; their late minutes still come from `scheduled_in` and the arrival.
 
 ## 4. Day laborers (عمال باليومية): 1–15 and 16–end
 Each day records a site, arrival and departure (§2 defaults and hints), OT and late minutes. The worker has a **daily wage** (effective-dated) and a **residence**.
@@ -132,7 +162,7 @@ Each day records a site, arrival and departure (§2 defaults and hints), OT and 
 |---|---|
 | Daily wage | the worker's daily wage. 0 on non-work days (Friday, absent غ, rest) |
 | Allowance (بدل) | the site's allowance rule: a share of the wage (e.g. Alex Apparel = wage × 0.25, Nestlé Sharm = wage × 2) or a fixed amount. Most sites 0 |
-| Transport | fare: the worker's override for that site if set, else the residence × site fare. ⚠️ the October Excel pays 0 transport to every day laborer |
+| Transport | fare: the worker's override for that site if set, else the residence × site fare, else 0 (no fare, or no residence). Engineers get transport only from an override, never the residence × site fare (owner default, 2026-11-05). HR sets every fare (the residence × site default, plus per-worker overrides); the team lead reads their own team's fares. ⚠️ the October Excel pays 0 transport to every day laborer: the October fixture runs with no day-laborer fares, and the difference goes in the Excel-difference report. |
 | OT money | OT min × (wage ÷ 8 ÷ 60) × **1.5** |
 | Lateness | chargeable late min × wage ÷ 480 × the worker's multiplier (§0a; 2 in October) |
 | Day total | wage + allowance + transport + OT − lateness |

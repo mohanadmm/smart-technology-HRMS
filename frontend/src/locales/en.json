@@ -46,6 +46,8 @@
     "attendance": "Attendance",
     "siteDay": "Site attendance",
     "leave": "Leave",
+    "wageProposals": "Proposed wages",
+    "teamFares": "Team transport",
     "logs": "System logs"
   },
   "toggle": {
@@ -252,9 +254,18 @@
     "add": "Add residence"
   },
   "fare": {
-    "amount": "Fare",
     "tooMany": "More than 100 fares exist. Some may not appear in the table.",
-    "residence": "Residence"
+    "combinedTitle": "Residence and site fares",
+    "combinedDesc": "The amount for each residence at each site, and who set it.",
+    "combinedDescView": "The amount for each residence at each site.",
+    "site": "Site",
+    "setBy": "Set by",
+    "fromExcel": "From Excel",
+    "allLeads": "All",
+    "lead": "Team lead",
+    "add": "Add",
+    "edit": "Edit",
+    "pairTitle": "{{residence}} → {{site}}"
   },
   "auth": {
     "email": "Email address",
@@ -455,7 +466,6 @@
       "sites": "Places where attendance days are recorded.",
       "residences": "Areas employees travel from to reach a site.",
       "leaveTypes": "Days recorded instead of a work site, such as Fridays, official holidays and absences.",
-      "fares": "The fare from each residence to each site, effective from its date.",
       "rules": "The numbers payroll, lateness and leave calculations rely on.",
       "holidays": "Days recorded automatically as an official holiday for everyone."
     }
@@ -494,7 +504,8 @@
     "leave_casual_days": "Casual leave days",
     "worker_shift_start": "Field shift start",
     "worker_shift_end": "Field shift end",
-    "sick_leave_pay_percent": "Sick leave pay (%)"
+    "sick_leave_pay_percent": "Sick leave pay (%)",
+    "manager_yesterday_until": "Site manager can edit yesterday until"
   },
   "weekday": {
     "saturday": "Saturday",
@@ -619,7 +630,8 @@
       "entered": "Entered",
       "imported": "Imported",
       "derived": "Automatic",
-      "leave": "Leave request"
+      "leave": "Leave request",
+      "manager": "Site manager"
     },
     "sheet": {
       "kpi": {
@@ -755,6 +767,35 @@
     "delete": "Delete",
     "deleteConfirm": "Delete the official holiday \"{{name}}\"?"
   },
+  "wages": {
+    "page": "Proposed wages",
+    "description": "A daily wage a site manager proposed for a day laborer they added. It is not paid until you approve it.",
+    "list": "Proposed wages waiting",
+    "empty": "No proposed wages are waiting",
+    "more": "Showing the first {{shown}} of {{total}}. Approve or refuse some to see the rest.",
+    "gone": "This proposed wage is no longer waiting: it was already approved or refused.",
+    "site": "Site",
+    "proposedBy": "Proposed by",
+    "proposedAt": "Proposed at",
+    "proposed": "Proposed wage",
+    "approved": "Approved wage",
+    "from": "Paid from",
+    "badWage": "Enter a daily wage above zero",
+    "decide": {
+      "title": "Approve the proposed wage"
+    },
+    "approve": {
+      "open": "Approve",
+      "done": "Approved the wage for {{name}}"
+    },
+    "refuse": {
+      "open": "Refuse",
+      "back": "Back",
+      "yes": "Confirm refusal",
+      "confirm": "The laborer ends today and leaves every crew. Their recorded days stay for you to decide: a wage for those days only, or cancel them.",
+      "done": "Refused the proposed wage for {{name}}"
+    }
+  },
   "notifications": {
     "title": "Notifications",
     "open": "Open notifications ({{count}} unread)",
@@ -763,9 +804,12 @@
     "unread": "unread,",
     "pause": ",",
     "missingDays": {
-      "title": "Missing attendance days as of {{date}}",
+      "title": "Attendance follow-up as of {{date}}",
       "line": "Missing days, {{group}}: {{count}}",
-      "period": "{{start}} – {{end}}"
+      "period": "{{start}} – {{end}}",
+      "group": "{{group}}",
+      "open": "No departure: {{count}}",
+      "crew": "Crew changes: {{count}}"
     },
     "leaveAnniversary": {
       "line": "One year since <name/> (<code/>) was hired",
@@ -791,9 +835,19 @@
         "unknown": "A leave request was refused"
       }
     },
+    "wageProposed": {
+      "line": "Proposed daily wage for <name/> (<code/>)",
+      "unknown": "Proposed daily wage for a day laborer",
+      "detail": "{{amount}} · {{site}}"
+    },
     "leaveCancelled": {
       "line": "Leave request for <name/> (<code/>) cancelled",
       "unknown": "A leave request was cancelled"
+    },
+    "pastEdit": {
+      "line": "Departure of <name/> (<code/>) for {{date}}, after the window",
+      "unknown": "A departure entered after the window for {{date}}",
+      "detail": "{{time}} · {{site}}"
     }
   },
   "time": {
@@ -818,7 +872,75 @@
     "atSite": "At site: {{site}}",
     "otherSite": "At another site",
     "empty": "No one is assigned to this site on this day.",
-    "noSites": "No sites are assigned to you. Contact HR."
+    "noSites": "No sites are assigned to you. Contact HR.",
+    "find": "Search by name or employee ID",
+    "bulk": "Bulk actions at {{site}}",
+    "markAll": "Mark all present ({{count}})",
+    "checkOutAll": "Check out all ({{count}})",
+    "hrOwnsSites": "A site missing or wrong? Contact HR.",
+    "conflict": "Someone else changed this day before you saved. Your changes are still on screen; load the latest, then enter them again.",
+    "loadLatest": "Load latest",
+    "saving": "Saving…",
+    "unsaved": "Unsaved changes: {{count}}",
+    "unsavedShort": "Unsaved",
+    "saved": "Saved.",
+    "save": "Save the day",
+    "todo": "Open: {{count}}",
+    "done": "Done",
+    "count": {
+      "present": "Present: {{count}}",
+      "unrecorded": "Not recorded: {{count}}",
+      "noCheckout": "No check-out: {{count}}"
+    },
+    "why": {
+      "locked": "The period is locked",
+      "window": "The time to edit this day has passed",
+      "hr_day": "HR recorded it; only HR changes it",
+      "open_day": "The departure on {{date}} is missing; enter it first",
+      "open_day_hr": "The departure on {{date}} is missing; HR completes it"
+    },
+    "arrival": "Check-in",
+    "departure": "Check-out",
+    "arrivalOf": "Check-in of {{name}}",
+    "departureOf": "Check-out of {{name}}",
+    "early": "Left {{count}} min early",
+    "later": "Stayed {{count}} min after hours (overtime needs HR approval)",
+    "removeFromToday": "Remove {{name}} from today's crew",
+    "addLaborer": "Add day laborer",
+    "addLaborerHint": "They join today’s crew at {{site}}. Search by code or full name first; they may already be on file.",
+    "matches": "Day laborers with this name",
+    "searching": "Searching…",
+    "noMatches": "No day laborer has this code or full name.",
+    "alreadyHere": "At this site",
+    "addToToday": "Add to today's crew",
+    "onOtherSite": "On another site; contact HR",
+    "newLaborer": "New laborer",
+    "proposedWage": "Proposed daily wage",
+    "mobile": "Mobile number (optional)",
+    "wageNeedsHr": "HR reviews the proposed wage before it is approved; you can record their attendance from today.",
+    "addNewLaborer": "Add the new laborer",
+    "badTime": "A time is not valid for: {{names}}. Type it like 8:30 and choose AM or PM.",
+    "pickTitle": "Sites to work on",
+    "pickHint": "Choose one or more of your sites, then open them one at a time. This does not change the sites assigned to you.",
+    "continue": "Continue",
+    "changeSites": "Change sites",
+    "leftOutUnsaved": "{{sites}} has unsaved changes. They are kept and come back if you choose the site again.",
+    "missingCheckout": "Missing check-out",
+    "late": "{{count}} min late",
+    "lateCount": "Late: {{count}}",
+    "openDay": "Open {{date}} and enter the departure",
+    "backToToday": "Back to today",
+    "likeYesterday": "Like yesterday ({{count}})",
+    "addNote": "Add a note",
+    "noteShown": "Note: {{note}}",
+    "noteOf": "Note for {{name}}",
+    "laborerCodeOrName": "Employee code or full name",
+    "searchHint": "Type the code, or the whole name as recorded.",
+    "sameName": "More than one laborer has this name; type the code.",
+    "departureOnly": "Past the window: enter the departure only; HR is told",
+    "openDays": {
+      "title": "No departure on an earlier day ({{count}}); complete it before today"
+    }
   },
   "leave": {
     "balance": "Leave balance",
@@ -936,6 +1058,44 @@
         "done": "Request escalated to the CEO."
       }
     }
+  },
+  "teamFare": {
+    "title": "Team transport",
+    "subtitle": "Choose a team lead, record missing residences, and set the fare for each residence at each site.",
+    "subtitleView": "The team's workers' fares by residence and site.",
+    "all": "Whole team ({{count}})",
+    "missing": "No amount ({{count}})",
+    "col": {
+      "worker": "Worker",
+      "residence": "Residence",
+      "site": "Site",
+      "fare": "Daily fare",
+      "source": "Source"
+    },
+    "noResidence": "No residence recorded",
+    "setResidence": "Record residence",
+    "residenceTitle": "Residence of {{name}}",
+    "byDay": "Per day",
+    "source": {
+      "default": "Automatic",
+      "override": "Set for this worker",
+      "none": "No fare for this residence",
+      "no_residence": "Waiting for the residence",
+      "engineer": "Engineers are set by name"
+    },
+    "edit": "Edit transport for {{name}}",
+    "editAt": "Edit transport for {{name}} · {{residence}} → {{site}}",
+    "editAtSite": "Edit transport for {{name}} · {{site}}",
+    "auto": "Automatic {{amount}}",
+    "amount": "Daily amount",
+    "from": "Effective from",
+    "scope": {
+      "worker": "This worker only",
+      "pair_one": "Everyone living in {{residence}} and working at {{site}} ({{count}} worker)",
+      "pair_other": "Everyone living in {{residence}} and working at {{site}} ({{count}} workers)"
+    },
+    "pickLead": "Choose a team lead",
+    "empty": "No workers on the team today."
   },
   "logs": {
     "subtitle": "Every request the system receives, with its response status, duration and the account that sent it, and every error the system reports. Sensitive values show masked.",
