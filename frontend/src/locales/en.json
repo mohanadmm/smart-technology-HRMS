@@ -879,6 +879,7 @@
     "checkOutAll": "Check out all ({{count}})",
     "hrOwnsSites": "A site missing or wrong? Contact HR.",
     "conflict": "Someone else changed this day before you saved. Your changes are still on screen; load the latest, then enter them again.",
+    "conflictRows": "Someone else changed the day of {{names}} before you saved. Load the latest: those rows show what they saved, and your other changes stay for you to save.",
     "loadLatest": "Load latest",
     "saving": "Saving…",
     "unsaved": "Unsaved changes: {{count}}",
