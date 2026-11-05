@@ -119,7 +119,7 @@ Each day records: scheduled in/out (default **08:00–17:00**), actual in/out, s
 - Lateness money = chargeable late minutes × minute rate × the employee's multiplier (§0a; was late hours × hour rate × a flat **2**, with no grace)
 - OT hours = max(0, hours worked − **8**)
 - OT money = OT hours × hour rate × **1.5** + outside-Alex money
-- Transport = fare (section 4 fare rule) for full, fare ÷ 2 for half. HR picks per day for now (1c), the manager later; default full, including on a missing or future work day. A leave day stores none.
+- Transport = fare (section 4 fare rule) for full, fare ÷ 2 for half. HR picks per day for now (1c), the manager later; default full, including on a missing or future work day. A leave day stores none. The fare is set by the team lead for their sites or by HR (2026-11-05).
 - Day cost = day rate + OT money (site costing)
 - Net = salary + Σ OT money + Σ transport − Σ lateness − absence − deduction − insurance − tax − advance installments
 
@@ -132,7 +132,7 @@ Each day records a site, arrival and departure (§2 defaults and hints), OT and 
 |---|---|
 | Daily wage | the worker's daily wage. 0 on non-work days (Friday, absent غ, rest) |
 | Allowance (بدل) | the site's allowance rule: a share of the wage (e.g. Alex Apparel = wage × 0.25, Nestlé Sharm = wage × 2) or a fixed amount. Most sites 0 |
-| Transport | fare: the worker's override for that site if set, else the residence × site fare. ⚠️ the October Excel pays 0 transport to every day laborer |
+| Transport | fare: the worker's override for that site if set, else the residence × site fare, else 0 (no fare, or no residence). Engineers get transport only from an override, never the residence × site fare (owner default, 2026-11-05). The team lead sets fares for their sites; HR sets any. ⚠️ the October Excel pays 0 transport to every day laborer: the October fixture runs with no day-laborer fares, and the difference goes in the Excel-difference report. |
 | OT money | OT min × (wage ÷ 8 ÷ 60) × **1.5** |
 | Lateness | chargeable late min × wage ÷ 480 × the worker's multiplier (§0a; 2 in October) |
 | Day total | wage + allowance + transport + OT − lateness |
@@ -196,6 +196,7 @@ For each site and period:
 Site cost = Σ day cost of every day recorded at that site
 ```
 Day cost comes from the engineer (section 2), permanent worker (section 3) or day laborer day total (section 4). Leave day-types (Friday, official holiday, sick, غ) get their own rows, so the cost of paid leave is visible.
+Transport is a site-cost line from the same resolved fare (§4).
 
 ## 9. Period totals and payroll approval
 - Gross per employee = all additions. Deductions = all deductions. Net = gross − deductions.
