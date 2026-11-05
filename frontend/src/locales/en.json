@@ -252,16 +252,14 @@
   },
   "fare": {
     "tooMany": "More than 100 fares exist. Some may not appear in the table.",
-    "combinedTitle": "Team leads' transport fares",
-    "combinedDesc": "Every amount the team leads set. You can edit any row.",
-    "combinedDescView": "Every amount the team leads set.",
+    "combinedTitle": "Residence and site fares",
+    "combinedDesc": "The amount for each residence at each site, and who set it.",
+    "combinedDescView": "The amount for each residence at each site.",
     "site": "Site",
-    "was": "was {{amount}}",
     "setBy": "Set by",
     "fromExcel": "From Excel",
     "allLeads": "All",
     "lead": "Team lead",
-    "recent": "Changed in the last 7 days",
     "add": "Add",
     "edit": "Edit"
   },
@@ -943,7 +941,8 @@
   },
   "teamFare": {
     "title": "Team transport",
-    "subtitle": "Amounts come from each worker's residence and site. Edit only what needs it; a change applies at once and HR sees it.",
+    "subtitle": "Choose a team lead, record missing residences, and set the fare for each residence at each site.",
+    "subtitleView": "The team's workers' fares by residence and site.",
     "all": "Whole team ({{count}})",
     "missing": "No amount ({{count}})",
     "col": {
@@ -954,12 +953,14 @@
       "source": "Source"
     },
     "noResidence": "No residence recorded",
+    "setResidence": "Record residence",
+    "residenceTitle": "Residence of {{name}}",
     "byDay": "Per day",
     "source": {
       "default": "Automatic",
       "override": "Set for this worker",
       "none": "No fare for this residence",
-      "no_residence": "Enter the amount or ask HR for the residence",
+      "no_residence": "Waiting for the residence",
       "engineer": "Engineers are set by name"
     },
     "edit": "Edit transport for {{name}}",

@@ -2,12 +2,12 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { queryClient } from '@/lib/query'
-import { json, me, mockFetch, renderApp, renderWithAuth } from '@/test-utils'
+import { json, me, mockFetch, pagination, renderApp, renderWithAuth } from '@/test-utils'
 import { type TeamFareRow, TeamFaresPage } from './team-fares'
 
 const user = userEvent.setup()
-const LEAD = ['fare.manage.own', 'site.view.own']
-const HR = ['fare.manage.all', 'site.view.all', 'site.manage.all', 'site.assign_manager.all']
+const LEAD = ['employee.view.own', 'site.view.own']
+const HR = ['fare.manage.all', 'employee.view.all', 'employee.edit.all', 'site.view.all', 'site.assign_manager.all']
 const fmt = (v: number) => new Intl.NumberFormat('ar-EG-u-nu-latn', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
 const urls = (part: string) => vi.mocked(fetch).mock.calls.map(([u]) => String(u)).filter((u) => u.includes(part))
 
@@ -44,7 +44,7 @@ test('lists the team with each source label', async () => {
   renderWithAuth(<TeamFaresPage />, LEAD)
   expect(await screen.findByRole('heading', { level: 1, name: 'مواصلات التيم' })).toBeInTheDocument()
   await screen.findByText('محمود عبد الله')
-  for (const label of ['تلقائي', 'معدّل للعامل', 'مفيش مبلغ للسكن ده', 'اكتب المبلغ أو اطلب من HR السكن', 'المهندس بيتحدد له بالاسم', 'السكن مش متسجل', 'حسب اليوم'])
+  for (const label of ['تلقائي', 'معدّل للعامل', 'مفيش مبلغ للسكن ده', 'مستني السكن', 'المهندس بيتحدد له بالاسم', 'السكن مش متسجل', 'حسب اليوم'])
     expect(screen.getByText(label)).toBeInTheDocument()
   expect(within(bodyRows()[0]).getByText(fmt(35))).toBeInTheDocument()
   expect(within(bodyRows()[1]).getByText(fmt(30))).toBeInTheDocument()
@@ -79,9 +79,19 @@ test('an empty team says so', async () => {
   expect(await screen.findByText('مفيش عمال في التيم النهارده.')).toBeInTheDocument()
 })
 
-test('a user without fare.manage gets not found', async () => {
+test('a team lead sees the team read-only', async () => {
   mockFetch({ 'GET /api/v1/team-fares': team() })
-  renderWithAuth(<TeamFaresPage />, ['site.view.own'])
+  renderWithAuth(<TeamFaresPage />, LEAD)
+  await screen.findByText('محمود عبد الله')
+  expect(screen.getByText('مواصلات عمال التيم حسب السكن والموقع.')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /تعديل/ })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'سجّل السكن' })).toBeNull()
+  expect(within(bodyRows()[3]).getByText('السكن مش متسجل')).toBeInTheDocument()
+})
+
+test('the CEO gets not found', async () => {
+  mockFetch({ 'GET /api/v1/team-fares': team() })
+  renderWithAuth(<TeamFaresPage />, ['employee.view.all', 'site.view.all'])
   expect(screen.getByRole('heading', { name: 'الصفحة غير موجودة' })).toBeInTheDocument()
   expect(urls('/team-fares')).toEqual([])
 })
@@ -98,6 +108,7 @@ test('an all-scope user picks a team lead first', async () => {
   await user.selectOptions(pick, 'm1')
   await screen.findByText('محمود عبد الله')
   expect(urls('/team-fares')).toEqual(['/api/v1/team-fares?manager_id=m1'])
+  expect(screen.getByText('اختار مسؤول التيم، سجّل السكن الناقص، وحدد المواصلات لكل سكن في كل موقع.')).toBeInTheDocument()
 })
 
 test('the route renders the page', async () => {
@@ -116,12 +127,21 @@ const saving = (extra = {}) => mockFetch({
   'POST /api/v1/employees/w2/fare-overrides': () => json(201, { data: {} }),
   'POST /api/v1/employees/e1/fare-overrides': () => json(201, { data: {} }),
   'POST /api/v1/fares': () => json(201, { data: {} }),
+  'GET /api/v1/residences': () => json(200, { data: [{ id: 'r1', name_ar: 'كفر الدوار' }, { id: 'r2', name_ar: 'القاهرة' }], meta: { pagination } }),
+  'PATCH /api/v1/employees/w4': () => json(200, { data: {} }),
   ...extra,
 })
+/** HR opens the page and picks the team lead m1. */
+const asHr = async () => {
+  const view = renderWithAuth(<TeamFaresPage />, HR)
+  await screen.findByRole('option', { name: 'م. أحمد سامي' })
+  await user.selectOptions(screen.getByRole('combobox', { name: 'مسؤول التيم' }), 'm1')
+  return view
+}
 
 test('editing a worker posts an override by default', async () => {
   saving()
-  renderWithAuth(<TeamFaresPage />, LEAD)
+  await asHr()
   await edit('سيد إبراهيم')
   const dialog = await screen.findByRole('dialog', { name: 'تعديل مواصلات سيد إبراهيم · كفر الدوار ← العامرية' })
   expect(within(dialog).getByText(`التلقائي ${fmt(35)}`)).toBeInTheDocument()
@@ -137,7 +157,7 @@ test('editing a worker posts an override by default', async () => {
 
 test('the pair option posts the residence × site fare', async () => {
   saving()
-  renderWithAuth(<TeamFaresPage />, LEAD)
+  await asHr()
   await edit('محمود عبد الله')
   const dialog = await screen.findByRole('dialog')
   await user.click(within(dialog).getByRole('radio', { name: 'لكل اللي ساكنين في كفر الدوار وبيشتغلوا في العامرية (عاملين)' }))
@@ -156,8 +176,8 @@ test('the amount starts from what applies, else the default, else empty', async 
     row('w3', 'عادل منصور', 'day_laborer', {}),
     row('e1', 'م. كريم فتحي', 'engineer', { site: null, overrides: [{ site_id: 's1', amount: '50.000000' }] }),
   ]
-  mockFetch({ 'GET /api/v1/team-fares': team(rows) })
-  renderWithAuth(<TeamFaresPage />, LEAD)
+  saving({ 'GET /api/v1/team-fares': team(rows) })
+  await asHr()
   for (const [name, value] of [['محمود عبد الله', '35.5'], ['سيد إبراهيم', '40'], ['عادل منصور', ''], ['م. كريم فتحي', '50']]) {
     await edit(name)
     const dialog = await screen.findByRole('dialog')
@@ -171,8 +191,8 @@ test('the pair option counts the workers in Arabic plural forms', async () => {
   const pairOf = (n: number) => Array.from({ length: n }, (_, i) => row(`w${i}`, `عامل ${i}`, 'permanent_worker', {}))
   for (const [n, label] of [[1, 'عامل واحد'], [3, '3 عمال'], [11, '11 عامل']] as const) {
     queryClient.clear()
-    mockFetch({ 'GET /api/v1/team-fares': team(pairOf(n)) })
-    const { unmount } = renderWithAuth(<TeamFaresPage />, LEAD)
+    saving({ 'GET /api/v1/team-fares': team(pairOf(n)) })
+    const { unmount } = await asHr()
     await edit('عامل 0')
     expect(within(await screen.findByRole('dialog')).getByRole('radio', { name: `لكل اللي ساكنين في كفر الدوار وبيشتغلوا في العامرية (${label})` })).toBeInTheDocument()
     unmount()
@@ -181,7 +201,7 @@ test('the pair option counts the workers in Arabic plural forms', async () => {
 
 test('engineers pick a site and have no pair option', async () => {
   saving()
-  renderWithAuth(<TeamFaresPage />, LEAD)
+  await asHr()
   await edit('م. كريم فتحي')
   const dialog = await screen.findByRole('dialog', { name: 'تعديل مواصلات م. كريم فتحي' })
   expect(within(dialog).queryByRole('radio')).toBeNull()
@@ -197,31 +217,16 @@ test('engineers pick a site and have no pair option', async () => {
 
 test('a worker with no residence has no pair option', async () => {
   saving()
-  renderWithAuth(<TeamFaresPage />, LEAD)
+  await asHr()
   await edit('فتحي سالم')
   const dialog = await screen.findByRole('dialog')
   expect(within(dialog).queryByRole('radio', { name: /لكل اللي ساكنين/ })).toBeNull()
   expect(within(dialog).queryByRole('combobox')).toBeNull()
 })
 
-test('the date cannot go before yesterday for a team lead', async () => {
-  saving()
-  const { unmount } = renderWithAuth(<TeamFaresPage />, LEAD)
-  await edit('سيد إبراهيم')
-  const date = within(await screen.findByRole('dialog')).getByLabelText('يسري من')
-  expect(date).toHaveAttribute('min', '2026-11-04')
-  expect(date).toHaveValue('2026-11-05')
-  unmount()
-  renderWithAuth(<TeamFaresPage />, HR)
-  await screen.findByRole('option', { name: 'م. أحمد سامي' })
-  await user.selectOptions(screen.getByRole('combobox', { name: 'مسؤول التيم' }), 'm1')
-  await edit('سيد إبراهيم')
-  expect(within(await screen.findByRole('dialog')).getByLabelText('يسري من')).not.toHaveAttribute('min')
-})
-
 test('a 422 shows the server message', async () => {
   saving({ 'POST /api/v1/employees/w2/fare-overrides': () => json(422, { error: { code: 'validation_failed', message: 'x', details: [{ field: 'effective_from', code: 'locked', message: 'الفترة مقفولة' }] } }) })
-  renderWithAuth(<TeamFaresPage />, LEAD)
+  await asHr()
   await edit('سيد إبراهيم')
   const dialog = await screen.findByRole('dialog')
   await user.clear(within(dialog).getByLabelText('المبلغ اليومي'))
@@ -229,4 +234,27 @@ test('a 422 shows the server message', async () => {
   await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
   expect(await within(dialog).findByText('الفترة مقفولة')).toBeInTheDocument()
   expect(within(dialog).getByLabelText('يسري من')).toHaveAccessibleDescription('الفترة مقفولة')
+})
+
+const patched = () => vi.mocked(fetch).mock.calls.filter(([, i]) => i?.method === 'PATCH').map(([u, i]) => [String(u), JSON.parse(String(i!.body))])
+
+test('HR fills a missing residence', async () => {
+  saving()
+  await asHr()
+  await user.click(await screen.findByRole('button', { name: 'سجّل السكن' }))
+  const dialog = await screen.findByRole('dialog', { name: 'سكن فتحي سالم' })
+  await user.selectOptions(within(dialog).getByRole('combobox', { name: 'السكن' }), 'r2')
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(patched()).toEqual([['/api/v1/employees/w4', { residence_id: 'r2' }]])
+})
+
+test('a residence 422 shows in the dialog', async () => {
+  saving({ 'PATCH /api/v1/employees/w4': () => json(422, { error: { code: 'validation_failed', message: 'x', details: [{ field: 'bank_account', code: 'required', message: 'رقم الحساب مطلوب' }] } }) })
+  await asHr()
+  await user.click(await screen.findByRole('button', { name: 'سجّل السكن' }))
+  const dialog = await screen.findByRole('dialog')
+  await user.selectOptions(within(dialog).getByRole('combobox', { name: 'السكن' }), 'r1')
+  await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+  expect(await within(dialog).findByText('رقم الحساب مطلوب')).toBeInTheDocument()
 })

@@ -3,10 +3,10 @@ import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DataList } from '@/components/common/DataList'
 import { EmptyState } from '@/components/common/EmptyState'
-import { chipCls, FilterSelect } from '@/components/common/Filters'
+import { FilterSelect } from '@/components/common/Filters'
 import { RowActions } from '@/components/common/RowActions'
 import { StatusBadge } from '@/components/common/StatusBadge'
-import { cairoToday, type Controlled, daysBefore, ErrorBanner, FormDialog, ltrDates, type Row, SelectField, TextField, useList, useMoney } from '@/components/form'
+import { cairoToday, type Controlled, ErrorBanner, FormDialog, ltrDates, type Row, SelectField, TextField, useList, useMoney } from '@/components/form'
 import { TableSkeleton } from '@/components/layout/PageSkeleton'
 import { Pagination, paginate } from '@/components/tables/Pagination'
 import { Badge } from '@/components/ui/badge'
@@ -428,7 +428,7 @@ function FareDialog({ residence, site, ...dialog }: { residence?: Row; site?: Ro
   )
 }
 
-/** Every residence × site fare in force today, or every change of the last 7 days, with who set it (mockup 3a). Editing needs fare.manage at all scope. */
+/** Every residence × site fare in force today, with who set it (mockup 3a). Editing needs fare.manage at all scope. */
 export function FaresTab() {
   const { t } = useTranslation()
   const { can } = useAuth()
@@ -436,11 +436,9 @@ export function FaresTab() {
   const today = cairoToday()
   const manage = can('fare.manage.all')
   const [lead, setLead] = useState('')
-  const [recent, setRecent] = useState(false)
   const [page, setPage] = useState(1)
   const [edit, setEdit] = useState<Row>()
-  // recent changes are asked without `date`: a date-filtered list hides a change that starts tomorrow
-  const query = new URLSearchParams({ per_page: '100', ...(recent ? { changed_since: daysBefore(today, 6) } : { date: today }), ...(lead && { manager_id: lead }) })
+  const query = new URLSearchParams({ per_page: '100', date: today, ...(lead && { manager_id: lead }) })
   const fares = useList(`/fares?${query}`)
   const sites = useList(SITES)
   const residences = useList(RESIDENCES)
@@ -460,9 +458,6 @@ export function FaresTab() {
         <>
           <div className="flex flex-wrap items-center gap-2">
             {leads.data && <FilterSelect value={lead} onChange={(v) => { setLead(v); setPage(1) }} label={t('fare.lead')} allLabel={t('fare.allLeads')} options={leads.data.map((m) => [m.id, m.name])} />}
-            <button type="button" aria-pressed={recent} onClick={() => { setRecent((r) => !r); setPage(1) }} className={chipCls}>
-              {t('fare.recent')}
-            </button>
           </div>
           <Notice show={fares.total > fares.rows.length} text={t('fare.tooMany')} />
         </>
@@ -479,12 +474,7 @@ export function FaresTab() {
           {
             header: t('teamFare.amount'),
             numeric: true,
-            cell: (f) => (
-              <>
-                {money(f.amount)}
-                {f.previous_amount !== null && <span className="ms-2 text-xs text-muted-foreground">{t('fare.was', { amount: money(f.previous_amount) })}</span>}
-              </>
-            ),
+            cell: (f) => money(f.amount),
           },
           { header: t('teamFare.from'), cell: (f) => ltrDates(f.effective_from) },
           { header: t('fare.setBy'), cell: (f) => (f.set_by ? <bdi>{f.set_by.name}</bdi> : <Badge variant="neutral">{t('fare.fromExcel')}</Badge>) },

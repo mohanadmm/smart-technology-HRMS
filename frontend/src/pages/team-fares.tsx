@@ -5,13 +5,13 @@ import { DataList } from '@/components/common/DataList'
 import { EmptyState } from '@/components/common/EmptyState'
 import { chipCls, FilterSelect } from '@/components/common/Filters'
 import { PageHeader } from '@/components/common/PageHeader'
-import { cairoToday, type Controlled, daysBefore, ErrorBanner, FormDialog, SelectField, TextField, useMoney } from '@/components/form'
+import { cairoToday, type Controlled, ErrorBanner, FormDialog, SelectField, TextField, useList, useMoney } from '@/components/form'
 import { TableSkeleton } from '@/components/layout/PageSkeleton'
 import { Badge, type BadgeVariant } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuth } from '@/lib/auth'
-import { useApi, useSave } from '@/lib/query'
+import { RESIDENCES, useApi, useSave } from '@/lib/query'
 import { NotFoundPage } from './pages'
 
 export type Ref = { id: string; name: string }
@@ -24,21 +24,23 @@ const missing = (r: TeamFareRow) => !isEngineer(r) && r.amount === null
 /** A stored decimal as a person types it: "35.500000" → "35.5". */
 const typed = (v: string) => v.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
 
-/** «مواصلات التيم»: the team's fare today from residence × site, corrected per worker (mockup 1). HR picks a team lead first. */
+/** «مواصلات التيم»: the team's fare today from residence × site, corrected per worker (mockup 1). HR picks a team lead and sets fares; the team lead reads. */
 export function TeamFaresPage() {
   const { t } = useTranslation()
   const { can } = useAuth()
-  const allowed = can('fare.manage')
-  const all = can('fare.manage.all')
+  const edit = can('fare.manage')
+  const fillResidence = can('employee.edit')
+  const pick = can('employee.view.all')
+  const allowed = edit || can('employee.view.own')
   const [lead, setLead] = useState('')
-  const leads = useApi<Ref[]>(allowed && all ? '/sites/manager-candidates' : null)
-  const path = !allowed ? null : all ? (lead ? `/team-fares?manager_id=${lead}` : null) : '/team-fares'
+  const leads = useApi<Ref[]>(allowed && pick ? '/sites/manager-candidates' : null)
+  const path = !allowed ? null : pick ? (lead ? `/team-fares?manager_id=${lead}` : null) : '/team-fares'
   const { data, err, loading } = useApi<TeamFares>(path)
   if (!allowed) return <NotFoundPage />
   return (
     <div className="space-y-4">
-      <PageHeader title={t('teamFare.title')} description={t('teamFare.subtitle')} />
-      {all && <FilterSelect value={lead} onChange={setLead} label={t('fare.lead')} allLabel={t('teamFare.pickLead')} options={(leads.data ?? []).map((m) => [m.id, m.name])} />}
+      <PageHeader title={t('teamFare.title')} description={t(edit ? 'teamFare.subtitle' : 'teamFare.subtitleView')} />
+      {pick && <FilterSelect value={lead} onChange={setLead} label={t('fare.lead')} allLabel={t('teamFare.pickLead')} options={(leads.data ?? []).map((m) => [m.id, m.name])} />}
       <ErrorBanner err={leads.err ?? err} shown={[]} />
       {path === null ? (
         <EmptyState icon={Users} title={t('teamFare.pickLead')} />
@@ -47,18 +49,18 @@ export function TeamFaresPage() {
       ) : !data.rows.length ? (
         <EmptyState icon={Bus} title={t('teamFare.empty')} />
       ) : (
-        <TeamTable team={data} />
+        <TeamTable team={data} edit={edit} fillResidence={fillResidence} />
       )}
     </div>
   )
 }
 
-
-function TeamTable({ team }: { team: TeamFares }) {
+function TeamTable({ team, edit, fillResidence }: { team: TeamFares; edit: boolean; fillResidence: boolean }) {
   const { t } = useTranslation()
   const money = useMoney()
   const [chip, setChip] = useState('all')
   const [editing, setEditing] = useState<TeamFareRow>()
+  const [housing, setHousing] = useState<TeamFareRow>()
   const siteName = (id: string) => team.sites.find((s) => s.id === id)?.name ?? ''
   const shown = team.rows.filter((r) => chip === 'all' || (chip === 'missing' ? missing(r) : r.site?.id === chip || r.overrides.some((o) => o.site_id === chip)))
   const chips: [string, string][] = [['all', t('teamFare.all', { count: team.rows.length })], ...team.sites.map((s): [string, string] => [s.id, s.name]), ['missing', t('teamFare.missing', { count: team.rows.filter(missing).length })]]
@@ -86,7 +88,19 @@ function TeamTable({ team }: { team: TeamFares }) {
             ),
           }}
           fields={[
-            { header: t('teamFare.col.residence'), cell: (r) => (r.residence ? r.residence.name : <Badge variant="danger">{t('teamFare.noResidence')}</Badge>) },
+            {
+              header: t('teamFare.col.residence'),
+              cell: (r) =>
+                r.residence ? (
+                  r.residence.name
+                ) : fillResidence ? (
+                  <Button type="button" variant="outline" size="sm" onClick={() => setHousing(r)}>
+                    {t('teamFare.setResidence')}
+                  </Button>
+                ) : (
+                  <Badge variant="danger">{t('teamFare.noResidence')}</Badge>
+                ),
+            },
             { header: t('teamFare.col.site'), cell: (r) => (isEngineer(r) ? t('teamFare.byDay') : r.site?.name) },
             {
               header: t('teamFare.col.fare'),
@@ -105,14 +119,19 @@ function TeamTable({ team }: { team: TeamFares }) {
                 <span className="text-xs text-muted-foreground">{t(`teamFare.source.${r.source}`)}</span>
               ),
           }}
-          actions={(r) => (
-            <Button type="button" variant="outline" size="sm" aria-label={t('teamFare.edit', { name: r.name })} onClick={() => setEditing(r)}>
-              {t('fare.edit')}
-            </Button>
-          )}
+          actions={
+            edit
+              ? (r) => (
+                  <Button type="button" variant="outline" size="sm" aria-label={t('teamFare.edit', { name: r.name })} onClick={() => setEditing(r)}>
+                    {t('fare.edit')}
+                  </Button>
+                )
+              : undefined
+          }
         />
       </Card>
       {editing && <TeamFareDialog row={editing} team={team} open onOpenChange={() => setEditing(undefined)} />}
+      {housing && <ResidenceDialog row={housing} open onOpenChange={() => setHousing(undefined)} />}
     </>
   )
 }
@@ -120,7 +139,6 @@ function TeamTable({ team }: { team: TeamFares }) {
 /** One worker's fare from a date: an override for this worker (default), or the residence × site fare for everyone in that pair. Engineers only get an override, at a site they pick. */
 function TeamFareDialog({ row, team, ...dialog }: { row: TeamFareRow; team: TeamFares } & Controlled) {
   const { t } = useTranslation()
-  const { can } = useAuth()
   const money = useMoney()
   const send = useSave()
   const today = cairoToday()
@@ -148,8 +166,7 @@ function TeamFareDialog({ row, team, ...dialog }: { row: TeamFareRow; team: Team
           {row.default_amount !== null && <Badge variant="neutral" className="justify-self-start">{t('teamFare.auto', { amount: money(row.default_amount) })}</Badge>}
           {engineer && <SelectField name="site_id" label={t('teamFare.col.site')} options={team.sites.map((s) => [s.id, s.name])} {...f} />}
           <TextField name="amount" label={t('teamFare.amount')} inputMode="decimal" {...f} />
-          {/* a team lead may backdate one day only; the server enforces it too */}
-          <TextField name="effective_from" label={t('teamFare.from')} type="date" min={can('fare.manage.all') ? undefined : daysBefore(today, 1)} {...f} />
+          <TextField name="effective_from" label={t('teamFare.from')} type="date" {...f} />
           {pair && (
             <div className="grid gap-2">
               {(['worker', 'pair'] as const).map((scope) => (
@@ -162,6 +179,24 @@ function TeamFareDialog({ row, team, ...dialog }: { row: TeamFareRow; team: Team
           )}
         </>
       )}
+    </FormDialog>
+  )
+}
+
+/** HR records a worker's missing residence; the residence × site fare then applies. */
+function ResidenceDialog({ row, ...dialog }: { row: TeamFareRow } & Controlled) {
+  const { t } = useTranslation()
+  const send = useSave()
+  const { rows: residences } = useList(RESIDENCES)
+  return (
+    <FormDialog
+      {...dialog}
+      title={t('teamFare.residenceTitle', { name: row.name })}
+      init={{ residence_id: '' }}
+      submit={(form) => send(`/employees/${row.employee_id}`, { method: 'PATCH', body: { residence_id: form.residence_id } }, ['/team-fares', '/employees'])}
+      shown={['residence_id']}
+    >
+      {(f) => <SelectField name="residence_id" label={t('teamFare.col.residence')} blank options={residences.map((r) => [r.id, r.name_ar])} {...f} />}
     </FormDialog>
   )
 }

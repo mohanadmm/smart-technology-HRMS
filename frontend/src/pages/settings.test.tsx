@@ -468,8 +468,8 @@ describe('fares', () => {
   afterEach(() => vi.useRealTimers())
 
   const FARES = [
-    { id: 'f1', residence_id: 'r1', site_id: 's1', effective_from: '2026-11-06', amount: '35.000000', previous_amount: '30.000000', set_by: { id: 'm1', name: 'م. أحمد سامي' } },
-    { id: 'f2', residence_id: 'r2', site_id: 's2', effective_from: '2026-10-26', amount: '45.000000', previous_amount: null, set_by: null },
+    { id: 'f1', residence_id: 'r1', site_id: 's1', effective_from: '2026-11-06', amount: '35.000000', set_by: { id: 'm1', name: 'م. أحمد سامي' } },
+    { id: 'f2', residence_id: 'r2', site_id: 's2', effective_from: '2026-10-26', amount: '45.000000', set_by: null },
   ]
   const fares = (data: unknown[] = FARES, total?: number, extra = {}) => mockFetch({
     'GET /api/v1/sites': list(sites),
@@ -489,15 +489,13 @@ describe('fares', () => {
     const r1 = within(await screen.findByRole('row', { name: /العجمي/ }))
     expect(r1.getByText('موقع أ')).toBeInTheDocument()
     expect(r1.getByText(fmt(35))).toBeInTheDocument()
-    expect(r1.getByText(`كان ${fmt(30)}`)).toBeInTheDocument()
     expect(r1.getByText('2026-11-06')).toHaveAttribute('dir', 'ltr')
     expect(r1.getByText('م. أحمد سامي')).toBeInTheDocument()
     // below 640 px each row is a card whose lines carry their column names
     for (const label of ['السكن', 'المبلغ اليومي', 'يسري من', 'حدده']) expect(r1.getByText(label)).toBeInTheDocument()
-    expect(screen.getByText('كل المبالغ اللي حطها مسؤولي التيم. أي خانة تقدر تعدّلها.')).toBeInTheDocument()
+    expect(screen.getByText('مبلغ كل سكن في كل موقع، ومين حدده.')).toBeInTheDocument()
     const r2 = within(screen.getByRole('row', { name: /برج العرب/ }))
     expect(r2.getByText('من الإكسيل')).toBeInTheDocument()
-    expect(r2.queryByText(/كان/)).toBeNull()
     expect(fareUrls()).toEqual(['/api/v1/fares?per_page=100&date=2026-11-05'])
   })
 
@@ -507,18 +505,6 @@ describe('fares', () => {
     await screen.findByRole('option', { name: 'م. أحمد سامي' })
     await user.selectOptions(screen.getByRole('combobox', { name: 'مسؤول التيم' }), 'm1')
     await waitFor(() => expect(fareUrls()).toContain('/api/v1/fares?per_page=100&date=2026-11-05&manager_id=m1'))
-  })
-
-  test('the 7-day filter drops the date, so a change dated tomorrow shows', async () => {
-    fares()
-    open()
-    await screen.findByRole('row', { name: /العجمي/ })
-    const recent = screen.getByRole('button', { name: 'اتغيرت آخر ٧ أيام' })
-    expect(recent).toHaveAttribute('aria-pressed', 'false')
-    await user.click(recent)
-    expect(recent).toHaveAttribute('aria-pressed', 'true')
-    await waitFor(() => expect(fareUrls()).toContain('/api/v1/fares?per_page=100&changed_since=2026-10-30'))
-    expect(fareUrls().at(-1)).not.toContain('date=')
   })
 
   test('editing a row posts a dated fare for its pair', async () => {
@@ -549,7 +535,7 @@ describe('fares', () => {
 
   test('the fares tab needs site.view at all scope, and editing needs fare.manage.all', async () => {
     fares()
-    const { unmount } = renderWithAuth(<SettingsPage />, ['site.view.own', 'fare.manage.own'])
+    const { unmount } = renderWithAuth(<SettingsPage />, ['site.view.own', 'employee.view.own'])
     await screen.findByRole('tab', { name: 'المواقع' })
     expect(screen.queryByRole('tab', { name: 'المواصلات' })).toBeNull()
     unmount()
@@ -557,8 +543,8 @@ describe('fares', () => {
     await screen.findByRole('row', { name: /العجمي/ })
     expect(screen.queryByRole('button', { name: 'إضافة' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'تعديل' })).toBeNull()
-    expect(screen.getByText('كل المبالغ اللي حطها مسؤولي التيم.')).toBeInTheDocument()
-    expect(screen.queryByText(/أي خانة/)).toBeNull()
+    expect(screen.getByText('مبلغ كل سكن في كل موقع.')).toBeInTheDocument()
+    expect(screen.queryByText(/ومين حدده/)).toBeNull()
     expect(screen.queryByRole('combobox', { name: 'مسؤول التيم' })).toBeNull()
     expect(fareUrls()).toHaveLength(1)
     expect(vi.mocked(fetch).mock.calls.map(([u]) => String(u)).filter((u) => u.includes('manager-candidates'))).toEqual([])
