@@ -408,7 +408,7 @@ function FareDialog({ residence, site, ...dialog }: { residence?: Row; site?: Ro
       title={pick ? t('fare.add') : `${residence.name_ar} ← ${site.name_ar}`}
       trigger={pick ? <Button type="button" variant="outline" size="sm"><Plus />{t('fare.add')}</Button> : undefined}
       init={{ effective_from: cairoToday(), residence_id: residence?.id ?? '', site_id: site?.id ?? '' }}
-      submit={(form) => send('/fares', { body: { residence_id: form.residence_id, site_id: form.site_id, effective_from: form.effective_from, amount: form.amount } }, ['/fares', '/team-fares'])}
+      submit={(form) => send('/fares', { body: form }, ['/fares', '/team-fares'])}
       shown={['residence_id', 'site_id', 'effective_from', 'amount']}
     >
       {(f) => (
@@ -446,7 +446,6 @@ export function FaresTab() {
   const leads = useApi<Row[]>(can('site.assign_manager') ? '/sites/manager-candidates' : null)
   const err = fares.err ?? sites.err ?? residences.err ?? leads.err
   const name = (list: Row[], id: string) => list.find((x) => x.id === id)?.name_ar ?? ''
-  const filter = (f: () => void) => () => { f(); setPage(1) }
   return (
     <ListCard
       title={t('fare.combinedTitle')}
@@ -459,8 +458,8 @@ export function FaresTab() {
       notice={
         <>
           <div className="flex flex-wrap items-center gap-2">
-            {leads.data && <FilterSelect value={lead} onChange={(v) => filter(() => setLead(v))()} label={t('fare.lead')} allLabel={t('fare.allLeads')} options={leads.data.map((m) => [m.id, m.name])} />}
-            <button type="button" aria-pressed={recent} onClick={filter(() => setRecent((r) => !r))} className={chipCls}>
+            {leads.data && <FilterSelect value={lead} onChange={(v) => { setLead(v); setPage(1) }} label={t('fare.lead')} allLabel={t('fare.allLeads')} options={leads.data.map((m) => [m.id, m.name])} />}
+            <button type="button" aria-pressed={recent} onClick={() => { setRecent((r) => !r); setPage(1) }} className={chipCls}>
               {t('fare.recent')}
             </button>
           </div>

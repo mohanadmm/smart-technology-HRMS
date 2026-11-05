@@ -51,16 +51,15 @@ export function TeamFaresPage() {
   )
 }
 
-type Chip = 'all' | 'missing' | string // a site id
 
 function TeamTable({ team }: { team: TeamFares }) {
   const { t } = useTranslation()
   const money = useMoney()
-  const [chip, setChip] = useState<Chip>('all')
+  const [chip, setChip] = useState('all')
   const [editing, setEditing] = useState<TeamFareRow>()
   const siteName = (id: string) => team.sites.find((s) => s.id === id)?.name ?? ''
   const shown = team.rows.filter((r) => chip === 'all' || (chip === 'missing' ? missing(r) : r.site?.id === chip || r.overrides.some((o) => o.site_id === chip)))
-  const chips: [Chip, string][] = [['all', t('teamFare.all', { count: team.rows.length })], ...team.sites.map((s): [Chip, string] => [s.id, s.name]), ['missing', t('teamFare.missing', { count: team.rows.filter(missing).length })]]
+  const chips: [string, string][] = [['all', t('teamFare.all', { count: team.rows.length })], ...team.sites.map((s): [string, string] => [s.id, s.name]), ['missing', t('teamFare.missing', { count: team.rows.filter(missing).length })]]
   return (
     <>
       <div className="flex flex-wrap gap-2">
