@@ -11,7 +11,8 @@ return new class extends Migration
     public function up(): void
     {
         $now = now();
-        $all = $this->insert('all', $now);
+        $all = (string) Str::uuid7();
+        DB::table('permissions')->insert(['id' => $all, 'resource' => 'fare', 'action' => 'manage', 'scope' => 'all', 'created_at' => $now, 'updated_at' => $now]);
 
         $managers = DB::table('role_permissions as rp')->join('permissions as p', 'p.id', '=', 'rp.permission_id')
             ->where(['p.resource' => 'site', 'p.action' => 'manage', 'p.scope' => 'all'])->whereNull('p.deleted_at')
@@ -23,13 +24,5 @@ return new class extends Migration
     {
         // role_permissions rows go with the permissions (cascadeOnDelete).
         DB::table('permissions')->where(['resource' => 'fare', 'action' => 'manage'])->delete();
-    }
-
-    private function insert(string $scope, mixed $now): string
-    {
-        $id = (string) Str::uuid7();
-        DB::table('permissions')->insert(['id' => $id, 'resource' => 'fare', 'action' => 'manage', 'scope' => $scope, 'created_at' => $now, 'updated_at' => $now]);
-
-        return $id;
     }
 };

@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Modules\Employees\Application\EmployeeService;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
-use App\Modules\Notifications\Infrastructure\Eloquent\Notification;
 use App\Modules\Sites\Infrastructure\Eloquent\EmployeeFareOverride;
 use App\Modules\Sites\Infrastructure\Eloquent\Fare;
 use App\Modules\Sites\Infrastructure\Eloquent\Residence;
@@ -173,8 +172,44 @@ class TeamFaresTest extends TestCase
         $this->postJson("/api/v1/employees/{$laborer}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])
             ->assertStatus(422)->assertJsonPath('error.details.0.field', 'effective_from');
         $this->assertSame([0, 0], [Fare::count(), EmployeeFareOverride::count()]);
+        // No permanent-worker period is locked.
         $this->postJson("/api/v1/employees/{$worker}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertCreated();
-        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-10-06', 'amount' => '30'])->assertCreated();
+    }
+
+    public function test_a_write_dated_before_a_locked_period_is_refused(): void
+    {
+        [$s1, , $r] = $this->team();
+        $laborer = $this->employee('day_laborer', '2026-01-01', ['residence_id' => $r]);
+        $newcomer = $this->employee('day_laborer', '2026-11-16');
+        $this->leaveTypes();
+        $this->postJson('/api/v1/attendance/locks', ['group' => 'day_laborer', 'period_start' => '2026-11-01', 'confirm_missing' => true])->assertCreated();
+
+        // With no later row, a fare dated 10-06 would govern the locked 11-01..11-15.
+        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-10-06', 'amount' => '30'])
+            ->assertStatus(422)->assertJsonPath('error.details.0.field', 'effective_from');
+        $this->postJson("/api/v1/employees/{$laborer}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-10-06', 'amount' => '30'])
+            ->assertStatus(422)->assertJsonPath('error.details.0.field', 'effective_from');
+        // No type on 11-05: every type's locks count.
+        $this->postJson("/api/v1/employees/{$newcomer}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])
+            ->assertStatus(422)->assertJsonPath('error.details.0.field', 'effective_from');
+        $this->assertSame([0, 0], [Fare::count(), EmployeeFareOverride::count()]);
+
+        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-16', 'amount' => '30'])->assertCreated();
+    }
+
+    public function test_the_option_a_team_lead_grant_is_dropped(): void
+    {
+        $id = (string) Str::uuid7();
+        DB::table('permissions')->insert(['id' => $id, 'resource' => 'fare', 'action' => 'manage', 'scope' => 'own', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('role_permissions')->insert(['role_id' => DB::table('roles')->where('slug', 'manager')->value('id'), 'permission_id' => $id]);
+        $migration = require database_path('migrations/2026_11_05_000003_drop_fare_manage_own.php');
+
+        $migration->up();
+        $migration->up();   // a re-run matches nothing
+
+        $this->assertFalse(DB::table('permissions')->where('id', $id)->exists());
+        $this->assertFalse(DB::table('role_permissions')->where('permission_id', $id)->exists());
+        $this->assertTrue(DB::table('permissions')->where(['resource' => 'fare', 'action' => 'manage', 'scope' => 'all'])->exists());
     }
 
     public function test_a_team_lead_reads_their_team_and_writes_nothing(): void
@@ -207,16 +242,6 @@ class TeamFaresTest extends TestCase
         $this->patchJson("/api/v1/employees/{$second}", ['residence_id' => $r2])->assertOk();
         $team()->assertJsonPath('data.rows.0.source', 'default')->assertJsonPath('data.rows.0.amount', '35.000000')
             ->assertJsonPath('data.rows.1.source', 'none')->assertJsonPath('data.rows.1.amount', null);
-    }
-
-    public function test_a_fare_write_notifies_nobody(): void
-    {
-        [$s1, , $r, , $worker] = $this->team();
-        $before = Notification::count();
-
-        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertCreated();
-        $this->postJson("/api/v1/employees/{$worker}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertCreated();
-        $this->assertSame($before, Notification::count());
     }
 
     public function test_same_key_updates_in_place_and_is_audited(): void

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Modules\Sites\Application;
 
-use App\Modules\Attendance\Domain\Period;
 use App\Modules\Attendance\Infrastructure\PeriodGuard;
 use App\Modules\Employees\Application\EmployeeReach;
 use App\Modules\Employees\Domain\EmployeeType;
@@ -218,12 +217,15 @@ final class FareService
      */
     public function saveFare(array $data): array
     {
-        // A pair fare is the default of both worker types, so a lock of either refuses it.
-        $this->assertUnlocked($data['effective_from'], EmployeeType::PermanentWorker, EmployeeType::DayLaborer);
         $key = ['residence_id' => $data['residence_id'], 'site_id' => $data['site_id'], 'effective_from' => $data['effective_from']];
 
-        // updateOrCreate inserts in a savepoint and, losing a race on the unique key, updates the winner's row.
-        return DB::transaction(fn (): array => $this->row(Fare::updateOrCreate($key, ['amount' => $data['amount']])));
+        return DB::transaction(function () use ($key, $data): array {
+            // A pair fare is the default of both worker types, so a lock of either refuses it.
+            $this->assertUnlocked($data['effective_from'], EmployeeType::PermanentWorker, EmployeeType::DayLaborer);
+
+            // updateOrCreate inserts in a savepoint and, losing a race on the unique key, updates the winner's row.
+            return $this->row(Fare::updateOrCreate($key, ['amount' => $data['amount']]));
+        });
     }
 
     /**
@@ -234,10 +236,15 @@ final class FareService
     {
         $date = $data['effective_from'];
         $employee = Employee::query()->select('employees.*')->selectRaw(Employee::TYPE_ON.' as type_on', [$date])->findOrFail($employeeId);
-        $this->assertUnlocked($date, ...array_filter([EmployeeType::tryFrom((string) $employee->getAttribute('type_on'))]));
+        $type = EmployeeType::tryFrom((string) $employee->getAttribute('type_on'));
         $key = ['employee_id' => $employeeId, 'site_id' => $data['site_id'], 'effective_from' => $date];
 
-        return DB::transaction(fn (): array => $this->row(EmployeeFareOverride::updateOrCreate($key, ['amount' => $data['amount']])));
+        return DB::transaction(function () use ($date, $type, $key, $data): array {
+            // With no type on the date, the override could govern any type's period.
+            $this->assertUnlocked($date, ...($type === null ? EmployeeType::cases() : [$type]));
+
+            return $this->row(EmployeeFareOverride::updateOrCreate($key, ['amount' => $data['amount']]));
+        });
     }
 
     /**
@@ -259,12 +266,11 @@ final class FareService
         }
     }
 
+    /** With no later row, a fare governs every period after its date, so a lock ending on or after it refuses the write. */
     private function assertUnlocked(string $date, EmployeeType ...$types): void
     {
-        foreach ($types as $type) {
-            if (PeriodGuard::isLocked(Period::containing($type, $date))) {
-                throw ValidationException::withMessages(['effective_from' => __('errors.fare_period_locked')]);
-            }
+        if (PeriodGuard::lockedFrom($date, ...$types)) {
+            throw ValidationException::withMessages(['effective_from' => __('errors.fare_period_locked')]);
         }
     }
 }
