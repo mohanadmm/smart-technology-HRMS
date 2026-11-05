@@ -489,11 +489,11 @@ export function FaresTab() {
             <TableRow key={f.id}>
               <TableCell className="font-medium">{name(sites.rows, f.site_id)}</TableCell>
               <TableCell>{name(residences.rows, f.residence_id)}</TableCell>
-              <TableCell className="tabular-nums">
+              <TableCell>
                 {money(f.amount)}
                 {f.previous_amount !== null && <span className="ms-2 text-xs text-muted-foreground">{t('fare.was', { amount: money(f.previous_amount) })}</span>}
               </TableCell>
-              <TableCell className="tabular-nums">{ltrDates(f.effective_from)}</TableCell>
+              <TableCell>{ltrDates(f.effective_from)}</TableCell>
               <TableCell>{f.set_by ? <bdi>{f.set_by.name}</bdi> : <Badge variant="neutral">{t('fare.fromExcel')}</Badge>}</TableCell>
               {manage && (
                 <TableCell className="text-end">

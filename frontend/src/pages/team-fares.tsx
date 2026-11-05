@@ -89,7 +89,7 @@ function TeamTable({ team }: { team: TeamFares }) {
                 </TableCell>
                 <TableCell>{r.residence ? r.residence.name : <Badge variant="danger">{t('teamFare.noResidence')}</Badge>}</TableCell>
                 <TableCell>{isEngineer(r) ? t('teamFare.byDay') : r.site?.name}</TableCell>
-                <TableCell className="tabular-nums">
+                <TableCell>
                   {isEngineer(r) ? (r.overrides.length ? r.overrides.map((o) => <div key={o.site_id}>{`${siteName(o.site_id)} ${money(o.amount)}`}</div>) : '—') : money(r.amount)}
                 </TableCell>
                 <TableCell>
