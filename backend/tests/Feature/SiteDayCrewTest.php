@@ -211,7 +211,7 @@ class SiteDayCrewTest extends TestCase
         $this->postJson("/api/v1/employees/wage-proposals/{$made['proposal_id']}/refuse", ['version' => 1])->assertOk()->assertJsonPath('data.status', 'refused');
         $this->assertSame(0, DB::table('employee_pay_changes')->where('employee_id', $made['id'])->count());
         $this->getJson('/api/v1/employees/wage-proposals')->assertOk()->assertJsonCount(0, 'data');
-        $this->postJson("/api/v1/employees/wage-proposals/{$made['proposal_id']}/approve", ['version' => 2, 'gender' => 'male'])->assertStatus(409);   // decided
+        $this->postJson("/api/v1/employees/wage-proposals/{$made['proposal_id']}/approve", ['version' => 2])->assertStatus(409);   // decided
         $this->getJson("/api/v1/employees/{$made['id']}")->assertOk();   // the laborer stays on file
     }
 

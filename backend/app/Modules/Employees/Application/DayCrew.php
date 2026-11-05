@@ -12,7 +12,7 @@ use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeWageProposal;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
-use App\Modules\Sites\Infrastructure\Eloquent\Site;
+use App\Modules\Sites\Application\SiteService;
 use App\Support\Database\ConcurrencyConflict;
 use App\Support\Http\Paginates;
 use Illuminate\Database\Eloquent\Builder;
@@ -30,6 +30,8 @@ use Illuminate\Support\Facades\DB;
 final class DayCrew
 {
     use Paginates;
+
+    public function __construct(private readonly SiteService $sites) {}
 
     /**
      * The one day laborer employed on $date whose code is $search, or whose full name is (spaces collapsed, English case ignored):
@@ -170,14 +172,12 @@ final class DayCrew
     {
         $list = $this->page(EmployeeWageProposal::with('employee.crewChanges')->where('status', WageProposalStatus::Pending)->orderBy('id'), $perPage, $page);
         // Named in one query each, not per row: the site the laborer was added to, and the site manager who proposed the wage.
-        $sites = Site::withTrashed()->whereKey(array_filter(array_column($list['data'], 'site_id')))->get(['id', 'name_ar', 'name_en'])->keyBy('id');
+        $sites = $this->sites->names(array_values(array_filter(array_column($list['data'], 'site_id'))));
         $users = User::withTrashed()->whereKey(array_filter(array_column($list['data'], 'proposed_by')))->pluck('name', 'id');
         $list['data'] = array_map(function (array $r) use ($sites, $users): array {
-            $site = $r['site_id'] === null ? null : $sites[$r['site_id']] ?? null;
-
             return [
                 ...array_diff_key($r, ['site_id' => true]),
-                'site' => $site === null ? null : ['id' => (string) $site->id, 'name_ar' => (string) $site->name_ar, 'name_en' => $site->name_en],
+                'site' => $r['site_id'] === null ? null : $sites[$r['site_id']] ?? null,
                 'proposed_by' => $r['proposed_by'] === null ? null : ['id' => $r['proposed_by'], 'name' => $users[$r['proposed_by']] ?? null],
             ];
         }, $list['data']);
