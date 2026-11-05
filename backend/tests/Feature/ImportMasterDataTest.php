@@ -86,6 +86,9 @@ class ImportMasterDataTest extends TestCase
         $this->assertSame(0, bccomp('0.5', (string) $rule->value, 6));
         $this->assertSame(Site::where('name_ar', 'موقع أ')->value('id'), Fare::sole()->site_id);
         $this->assertSame((string) $day->id, EmployeeFareOverride::sole()->employee_id);
+        foreach ([Fare::sole(), EmployeeFareOverride::sole()] as $imported) {
+            $this->assertSame([null, null], [$imported->created_by, $imported->updated_by], 'reads as «من الإكسيل»');
+        }
         $this->assertSame($manager->id, EmployeeManagerAssignment::sole()->manager_id);
 
         $actors = DB::table('audit_log')->where('entity_type', 'employees')->pluck('user_id')->unique()->values()->all();

@@ -16,6 +16,7 @@ const LeavePage = page(() => import('@/pages/leave'), 'LeavePage')
 const SettingsPage = page(() => import('@/pages/settings'), 'SettingsPage')
 const SiteDayPage = page(() => import('@/pages/site-day'), 'SiteDayPage')
 const WageProposalsPage = page(() => import('@/pages/wage-proposals'), 'WageProposalsPage')
+const TeamFaresPage = page(() => import('@/pages/team-fares'), 'TeamFaresPage')
 const NotFoundPage = page(() => import('@/pages/pages'), 'NotFoundPage')
 
 function Home() {
@@ -36,6 +37,7 @@ export function AppRoutes() {
         <Route path="leave" element={<LeavePage />} />
         <Route path="site-day" element={<SiteDayPage />} />
         <Route path="wage-proposals" element={<WageProposalsPage />} />
+        <Route path="team-fares" element={<TeamFaresPage />} />
         <Route path="settings" element={<SettingsPage />} />
         {/* old links, kept for one release */}
         <Route path="sites" element={<Navigate to="/settings?tab=sites" replace />} />

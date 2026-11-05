@@ -8,6 +8,7 @@ use App\Modules\Attendance\Domain\AttendanceRefusal;
 use App\Modules\Attendance\Domain\AttendanceRefused;
 use App\Modules\Attendance\Domain\Period;
 use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceLock;
+use App\Modules\Employees\Domain\EmployeeType;
 use Illuminate\Support\Facades\DB;
 
 /** Writes take the period's advisory lock shared, so a lock (exclusive) waits for them and they see its result. */
@@ -31,6 +32,18 @@ final class PeriodGuard
     public static function isLocked(Period $p): bool
     {
         return AttendanceLock::where(['employee_type' => $p->group->value, 'period_start' => $p->start])->whereNull('reopened_at')->exists();
+    }
+
+    /**
+     * Whether a locked period of these groups ends on or after the date. Call inside the caller's transaction: the lock table is held in
+     * share mode until its commit, so a lock or reopen of any period, however far after the date, waits for the caller's write.
+     */
+    public static function lockedFrom(string $date, EmployeeType ...$groups): bool
+    {
+        DB::statement('lock table attendance_locks in share mode');
+
+        return AttendanceLock::whereIn('employee_type', array_map(fn (EmployeeType $g) => $g->value, $groups))
+            ->where('period_end', '>=', $date)->whereNull('reopened_at')->exists();
     }
 
     private static function key(Period $p): string

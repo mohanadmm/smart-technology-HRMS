@@ -28,6 +28,8 @@ return [
     'document_too_large' => 'The file is larger than :max MB.',
     'payload_too_large' => 'The upload is too large.',
     'document_type' => 'Only PDF, JPG, PNG or WEBP files are accepted.',
+    'fare_site_not_yours' => 'This site is not one of your sites.',
+    'fare_period_locked' => 'This date is in a locked attendance period.',
     'employee_type' => [
         'office' => 'Office employee',
         'engineer' => 'Engineer',

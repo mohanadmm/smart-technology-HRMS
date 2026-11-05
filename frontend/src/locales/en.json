@@ -46,7 +46,8 @@
     "attendance": "Attendance",
     "siteDay": "Site attendance",
     "leave": "Leave",
-    "wageProposals": "Proposed wages"
+    "wageProposals": "Proposed wages",
+    "teamFares": "Team transport"
   },
   "toggle": {
     "language": "Language",
@@ -251,9 +252,18 @@
     "add": "Add residence"
   },
   "fare": {
-    "amount": "Fare",
     "tooMany": "More than 100 fares exist. Some may not appear in the table.",
-    "residence": "Residence"
+    "combinedTitle": "Residence and site fares",
+    "combinedDesc": "The amount for each residence at each site, and who set it.",
+    "combinedDescView": "The amount for each residence at each site.",
+    "site": "Site",
+    "setBy": "Set by",
+    "fromExcel": "From Excel",
+    "allLeads": "All",
+    "lead": "Team lead",
+    "add": "Add",
+    "edit": "Edit",
+    "pairTitle": "{{residence}} → {{site}}"
   },
   "auth": {
     "email": "Email address",
@@ -450,7 +460,6 @@
       "sites": "Places where attendance days are recorded.",
       "residences": "Areas employees travel from to reach a site.",
       "leaveTypes": "Days recorded instead of a work site, such as Fridays, official holidays and absences.",
-      "fares": "The fare from each residence to each site, effective from its date.",
       "rules": "The numbers payroll, lateness and leave calculations rely on.",
       "holidays": "Days recorded automatically as an official holiday for everyone."
     }
@@ -1043,5 +1052,43 @@
         "done": "Request escalated to the CEO."
       }
     }
+  },
+  "teamFare": {
+    "title": "Team transport",
+    "subtitle": "Choose a team lead, record missing residences, and set the fare for each residence at each site.",
+    "subtitleView": "The team's workers' fares by residence and site.",
+    "all": "Whole team ({{count}})",
+    "missing": "No amount ({{count}})",
+    "col": {
+      "worker": "Worker",
+      "residence": "Residence",
+      "site": "Site",
+      "fare": "Daily fare",
+      "source": "Source"
+    },
+    "noResidence": "No residence recorded",
+    "setResidence": "Record residence",
+    "residenceTitle": "Residence of {{name}}",
+    "byDay": "Per day",
+    "source": {
+      "default": "Automatic",
+      "override": "Set for this worker",
+      "none": "No fare for this residence",
+      "no_residence": "Waiting for the residence",
+      "engineer": "Engineers are set by name"
+    },
+    "edit": "Edit transport for {{name}}",
+    "editAt": "Edit transport for {{name}} · {{residence}} → {{site}}",
+    "editAtSite": "Edit transport for {{name}} · {{site}}",
+    "auto": "Automatic {{amount}}",
+    "amount": "Daily amount",
+    "from": "Effective from",
+    "scope": {
+      "worker": "This worker only",
+      "pair_one": "Everyone living in {{residence}} and working at {{site}} ({{count}} worker)",
+      "pair_other": "Everyone living in {{residence}} and working at {{site}} ({{count}} workers)"
+    },
+    "pickLead": "Choose a team lead",
+    "empty": "No workers on the team today."
   }
 }

@@ -1,6 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { queryClient } from '@/lib/query'
 import { json, me, mockFetch, renderApp, renderWithAuth } from '@/test-utils'
 import { SettingsPage } from './settings'
@@ -34,59 +34,6 @@ beforeEach(() => localStorage.clear())
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.clearAllMocks()
-})
-
-test('fares grid puts the fare in force today in the right cell', async () => {
-  mockFetch({
-    'GET /api/v1/sites': list(sites),
-    'GET /api/v1/residences': list(residences),
-    'GET /api/v1/fares': list([
-      { id: 'f1', residence_id: 'r1', site_id: 's1', effective_from: '2020-01-01', amount: '5.000000' },
-      { id: 'f2', residence_id: 'r1', site_id: 's1', effective_from: '2020-06-01', amount: '7.500000' },
-      { id: 'f3', residence_id: 'r1', site_id: 's1', effective_from: '2999-01-01', amount: '99.000000' },
-      { id: 'f4', residence_id: 'r2', site_id: 's2', effective_from: '2020-01-01', amount: '12.000000' },
-    ]),
-  })
-  renderWithAuth(<SettingsPage />, MANAGE, { path: '/settings?tab=fares' })
-  const row = (name: string) => within(screen.getByRole('row', { name: new RegExp(name) }))
-  await screen.findByRole('row', { name: /العجمي/ })
-  expect(row('العجمي').getByText(fmt(7.5))).toBeInTheDocument()
-  expect(row('العجمي').queryByText(fmt(99))).toBeNull()
-  expect(row('برج العرب').getByText(fmt(12))).toBeInTheDocument()
-  expect(row('برج العرب').queryByText(fmt(7.5))).toBeNull()
-})
-
-test('clicking a fare cell posts a dated fare for that residence and site', async () => {
-  mockFetch({
-    'GET /api/v1/sites': list(sites),
-    'GET /api/v1/residences': list(residences),
-    'GET /api/v1/fares': list([]),
-    'POST /api/v1/fares': () => json(201, { data: {} }),
-  })
-  renderWithAuth(<SettingsPage />, MANAGE, { path: '/settings?tab=fares' })
-  const rowEl = await screen.findByRole('row', { name: /برج العرب/ })
-  await user.click(within(rowEl).getAllByRole('button')[1])
-  await user.type(screen.getByLabelText('ساري اعتبارًا من'), '2026-10-01')
-  await user.type(screen.getByLabelText('قيمة المواصلات'), '8.5')
-  await user.click(screen.getByRole('button', { name: 'حفظ' }))
-  const body = JSON.parse(calls('POST')[0][1]!.body as string)
-  expect(body).toEqual({ residence_id: 'r2', site_id: 's2', effective_from: '2026-10-01', amount: '8.5' })
-})
-
-test('fares grid shows a notice when more than 100 fares exist', async () => {
-  mockFetch({ 'GET /api/v1/sites': list(sites), 'GET /api/v1/residences': list(residences), 'GET /api/v1/fares': list([], 150) })
-  renderWithAuth(<SettingsPage />, MANAGE, { path: '/settings?tab=fares' })
-  expect(await screen.findByRole('status')).toBeInTheDocument()
-})
-
-test('a failing secondary load shows the banner on the fares page', async () => {
-  mockFetch({
-    'GET /api/v1/sites': list(sites),
-    'GET /api/v1/residences': () => json(500, { error: { code: 'server_error', message: 'تعذر التحميل' } }),
-    'GET /api/v1/fares': list([]),
-  })
-  renderWithAuth(<SettingsPage />, MANAGE, { path: '/settings?tab=fares' })
-  expect(await screen.findByRole('alert')).toHaveTextContent('تعذر التحميل')
 })
 
 test('site save error shows under the field', async () => {
@@ -123,21 +70,6 @@ test('a double click on Save submits once', async () => {
   await user.dblClick(screen.getByRole('button', { name: 'حفظ' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   expect(calls('POST')).toHaveLength(1)
-})
-
-test('fares grid asks the server for the fares in force today', async () => {
-  mockFetch({ 'GET /api/v1/sites': list(sites), 'GET /api/v1/residences': list(residences), 'GET /api/v1/fares': list([]) })
-  renderWithAuth(<SettingsPage />, MANAGE, { path: '/settings?tab=fares' })
-  await screen.findByRole('row', { name: /العجمي/ })
-  const url = vi.mocked(fetch).mock.calls.map(([u]) => String(u)).find((u) => u.includes('/fares'))!
-  expect(url).toMatch(/date=\d{4}-\d{2}-\d{2}/)
-  expect(url).toContain('per_page=100')
-})
-
-test('fares grid warns when sites or residences overflow the page', async () => {
-  mockFetch({ 'GET /api/v1/sites': list(sites, 150), 'GET /api/v1/residences': list(residences), 'GET /api/v1/fares': list([]) })
-  renderWithAuth(<SettingsPage />, MANAGE, { path: '/settings?tab=fares' })
-  expect(await screen.findByRole('status')).toBeInTheDocument()
 })
 
 test('sites tab lists work sites and its add dialog sends kind work without a leave code', async () => {
@@ -311,36 +243,6 @@ test('a site with no workers today says so, and the action needs employee.view',
   await rowMenu('موقع أ')
   expect(await screen.findByRole('menuitem', { name: 'تعديل' })).toBeInTheDocument()
   expect(screen.queryByRole('menuitem', { name: 'العمال' })).toBeNull()
-})
-
-test('switching tabs back to one already shown makes no new request', async () => {
-  mockFetch({ 'GET /api/v1/sites': list(sites), 'GET /api/v1/residences': list(residences), 'GET /api/v1/fares': list([]) })
-  renderWithAuth(<SettingsPage />, MANAGE, { path: '/settings?tab=fares' })
-  await screen.findByRole('row', { name: /العجمي/ })
-  await user.click(screen.getByRole('tab', { name: 'المواقع' }))
-  await screen.findByText('موقع أ')
-  await user.click(screen.getByRole('tab', { name: 'المواصلات' }))
-  await screen.findByRole('row', { name: /العجمي/ })
-  expect(calls('GET').filter(([u]) => String(u).includes('/fares'))).toHaveLength(1)
-})
-
-test('adding a site shows it in the fares grid too', async () => {
-  let all = [sites[0]]
-  mockFetch({
-    'GET /api/v1/sites': () => json(200, { data: all, meta: { pagination: pg(all.length) } }),
-    'GET /api/v1/residences': list(residences),
-    'GET /api/v1/fares': list([]),
-    'POST /api/v1/sites': () => { all = [...all, { id: 's9', name_ar: 'موقع جديد', kind: 'work', leave_code: null, active: true }]; return json(201, { data: {} }) },
-  })
-  renderWithAuth(<SettingsPage />, MANAGE, { path: '/settings?tab=fares' })
-  await screen.findByRole('columnheader', { name: 'موقع أ' })
-  await user.click(screen.getByRole('tab', { name: 'المواقع' }))
-  await user.click(await screen.findByRole('button', { name: 'إضافة موقع' }))
-  await user.type(screen.getByLabelText('الاسم بالعربية'), 'موقع جديد')
-  await user.click(screen.getByRole('button', { name: 'حفظ' }))
-  await screen.findByText('موقع جديد')
-  await user.click(screen.getByRole('tab', { name: 'المواصلات' }))
-  expect(await screen.findByRole('columnheader', { name: 'موقع جديد' })).toBeInTheDocument()
 })
 
 test('without manage permissions there is no add button and no row actions', async () => {
@@ -555,4 +457,108 @@ test('a user with only attendance.view lands on the holidays tab', async () => {
   renderWithAuth(<SettingsPage />, ['attendance.view.all'], { path: '/settings' })
   expect(await screen.findByRole('tab', { name: 'الإجازات الرسمية' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.getAllByRole('tab')).toHaveLength(1)
+})
+
+describe('fares', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-05T10:00:00Z'))
+    queryClient.clear()
+  })
+  afterEach(() => vi.useRealTimers())
+
+  const FARES = [
+    { id: 'f1', residence_id: 'r1', site_id: 's1', effective_from: '2026-11-06', amount: '35.000000', set_by: { id: 'm1', name: 'م. أحمد سامي' } },
+    { id: 'f2', residence_id: 'r2', site_id: 's2', effective_from: '2026-10-26', amount: '45.000000', set_by: null },
+  ]
+  const fares = (data: unknown[] = FARES, total?: number, extra = {}) => mockFetch({
+    'GET /api/v1/sites': list(sites),
+    'GET /api/v1/residences': list(residences),
+    'GET /api/v1/sites/manager-candidates': () => json(200, { data: [{ id: 'm1', name: 'م. أحمد سامي' }] }),
+    'GET /api/v1/fares': list(data, total),
+    'POST /api/v1/fares': () => json(201, { data: {} }),
+    ...extra,
+  })
+  const fareUrls = () => vi.mocked(fetch).mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith('/api/v1/fares'))
+  const HR = [...MANAGE, 'fare.manage.all', 'site.assign_manager.all']
+  const open = (perms = HR) => renderWithAuth(<SettingsPage />, perms, { path: '/settings?tab=fares' })
+
+  test('fares list shows one row per pair with who set it', async () => {
+    fares()
+    open()
+    const r1 = within(await screen.findByRole('row', { name: /العجمي/ }))
+    expect(r1.getByText('موقع أ')).toBeInTheDocument()
+    expect(r1.getByText(fmt(35))).toBeInTheDocument()
+    expect(r1.getByText('2026-11-06')).toHaveAttribute('dir', 'ltr')
+    expect(r1.getByText('م. أحمد سامي')).toBeInTheDocument()
+    // below 640 px each row is a card whose lines carry their column names
+    for (const label of ['السكن', 'المبلغ اليومي', 'يسري من', 'حدده']) expect(r1.getByText(label)).toBeInTheDocument()
+    expect(screen.getByText('مبلغ كل سكن في كل موقع، ومين حدده.')).toBeInTheDocument()
+    const r2 = within(screen.getByRole('row', { name: /برج العرب/ }))
+    expect(r2.getByText('من الإكسيل')).toBeInTheDocument()
+    expect(fareUrls()).toEqual(['/api/v1/fares?per_page=100&date=2026-11-05'])
+  })
+
+  test('the team-lead filter asks by manager_id', async () => {
+    fares()
+    open()
+    await screen.findByRole('option', { name: 'م. أحمد سامي' })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'مسؤول التيم' }), 'm1')
+    await waitFor(() => expect(fareUrls()).toContain('/api/v1/fares?per_page=100&date=2026-11-05&manager_id=m1'))
+  })
+
+  test('editing a row posts a dated fare for its pair', async () => {
+    fares()
+    open()
+    const row = await screen.findByRole('row', { name: /العجمي/ })
+    await user.click(within(row).getByRole('button', { name: 'تعديل' }))
+    const dialog = await screen.findByRole('dialog', { name: 'العجمي ← موقع أ' })
+    expect(within(dialog).getByLabelText('يسري من')).toHaveValue('2026-11-05')
+    await user.type(within(dialog).getByLabelText('المبلغ اليومي'), '40')
+    await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(JSON.parse(calls('POST')[0][1]!.body as string)).toEqual({ residence_id: 'r1', site_id: 's1', effective_from: '2026-11-05', amount: '40' })
+  })
+
+  test('adding picks residence and site', async () => {
+    fares([])
+    open()
+    await user.click(await screen.findByRole('button', { name: 'إضافة' }))
+    const dialog = await screen.findByRole('dialog', { name: 'إضافة' })
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'السكن' }), 'r2')
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'الموقع' }), 's2')
+    await user.type(within(dialog).getByLabelText('المبلغ اليومي'), '8.5')
+    await user.click(within(dialog).getByRole('button', { name: 'حفظ' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(JSON.parse(calls('POST')[0][1]!.body as string)).toEqual({ residence_id: 'r2', site_id: 's2', effective_from: '2026-11-05', amount: '8.5' })
+  })
+
+  test('the fares tab needs site.view at all scope, and editing needs fare.manage', async () => {
+    fares()
+    const { unmount } = renderWithAuth(<SettingsPage />, ['site.view.own', 'employee.view.own'])
+    await screen.findByRole('tab', { name: 'المواقع' })
+    expect(screen.queryByRole('tab', { name: 'المواصلات' })).toBeNull()
+    unmount()
+    open(['site.view.all'])
+    await screen.findByRole('row', { name: /العجمي/ })
+    expect(screen.queryByRole('button', { name: 'إضافة' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'تعديل' })).toBeNull()
+    expect(screen.getByText('مبلغ كل سكن في كل موقع.')).toBeInTheDocument()
+    expect(screen.queryByText(/ومين حدده/)).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'مسؤول التيم' })).toBeNull()
+    expect(fareUrls()).toHaveLength(1)
+    expect(vi.mocked(fetch).mock.calls.map(([u]) => String(u)).filter((u) => u.includes('manager-candidates'))).toEqual([])
+  })
+
+  test('fares list shows a notice when more than 100 fares exist', async () => {
+    fares(FARES, 150)
+    open()
+    expect(await screen.findByRole('status')).toHaveTextContent('يتجاوز عدد السجلات 100 سجل')
+  })
+
+  test('a failing load shows the banner on the fares page', async () => {
+    fares(FARES, undefined, { 'GET /api/v1/fares': () => json(500, { error: { code: 'server_error', message: 'تعذر التحميل' } }) })
+    open()
+    expect(await screen.findByRole('alert')).toHaveTextContent('تعذر التحميل')
+  })
 })

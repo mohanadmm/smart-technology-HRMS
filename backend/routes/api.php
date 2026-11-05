@@ -57,7 +57,7 @@ Route::middleware('auth')->group(function (): void {
     });
 
     Route::prefix('employees')->whereUuid('employee')->group(function (): void {
-        Route::post('{employee}/fare-overrides', [FareController::class, 'override'])->middleware(['permission:employee.edit', 'employee.scope']);
+        Route::post('{employee}/fare-overrides', [FareController::class, 'override'])->middleware(['permission:fare.manage', 'employee.scope']);
         Route::get('{employee}/fare', [FareController::class, 'show'])->middleware(['permission:employee.view', 'employee.scope']);
         Route::post('{employee}/documents', [EmployeeDocumentController::class, 'store'])->middleware(['permission:employee_document.edit', 'employee.scope']);
         Route::patch('{employee}/documents/{document}', [EmployeeDocumentController::class, 'update'])->middleware(['permission:employee_document.edit', 'employee.scope'])->whereUuid('document');
@@ -90,8 +90,10 @@ Route::middleware('auth')->group(function (): void {
 
     Route::prefix('fares')->controller(FareController::class)->group(function (): void {
         Route::get('/', 'index')->middleware('permission:site.view');
-        Route::post('/', 'store')->middleware('permission:site.manage');
+        Route::post('/', 'store')->middleware('permission:fare.manage');
     });
+
+    Route::get('team-fares', [FareController::class, 'team'])->middleware('permission:employee.view');
 
     Route::prefix('attendance')->controller(AttendanceController::class)->group(function (): void {
         Route::get('period', 'period')->middleware('permission:attendance.view');
