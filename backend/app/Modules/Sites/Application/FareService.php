@@ -9,11 +9,14 @@ use App\Modules\Attendance\Infrastructure\PeriodGuard;
 use App\Modules\Employees\Application\EmployeeReach;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
+use App\Modules\Identity\Application\Rbac\PermissionHolders;
+use App\Modules\Notifications\Application\Notifier;
 use App\Modules\Sites\Infrastructure\Eloquent\EmployeeFareOverride;
 use App\Modules\Sites\Infrastructure\Eloquent\Fare;
 use App\Modules\Sites\Infrastructure\Eloquent\Residence;
 use App\Support\Http\Paginates;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -23,7 +26,11 @@ final class FareService
 {
     use Paginates;
 
-    public function __construct(private readonly SiteService $sites) {}
+    public function __construct(
+        private readonly SiteService $sites,
+        private readonly PermissionHolders $holders,
+        private readonly Notifier $notifier,
+    ) {}
 
     /**
      * @param  array{per_page?: int}  $filters
@@ -152,8 +159,16 @@ final class FareService
         $this->assertWritable($ownerId, $data['site_id'], $data['effective_from'], EmployeeType::PermanentWorker, EmployeeType::DayLaborer);
         $key = ['residence_id' => $data['residence_id'], 'site_id' => $data['site_id'], 'effective_from' => $data['effective_from']];
 
+        $pair = ['residence_id' => $data['residence_id'], 'site_id' => $data['site_id']];
+
         // ponytail: two first writes of one key in the same instant hit the unique index (500); lock the key if it ever happens
-        return DB::transaction(fn () => $this->row(Fare::updateOrCreate($key, ['amount' => $data['amount']])));
+        return DB::transaction(function () use ($key, $pair, $data, $ownerId): array {
+            $old = $this->inForce(Fare::where($pair), $data['effective_from']);
+            $fare = Fare::updateOrCreate($key, ['amount' => $data['amount']]);
+            $this->notifyHr($ownerId, $fare, ['kind' => 'fare', ...$pair, 'effective_from' => $data['effective_from'], 'old_amount' => $old]);
+
+            return $this->row($fare);
+        });
     }
 
     /**
@@ -172,7 +187,13 @@ final class FareService
         $this->assertWritable($ownerId, $data['site_id'], $date, ...($type === null ? [] : [$type]));
         $key = ['employee_id' => $employeeId, 'site_id' => $data['site_id'], 'effective_from' => $date];
 
-        return DB::transaction(fn () => $this->row(EmployeeFareOverride::updateOrCreate($key, ['amount' => $data['amount']])));
+        return DB::transaction(function () use ($key, $data, $date, $employeeId, $ownerId): array {
+            $old = $this->inForce(EmployeeFareOverride::where(['employee_id' => $employeeId, 'site_id' => $data['site_id']]), $date);
+            $override = EmployeeFareOverride::updateOrCreate($key, ['amount' => $data['amount']]);
+            $this->notifyHr($ownerId, $override, ['kind' => 'override', 'site_id' => $data['site_id'], 'employee_id' => $employeeId, 'effective_from' => $date, 'old_amount' => $old]);
+
+            return $this->row($override);
+        });
     }
 
     /** Own scope: one of the user's sites, from yesterday (Cairo) on. Every scope: not inside a locked attendance period. */
@@ -188,6 +209,32 @@ final class FareService
             if (PeriodGuard::isLocked(Period::containing($type, $date))) {
                 throw ValidationException::withMessages(['effective_from' => __('errors.fare_period_locked')]);
             }
+        }
+    }
+
+    /**
+     * @param  Builder<Fare>|Builder<EmployeeFareOverride>  $rows
+     */
+    private function inForce(Builder $rows, string $date): ?string
+    {
+        $amount = $rows->where('effective_from', '<=', $date)->orderByDesc('effective_from')->value('amount');
+
+        return $amount === null ? null : (string) $amount;
+    }
+
+    /**
+     * A team-lead write tells every holder of fare.manage.all, once per row a day (the audit log keeps every write). HR writes notify nobody.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function notifyHr(?string $ownerId, Fare|EmployeeFareOverride $row, array $data): void
+    {
+        if ($ownerId === null) {
+            return;
+        }
+        $today = now('Africa/Cairo')->toDateString();
+        foreach ($this->holders->userIds('fare.manage.all') as $userId) {
+            $this->notifier->notifyOnce($userId, 'fare_changed', $today, [...$data, 'new_amount' => $row->amount], (string) $row->getKey());
         }
     }
 }

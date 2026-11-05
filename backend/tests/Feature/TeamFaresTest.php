@@ -7,6 +7,7 @@ use App\Modules\Sites\Infrastructure\Eloquent\Fare;
 use App\Modules\Sites\Infrastructure\Eloquent\Residence;
 use App\Modules\Identity\Infrastructure\Eloquent\Permission;
 use App\Modules\Identity\Infrastructure\Eloquent\Role;
+use App\Modules\Notifications\Infrastructure\Eloquent\Notification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -258,5 +259,45 @@ class TeamFaresTest extends TestCase
         $this->signIn('viewer');
 
         $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '30'])->assertForbidden();
+    }
+
+    public function test_a_team_lead_write_notifies_hr_once_per_row_per_day(): void
+    {
+        [$s1, , $r, $lead, $worker] = $this->team();
+        $hr = auth()->user();
+        $this->fare($r, $s1, '2026-10-01', '30');
+        $this->actingAs($lead, 'api');
+
+        $id = $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '35'])->assertCreated()->json('data.id');
+        $sent = Notification::where(['user_id' => $hr?->getAuthIdentifier(), 'type' => 'fare_changed'])->get();
+        $this->assertCount(1, $sent);
+        $this->assertSame('2026-11-05', substr((string) $sent[0]->date, 0, 10));
+        $this->assertSame($id, $sent[0]->ref);
+        $this->assertSameData(['kind' => 'fare', 'site_id' => $s1, 'residence_id' => $r, 'effective_from' => '2026-11-05', 'old_amount' => '30.000000', 'new_amount' => '35.000000'], $sent[0]->data);
+
+        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '40'])->assertCreated();
+        $this->signIn('hr');
+        $this->postFare(['residence_id' => $r, 'site_id' => $s1, 'effective_from' => '2026-11-06', 'amount' => '45'])->assertCreated();
+        $this->assertSame(1, Notification::where('type', 'fare_changed')->where('user_id', $hr?->getAuthIdentifier())->count());
+
+        $this->actingAs($lead, 'api');
+        $oid = $this->postJson("/api/v1/employees/{$worker}/fare-overrides", ['site_id' => $s1, 'effective_from' => '2026-11-05', 'amount' => '25'])->assertCreated()->json('data.id');
+        $this->assertSameData(
+            ['kind' => 'override', 'site_id' => $s1, 'employee_id' => $worker, 'effective_from' => '2026-11-05', 'old_amount' => null, 'new_amount' => '25.000000'],
+            Notification::where(['user_id' => $hr?->getAuthIdentifier(), 'ref' => $oid])->firstOrFail()->data,
+        );
+    }
+
+    /**
+     * jsonb stores keys in its own order.
+     *
+     * @param  array<string, mixed>  $expected
+     * @param  array<string, mixed>  $actual
+     */
+    private function assertSameData(array $expected, array $actual): void
+    {
+        ksort($expected);
+        ksort($actual);
+        $this->assertSame($expected, $actual);
     }
 }
