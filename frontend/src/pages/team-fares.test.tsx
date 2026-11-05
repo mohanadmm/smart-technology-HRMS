@@ -106,6 +106,7 @@ test('the route renders the page', async () => {
   renderApp('/team-fares')
   expect(await screen.findByRole('heading', { level: 1, name: 'مواصلات التيم' })).toBeInTheDocument()
   await waitFor(() => expect(urls('/team-fares')).toHaveLength(1))
+  expect(screen.getByRole('link', { name: 'مواصلات التيم' })).toHaveAttribute('href', '/team-fares')
 })
 
 const post = (part: string) => vi.mocked(fetch).mock.calls.filter(([u, i]) => i?.method === 'POST' && String(u).includes(part)).map(([, i]) => JSON.parse(String(i!.body)))
