@@ -10,10 +10,7 @@ use App\Modules\Sites\Domain\Fare;
 use App\Modules\Sites\Infrastructure\Eloquent\EmployeeFareOverride;
 use App\Modules\Sites\Infrastructure\Eloquent\Fare as FareRow;
 
-/**
- * The daily fare an employee gets for a site on a date: their override, else (workers only) residence x site, else none.
- * Engineers never take the residence x site default (owner default, 2026-11-05).
- */
+/** The daily fare an employee gets for a site on a date: their override, else (workers only) residence x site, else none. */
 final class FareLookup
 {
     public function for(string $employeeId, string $siteId, string $date): string

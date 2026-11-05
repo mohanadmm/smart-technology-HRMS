@@ -123,6 +123,8 @@ final class FareService
     }
 
     /**
+     * The importer's strict add; the row reads as «من الإكسيل» (no writer).
+     *
      * @param  array{residence_id: string, site_id: string, effective_from: string, amount: string}  $data
      * @return array<string, mixed>
      */
@@ -133,10 +135,12 @@ final class FareService
             throw ValidationException::withMessages(['effective_from' => __('errors.duplicate_date')]);
         }
 
-        return $this->row(Fare::create($data));
+        return $this->fromExcel(Fare::create($data));
     }
 
     /**
+     * The importer's strict add; the row reads as «من الإكسيل» (no writer).
+     *
      * @param  array{site_id: string, effective_from: string, amount: string}  $data
      * @return array<string, mixed>
      */
@@ -148,7 +152,16 @@ final class FareService
             throw ValidationException::withMessages(['effective_from' => __('errors.duplicate_date')]);
         }
 
-        return $this->row(EmployeeFareOverride::create([...$data, 'employee_id' => $employee->getKey()]));
+        return $this->fromExcel(EmployeeFareOverride::create([...$data, 'employee_id' => $employee->getKey()]));
+    }
+
+    /** @return array<string, mixed> */
+    private function fromExcel(Fare|EmployeeFareOverride $row): array
+    {
+        // creating() stamps the signed-in importer; a query-builder update skips the model events.
+        $row->newQuery()->whereKey($row->getKey())->toBase()->update(['created_by' => null, 'updated_by' => null]);
+
+        return $this->row($row);
     }
 
     /**
@@ -161,17 +174,19 @@ final class FareService
     public function team(string $managerId, string $date): array
     {
         $siteIds = $this->sites->idsManagedBy($managerId);
-        $sites = Site::whereKey($siteIds)->orderBy('name_ar')->get()->map(fn (Site $s) => ['id' => (string) $s->getKey(), 'name' => (string) $s->name_ar])->all();
-        $siteNames = array_column($sites, 'name', 'id');
+        // Deleted sites and residences still name the rows that point at them; only live sites are offered.
+        $all = Site::withTrashed()->whereKey($siteIds)->orderBy('name_ar')->get();
+        $siteNames = $all->pluck('name_ar', 'id')->all();
+        $sites = array_values($all->whereNull('deleted_at')->map(fn (Site $s) => ['id' => (string) $s->getKey(), 'name' => (string) $s->name_ar])->all());
         $employees = EmployeeReach::apply(Employee::query()->select('employees.*')
             ->selectRaw(Employee::TYPE_ON.' as type_on', [$date])
             ->selectRaw(self::HOME_SITE.' as home_site_id', [$date]), $managerId, $date)
             ->where(fn (Builder $q) => $q->whereNull('hire_date')->orWhere('hire_date', '<=', $date))
             ->where(fn (Builder $q) => $q->whereNull('termination_date')->orWhere('termination_date', '>=', $date))
             ->orderBy('code')->get();
-        $residences = Residence::whereKey($employees->pluck('residence_id')->filter()->unique()->values()->all())->pluck('name_ar', 'id')->all();
+        $residences = Residence::withTrashed()->whereKey($employees->pluck('residence_id')->filter()->unique()->values()->all())->pluck('name_ar', 'id')->all();
 
-        $rows = $employees->map(function (Employee $e) use ($date, $siteIds, $siteNames, $residences): array {
+        $rows = $employees->map(function (Employee $e) use ($date, $siteIds, $sites, $siteNames, $residences): array {
             $type = (string) $e->getAttribute('type_on');
             $residenceId = $e->residence_id === null ? null : (string) $e->residence_id;
             $row = [
@@ -182,7 +197,7 @@ final class FareService
             if ($type === EmployeeType::Engineer->value) {
                 $inForce = EmployeeFareOverride::where('employee_id', $e->getKey())->whereIn('site_id', $siteIds)->where('effective_from', '<=', $date)
                     ->orderByDesc('effective_from')->get()->unique('site_id')->keyBy('site_id');
-                foreach (array_keys($siteNames) as $siteId) {
+                foreach (array_column($sites, 'id') as $siteId) {
                     if (isset($inForce[$siteId])) {
                         $row['overrides'][] = ['site_id' => $siteId, 'amount' => (string) $inForce[$siteId]->amount];
                     }
@@ -195,14 +210,14 @@ final class FareService
 
             return [
                 ...$row,
-                'site' => ['id' => $siteId, 'name' => $siteNames[$siteId]],
+                'site' => ['id' => $siteId, 'name' => (string) $siteNames[$siteId]],
                 'amount' => in_array($fare['source'], ['override', 'default'], true) ? $fare['amount'] : null,
                 'source' => $fare['source'],
                 'default_amount' => $fare['default_amount'],
             ];
         })->all();
 
-        return ['sites' => array_values($sites), 'rows' => array_values($rows)];
+        return ['sites' => $sites, 'rows' => array_values($rows)];   // Collection::all() is not a list to PHPStan
     }
 
     /**
@@ -215,13 +230,12 @@ final class FareService
     {
         // A pair fare is the default of both worker types, so a lock of either refuses it.
         $this->assertWritable($ownerId, $data['site_id'], $data['effective_from'], EmployeeType::PermanentWorker, EmployeeType::DayLaborer);
-        $key = ['residence_id' => $data['residence_id'], 'site_id' => $data['site_id'], 'effective_from' => $data['effective_from']];
-
         $pair = ['residence_id' => $data['residence_id'], 'site_id' => $data['site_id']];
+        $key = [...$pair, 'effective_from' => $data['effective_from']];
 
-        // ponytail: two first writes of one key in the same instant hit the unique index (500); lock the key if it ever happens
+        // updateOrCreate inserts in a savepoint and, losing a race on the unique key, updates the winner's row.
         return DB::transaction(function () use ($key, $pair, $data, $ownerId): array {
-            $old = $this->inForce(Fare::where($pair), $data['effective_from']);
+            $old = Fare::where($pair)->where('effective_from', '<=', $data['effective_from'])->orderByDesc('effective_from')->value('amount');
             $fare = Fare::updateOrCreate($key, ['amount' => $data['amount']]);
             $this->notifyHr($ownerId, $fare, ['kind' => 'fare', ...$pair, 'effective_from' => $data['effective_from'], 'old_amount' => $old]);
 
@@ -241,12 +255,11 @@ final class FareService
         if ($ownerId !== null && ! EmployeeReach::reaches($employeeId, $ownerId, $date)) {
             throw new ModelNotFoundException;
         }
-        $type = EmployeeType::tryFrom((string) $employee->getAttribute('type_on'));
-        $this->assertWritable($ownerId, $data['site_id'], $date, ...($type === null ? [] : [$type]));
+        $this->assertWritable($ownerId, $data['site_id'], $date, ...array_filter([EmployeeType::tryFrom((string) $employee->getAttribute('type_on'))]));
         $key = ['employee_id' => $employeeId, 'site_id' => $data['site_id'], 'effective_from' => $date];
 
         return DB::transaction(function () use ($key, $data, $date, $employeeId, $ownerId): array {
-            $old = $this->inForce(EmployeeFareOverride::where(['employee_id' => $employeeId, 'site_id' => $data['site_id']]), $date);
+            $old = $this->lookup->describe($employeeId, $data['site_id'], $date)['amount'];
             $override = EmployeeFareOverride::updateOrCreate($key, ['amount' => $data['amount']]);
             $this->notifyHr($ownerId, $override, ['kind' => 'override', 'site_id' => $data['site_id'], 'employee_id' => $employeeId, 'effective_from' => $date, 'old_amount' => $old]);
 
@@ -254,12 +267,29 @@ final class FareService
         });
     }
 
-    /** Own scope: one of the user's sites, from yesterday (Cairo) on. Every scope: not inside a locked attendance period. */
-    private function assertWritable(?string $ownerId, string $siteId, string $date, EmployeeType ...$types): void
+    /**
+     * FareLookup::describe, refused (422 site_id) for an own-scope user outside their sites.
+     *
+     * @return array{amount: string, source: 'override'|'default'|'none'|'no_residence', default_amount: ?string}
+     */
+    public function describe(string $employeeId, string $siteId, string $date, ?string $ownerId): array
+    {
+        $this->assertOwnSite($ownerId, $siteId);
+
+        return $this->lookup->describe($employeeId, $siteId, $date);
+    }
+
+    private function assertOwnSite(?string $ownerId, string $siteId): void
     {
         if ($ownerId !== null && ! in_array($siteId, $this->sites->idsManagedBy($ownerId), true)) {
             throw ValidationException::withMessages(['site_id' => __('errors.fare_site_not_yours')]);
         }
+    }
+
+    /** Own scope: one of the user's sites, from yesterday (Cairo) on. Every scope: not inside a locked attendance period. */
+    private function assertWritable(?string $ownerId, string $siteId, string $date, EmployeeType ...$types): void
+    {
+        $this->assertOwnSite($ownerId, $siteId);
         if ($ownerId !== null && $date < now('Africa/Cairo')->subDay()->toDateString()) {
             throw ValidationException::withMessages(['effective_from' => __('errors.fare_too_early')]);
         }
@@ -271,17 +301,8 @@ final class FareService
     }
 
     /**
-     * @param  Builder<Fare>|Builder<EmployeeFareOverride>  $rows
-     */
-    private function inForce(Builder $rows, string $date): ?string
-    {
-        $amount = $rows->where('effective_from', '<=', $date)->orderByDesc('effective_from')->value('amount');
-
-        return $amount === null ? null : (string) $amount;
-    }
-
-    /**
-     * A team-lead write tells every holder of fare.manage.all, once per row a day (the audit log keeps every write). HR writes notify nobody.
+     * Every team-lead write tells every holder of fare.manage.all: one notification per row a day, a repeat refreshes its new_amount
+     * and marks it unread (the first old_amount stays; the audit log keeps every write). HR writes notify nobody.
      *
      * @param  array<string, mixed>  $data
      */
@@ -292,7 +313,7 @@ final class FareService
         }
         $today = now('Africa/Cairo')->toDateString();
         foreach ($this->holders->userIds('fare.manage.all') as $userId) {
-            $this->notifier->notifyOnce($userId, 'fare_changed', $today, [...$data, 'new_amount' => $row->amount], (string) $row->getKey());
+            $this->notifier->notifyOrRefresh($userId, 'fare_changed', $today, [...$data, 'new_amount' => $row->amount], (string) $row->getKey(), ['new_amount' => $row->amount]);
         }
     }
 }

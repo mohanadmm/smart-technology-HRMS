@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Modules\Sites\Presentation;
 
 use App\Modules\Identity\Presentation\RequestScope;
-use App\Modules\Sites\Application\FareLookup;
 use App\Modules\Sites\Application\FareService;
 use App\Modules\Sites\Application\SiteRules;
 use App\Support\Http\ApiEnvelope;
@@ -15,7 +14,7 @@ use Illuminate\Validation\Rule;
 
 final class FareController
 {
-    public function __construct(private readonly FareService $fares, private readonly FareLookup $lookup) {}
+    public function __construct(private readonly FareService $fares) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -49,7 +48,7 @@ final class FareController
     {
         $q = $request->validate(['site_id' => SiteRules::fareOverride()['site_id'], 'date' => ['sometimes', 'date_format:Y-m-d']]);
 
-        return ApiEnvelope::single($request, $this->lookup->describe($employee, $q['site_id'], $q['date'] ?? now('Africa/Cairo')->toDateString()));
+        return ApiEnvelope::single($request, $this->fares->describe($employee, $q['site_id'], $q['date'] ?? now('Africa/Cairo')->toDateString(), RequestScope::ownerId($request)));
     }
 
     public function team(Request $request): JsonResponse

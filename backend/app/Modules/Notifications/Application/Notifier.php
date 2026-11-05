@@ -33,4 +33,19 @@ final class Notifier
 
         return true;
     }
+
+    /**
+     * notifyOnce, but a repeat of the key merges $changes into the stored data and marks it unread again.
+     *
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $changes
+     */
+    public function notifyOrRefresh(string $userId, string $type, string $date, array $data, string $ref, array $changes): void
+    {
+        if ($this->notifyOnce($userId, $type, $date, $data, $ref)) {
+            return;
+        }
+        $notification = Notification::withTrashed()->where(['user_id' => $userId, 'type' => $type, 'date' => $date, 'ref' => $ref])->firstOrFail();
+        $notification->update(['data' => [...$notification->data, ...$changes], 'read_at' => null]);
+    }
 }
