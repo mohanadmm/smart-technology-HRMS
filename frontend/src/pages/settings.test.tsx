@@ -264,7 +264,7 @@ test('site.manage alone shows no managers action', async () => {
 const rules = {
   month_days: '30', day_hours: '8', overtime_multiplier: '1.5',
   lateness_multiplier_office: '1', lateness_multiplier_engineer: '1.5', lateness_multiplier_permanent_worker: '2', lateness_multiplier_day_laborer: '2',
-  office_grace_minutes: '15', office_shift_start: '09:00', office_shift_end: '17:00', worker_shift_start: '08:00', worker_shift_end: '16:00',
+  office_grace_minutes: '15', office_shift_start: '09:00', office_shift_end: '17:00', worker_shift_start: '08:00', worker_shift_end: '16:00', manager_yesterday_until: '12:00',
   weekly_off_office: 'friday,saturday', weekly_off_field: 'friday',
   leave_days_under_one_year: '10', leave_days_one_year_plus: '21', leave_casual_days: '6', sick_leave_pay_percent: '100',
 }

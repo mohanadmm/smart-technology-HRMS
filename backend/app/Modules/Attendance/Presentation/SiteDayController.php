@@ -21,4 +21,13 @@ final class SiteDayController
 
         return ApiEnvelope::single($request, $this->siteDay->read($q['site_id'], $q['date'] ?? EffectiveDays::today(), (string) $request->user()?->getAuthIdentifier()));
     }
+
+    /** The day's save; the response is the day as show() returns it, with the new versions. */
+    public function store(Request $request): JsonResponse
+    {
+        /** @var array{site_id: string, date: string, rows: list<array<string, mixed>>} $body */
+        $body = $request->validate(SiteDay::FORMAT);
+
+        return ApiEnvelope::single($request, $this->siteDay->save($body, (string) $request->user()?->getAuthIdentifier()));
+    }
 }

@@ -7,8 +7,10 @@ namespace App\Modules\Attendance\Application;
 use App\Modules\Attendance\Domain\AttendanceRefusal;
 use App\Modules\Attendance\Domain\AttendanceRefused;
 use App\Modules\Attendance\Domain\Period;
+use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceDay;
 use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceLock;
 use App\Modules\Attendance\Infrastructure\PeriodGuard;
+use App\Modules\Employees\Application\DayCrew;
 use App\Modules\Employees\Application\EmployeeRoster;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
@@ -25,7 +27,7 @@ final class AttendanceGrid
     /** The last site looks this many days back from the sheet date (P31). */
     public const LAST_SITE_DAYS = 7;
 
-    public function __construct(private readonly EmployeeRoster $roster, private readonly EffectiveDays $days, private readonly BusinessRules $rules) {}
+    public function __construct(private readonly EmployeeRoster $roster, private readonly EffectiveDays $days, private readonly BusinessRules $rules, private readonly DayCrew $crew) {}
 
     /** @return array{group: string, start: string, end: string, prev_start: string, next_start: ?string, is_locked: bool, lock: ?array<string, mixed>, missing: int} */
     public function period(EmployeeType $g, ?string $start, ?string $date = null, ?string $ownerId = null): array
@@ -144,21 +146,42 @@ final class AttendanceGrid
         ];
     }
 
-    /** @return list<array{group: string, period_start: string, period_end: string, missing: int}> per group, the open periods among the one containing $date and the one before, counted up to $date */
+    /**
+     * The 21:00 alert's counts (owner, 2026-11-05), per group, for the open periods among the one containing $date and the one before,
+     * up to $date: `missing` unrecorded days; `open` field days with an arrival and no departure (office never; a locked period never);
+     * `crew_changes` the site managers' crew changes on $date (day laborers, the current period only). Counts only, never names (§9).
+     *
+     * @return list<array{group: string, period_start: string, period_end: string, missing: int, open: int, crew_changes: int}>
+     */
     public function missingCounts(string $date): array
     {
+        $changes = $this->crew->changesOn($date);
+        $crew = array_sum($changes['added']) + $changes['removed'];
         $counts = [];
         foreach (EmployeeType::cases() as $g) {
             $current = Period::containing($g, $date);
             foreach ([$current->previous(), $current] as $p) {
                 if (! PeriodGuard::isLocked($p)) {
                     $missing = array_filter($this->missingDays($p), fn (array $d) => $d['date'] <= $date);
-                    $counts[] = ['group' => $g->value, 'period_start' => $p->start, 'period_end' => $p->end, 'missing' => count($missing)];
+                    $counts[] = [
+                        'group' => $g->value, 'period_start' => $p->start, 'period_end' => $p->end, 'missing' => count($missing),
+                        'open' => $g === EmployeeType::Office ? 0 : $this->openCount($p, $date),
+                        'crew_changes' => $g === EmployeeType::DayLaborer && $p->start === $current->start ? $crew : 0,
+                    ];
                 }
             }
         }
 
         return $counts;
+    }
+
+    /** Days of the period's employees up to $date with an arrival and no departure. */
+    private function openCount(Period $p, string $date): int
+    {
+        $ids = array_column($this->roster->allOfType($p->group, $p->start, $p->end), 'id');
+
+        return $ids === [] ? 0 : AttendanceDay::whereIn('employee_id', $ids)->whereBetween('date', [$p->start, min($p->end, $date)])
+            ->whereNotNull('in_time')->whereNull('out_time')->count();
     }
 
     /**

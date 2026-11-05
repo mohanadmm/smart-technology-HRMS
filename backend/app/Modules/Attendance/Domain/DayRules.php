@@ -53,8 +53,10 @@ final class DayRules
         $in = $accepted['in_time'] ?? null;
         $out = $accepted['out_time'] ?? null;
         if ($type === EmployeeType::PermanentWorker) {
-            if (($in === null) !== ($out === null)) {
-                $violations[] = ['field' => $in === null ? 'in_time' : 'out_time', 'code' => 'times_need_both'];
+            // An arrival alone is an open day: the site manager records the departure in the evening (owner, 2026-11-04), and the
+            // period lock refuses while a day is still open. A departure needs its arrival.
+            if ($in === null && $out !== null) {
+                $violations[] = ['field' => 'in_time', 'code' => 'times_need_both'];
             }
         } elseif ($in !== null && $out !== null && self::minutes((string) $out) < self::minutes((string) $in)) {
             $violations[] = ['field' => 'out_time', 'code' => 'out_before_in'];
@@ -82,7 +84,7 @@ final class DayRules
         }
 
         return [
-            'late' => max(0, self::minutes($in) - self::minutes($scheduledIn)),
+            'late' => self::lateMinutes($scheduledIn, $in),
             'ot' => max(0, $worked - (int) bcmul($dayHours, '60', 6)),
         ];
     }
@@ -118,7 +120,14 @@ final class DayRules
         return false;
     }
 
-    private static function minutes(string $time): int
+    /** "HH:MM" (or "HH:MM:SS") → minutes after midnight. */
+    /** Raw late minutes: the arrival after the scheduled start, no grace (calculations §0a subtracts it once at payroll). */
+    public static function lateMinutes(string $scheduledIn, string $in): int
+    {
+        return max(0, self::minutes($in) - self::minutes($scheduledIn));
+    }
+
+    public static function minutes(string $time): int
     {
         [$h, $m] = explode(':', $time);
 

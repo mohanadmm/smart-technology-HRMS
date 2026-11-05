@@ -38,7 +38,7 @@
   - slice 4: `attendance.sign.own` (manager) and `attendance.return.all` (developer, hr).
 - **Commands:** `--filter=X` means `docker compose exec app php artisan test --filter=X`. "Steps 2–5" means: run it and see FAIL, implement, run it and see PASS with the named gates green, then commit with that subject.
 - **Fixtures:**
-  - `cairo('2026-10-22 09:00')` is a Thursday; 10-23 is a Friday; the engineers' period is 09-26 → 10-25. The field shift is 08:00–16:00, `day_hours` 8.
+  - `cairo('2026-10-22 09:00')` is a Thursday; 10-23 is a Friday; the engineers' period is 09-26 → 10-25. The field shift is the `worker_shift_start/_end` setting, seeded 08:00–17:00 (the owner's 09:00–16:00 is set by HR, R19), `day_hours` 8.
   - `tests/AttendanceFixtures.php` gains `managerOf(string ...$siteIds): User` and `homeSite(string $employeeId, string $siteId, string $from): void`.
 
 ## Review Focus
