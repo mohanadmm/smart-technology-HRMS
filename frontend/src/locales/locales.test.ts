@@ -24,7 +24,7 @@ test('every counted key has each plural form its language needs', () => {
 })
 
 test('Arabic copy has no Latin letters outside placeholders and <Trans> tags', () => {
-  const allowed = ['console.ip', 'attendance.source.imported', 'attendance.sheet.paste.hint', 'attendance.tab.import', 'attendance.import.file', 'attendance.import.badFile', 'document.badType', 'document.heic'] // product names and file types: IP, Excel, WhatsApp, .xlsx, PDF, HEIC
+  const allowed = ['console.ip', 'attendance.source.imported', 'attendance.sheet.paste.hint', 'attendance.tab.import', 'attendance.import.file', 'attendance.import.badFile', 'document.badType', 'document.heic', 'teamFare.subtitle', 'teamFare.source.no_residence'] // product names and file types: IP, Excel, WhatsApp, .xlsx, PDF, HEIC; HR as the team leads say it (owner-approved mockup copy)
   const latin = flat(ar).filter(([k, v]) => !allowed.includes(k) && /[A-Za-z]/.test(v.replace(/\{\{\w+\}\}|<\/?\w+\/?>/g, '')))
   expect(latin).toEqual([])
 })

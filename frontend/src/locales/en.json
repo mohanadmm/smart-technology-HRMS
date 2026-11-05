@@ -45,7 +45,8 @@
     "settings": "Settings",
     "attendance": "Attendance",
     "siteDay": "Site attendance",
-    "leave": "Leave"
+    "leave": "Leave",
+    "teamFares": "Team transport"
   },
   "toggle": {
     "language": "Language",
@@ -252,7 +253,18 @@
   "fare": {
     "amount": "Fare",
     "tooMany": "More than 100 fares exist. Some may not appear in the table.",
-    "residence": "Residence"
+    "residence": "Residence",
+    "combinedTitle": "Team leads' transport fares",
+    "combinedDesc": "Every amount the team leads set. You can edit any row.",
+    "site": "Site",
+    "was": "was {{amount}}",
+    "setBy": "Set by",
+    "fromExcel": "From Excel",
+    "allLeads": "All",
+    "lead": "Team lead",
+    "recent": "Changed in the last 7 days",
+    "add": "Add",
+    "edit": "Edit"
   },
   "auth": {
     "email": "Email address",
@@ -930,5 +942,37 @@
         "done": "Request escalated to the CEO."
       }
     }
+  },
+  "teamFare": {
+    "title": "Team transport",
+    "subtitle": "Amounts come from each worker's residence and site. Edit only what needs it; a change applies at once and HR sees it.",
+    "all": "Whole team ({{count}})",
+    "missing": "No amount ({{count}})",
+    "col": {
+      "worker": "Worker",
+      "residence": "Residence",
+      "site": "Site",
+      "fare": "Daily fare",
+      "source": "Source"
+    },
+    "noResidence": "No residence recorded",
+    "byDay": "Per day",
+    "source": {
+      "default": "Automatic",
+      "override": "Set for this worker",
+      "none": "No fare for this residence",
+      "no_residence": "Enter the amount or ask HR for the residence",
+      "engineer": "Engineers are set by name"
+    },
+    "edit": "Edit transport for {{name}}",
+    "auto": "Automatic {{amount}}",
+    "amount": "Daily amount",
+    "from": "Effective from",
+    "scope": {
+      "worker": "This worker only",
+      "pair": "Everyone living in {{residence}} and working at {{site}} ({{count}} workers)"
+    },
+    "pickLead": "Choose a team lead",
+    "empty": "No workers on the team today."
   }
 }
