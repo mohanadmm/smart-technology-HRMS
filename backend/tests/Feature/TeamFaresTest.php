@@ -2,13 +2,14 @@
 
 namespace Tests\Feature;
 
-use App\Modules\Sites\Infrastructure\Eloquent\EmployeeFareOverride;
-use App\Modules\Sites\Infrastructure\Eloquent\Fare;
-use App\Modules\Sites\Infrastructure\Eloquent\Residence;
 use App\Modules\Employees\Application\EmployeeService;
 use App\Modules\Identity\Infrastructure\Eloquent\Permission;
 use App\Modules\Identity\Infrastructure\Eloquent\Role;
+use App\Modules\Identity\Infrastructure\Eloquent\User;
 use App\Modules\Notifications\Infrastructure\Eloquent\Notification;
+use App\Modules\Sites\Infrastructure\Eloquent\EmployeeFareOverride;
+use App\Modules\Sites\Infrastructure\Eloquent\Fare;
+use App\Modules\Sites\Infrastructure\Eloquent\Residence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -154,7 +155,7 @@ class TeamFaresTest extends TestCase
         $this->describe($worker, $s1)->assertJsonPath('data.source', 'override')->assertJsonPath('data.amount', '30.000000')->assertJsonPath('data.default_amount', '35.000000');
     }
 
-    /** @return array{0: string, 1: string, 2: string, 3: \App\Modules\Identity\Infrastructure\Eloquent\User, 4: string} s1, s2, residence, the lead of s1, a permanent worker homed on s1 */
+    /** @return array{0: string, 1: string, 2: string, 3: User, 4: string} s1, s2, residence, the lead of s1, a permanent worker homed on s1 */
     private function team(): array
     {
         [$s1, $s2] = [$this->workSite('S-1'), $this->workSite('S-2')];
