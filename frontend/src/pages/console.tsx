@@ -8,7 +8,7 @@ import { PageHeader } from '@/components/common/PageHeader'
 import { RowActions } from '@/components/common/RowActions'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { UserAvatar } from '@/components/common/UserAvatar'
-import { type Controlled, ErrorBanner, FormDialog, type Row, SelectField, TextField, useCairoTime } from '@/components/form'
+import { type Controlled, ErrorBanner, FormDialog, type Row, SelectField, TextField, useCairoTime, useRoleName } from '@/components/form'
 import { TableSkeleton } from '@/components/layout/PageSkeleton'
 import { SegmentedControl } from '@/components/layout/SegmentedControl'
 import { Badge } from '@/components/ui/badge'
@@ -18,11 +18,6 @@ import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from '@/
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useAuth } from '@/lib/auth'
 import { USERS, useApi, useList, useSave } from '@/lib/query'
-
-function useRoleName() {
-  const { i18n } = useTranslation()
-  return (r: Row | null | undefined) => (r ? (i18n.language === 'ar' ? r.name_ar : r.name) : '—')
-}
 
 /**
  * Another account's password, shown as typed. A type=password + new-password field gets Safari's generated strong password

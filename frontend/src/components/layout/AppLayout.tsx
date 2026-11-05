@@ -26,7 +26,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { toast, Toaster } from 'sonner'
 import logoMark from '@/assets/logo-mark.png'
 import { UserAvatar } from '@/components/common/UserAvatar'
-import { intlLocale } from '@/components/form'
+import { useCairoTime, useRoleName } from '@/components/form'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipProvider } from '@/components/ui/misc'
@@ -263,13 +263,13 @@ function ProfileMenu() {
 
 /** Above the header while a developer views the app as `me`: whose view it is, until when (Cairo time), and the way back. */
 function ViewAsBanner() {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const { me, endViewAs } = useAuth()
   const navigate = useNavigate()
+  const time = useCairoTime({ hour: 'numeric', minute: '2-digit' })
+  const roleName = useRoleName()
   const [busy, setBusy] = useState(false)
   if (!me?.view_as) return null
-  const time = new Intl.DateTimeFormat(intlLocale(i18n.language), { timeZone: 'Africa/Cairo', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(me.view_as.expires_at))
-  const role = i18n.language === 'ar' ? me.role.name_ar : me.role.name
   const back = () => {
     setBusy(true)
     endViewAs()
@@ -279,7 +279,7 @@ function ViewAsBanner() {
   return (
     <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-warning-border bg-warning-bg px-3 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-sm text-foreground sm:px-4">
       <Eye aria-hidden className="size-4 shrink-0 text-warning" />
-      <p className="min-w-0 flex-1 font-medium">{t('auth.viewingAs', { name: me.name, role, time })}</p>
+      <p className="min-w-0 flex-1 font-medium">{t('auth.viewingAs', { name: me.name, role: roleName(me.role), time: time(me.view_as.expires_at) })}</p>
       <Button type="button" size="sm" variant="outline" disabled={busy} onClick={back}>
         {t('auth.endViewAs')}
       </Button>
