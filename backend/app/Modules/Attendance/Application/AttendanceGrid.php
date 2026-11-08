@@ -6,6 +6,7 @@ namespace App\Modules\Attendance\Application;
 
 use App\Modules\Attendance\Domain\AttendanceRefusal;
 use App\Modules\Attendance\Domain\AttendanceRefused;
+use App\Modules\Attendance\Domain\Employment;
 use App\Modules\Attendance\Domain\Period;
 use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceDay;
 use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceLock;
@@ -15,6 +16,7 @@ use App\Modules\Employees\Application\EmployeeRoster;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
 use App\Modules\Settings\Application\BusinessRules;
+use App\Modules\Sites\Infrastructure\Eloquent\Site;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -29,7 +31,7 @@ final class AttendanceGrid
 
     private const FIELD = [EmployeeType::Engineer, EmployeeType::PermanentWorker, EmployeeType::DayLaborer];
 
-    public function __construct(private readonly EmployeeRoster $roster, private readonly EffectiveDays $days, private readonly BusinessRules $rules, private readonly DayCrew $crew) {}
+    public function __construct(private readonly EmployeeRoster $roster, private readonly EffectiveDays $days, private readonly BusinessRules $rules, private readonly DayCrew $crew, private readonly Signoffs $signoffs) {}
 
     /** @return array{group: string, start: string, end: string, prev_start: string, next_start: ?string, is_locked: bool, lock: ?array<string, mixed>, missing: int} */
     public function period(EmployeeType $g, ?string $start, ?string $date = null, ?string $ownerId = null): array
@@ -62,8 +64,11 @@ final class AttendanceGrid
         $roster = $this->roster->ofType($g === null ? self::FIELD : [$g], $p->start, $p->end, $perPage, $page, $ownerId, $ids);
         $days = $g === null ? $this->fieldDays($p, $roster['data']) : $this->days->forPeriod($p, $roster['data']);
 
+        $signoffs = $ownerId === null ? $this->signoffs->overlapping(array_column($roster['data'], 'id'), $p->start, $p->end, $g) : [];
+
         return [
             'data' => array_map(fn (array $e) => [
+                'signoffs' => array_map(Signoffs::summary(...), $signoffs[$e['id']] ?? []),
                 'employee' => ['id' => $e['id'], 'code' => $e['code'], 'name_ar' => $e['name_ar'], 'name_en' => $e['name_en']],
                 'days' => array_values(array_map(
                     fn (array $d) => ['date' => $d['date'], 'state' => $d['state'], 'source' => $d['source'], 'site_id' => $d['site_id'], 'leave_code' => $d['leave_code']],
@@ -181,6 +186,43 @@ final class AttendanceGrid
         }
 
         return $counts;
+    }
+
+    /** @return array{sites: list<array<string, mixed>>, engineers: list<array<string, mixed>>} */
+    public function skippedBySite(string $date): array
+    {
+        $missing = [];
+        foreach (self::FIELD as $group) {
+            $period = Period::containing($group, $date);
+            if (! PeriodGuard::isLocked($period)) {
+                $employees = $this->roster->allOfType($group, $date, $date);
+                $days = $this->days->forPeriod($period, $employees);
+                $missing[$group->value] = array_values(array_filter($employees, fn (array $e) => $days[$e['id']][$date]['state'] === 'missing'));
+            }
+        }
+        $siteCounts = [];
+        foreach ([...($missing['permanent_worker'] ?? []), ...($missing['day_laborer'] ?? [])] as $worker) {
+            $site = Employment::homeSiteOn($worker, $date);
+            if ($site !== null) {
+                $siteCounts[$site] = ($siteCounts[$site] ?? 0) + 1;
+            }
+        }
+        $sites = Site::whereKey(array_keys($siteCounts))->whereHas('managers')->orderBy('name_ar')->get()
+            ->map(fn (Site $site) => ['site_id' => (string) $site->id, 'name_ar' => $site->name_ar, 'name_en' => $site->name_en, 'missing' => $siteCounts[$site->id]])->all();
+
+        $missingEngineers = array_column($missing['engineer'] ?? [], 'id');
+        $engineers = [];
+        if ($missingEngineers !== []) {
+            $managers = DB::table('employee_manager_assignments')->whereIn('employee_id', $missingEngineers)
+                ->whereNull('deleted_at')->where('effective_from', '<=', $date)
+                ->selectRaw('distinct on (employee_id) employee_id, manager_id')->orderBy('employee_id')->orderByDesc('effective_from');
+            $engineers = DB::query()->fromSub($managers, 'assignments')->join('users', 'users.id', '=', 'assignments.manager_id')
+                ->whereNull('users.deleted_at')->where('users.is_active', true)
+                ->selectRaw('users.id as manager_id, users.name as manager_name, count(*) as missing')
+                ->groupBy('users.id', 'users.name')->orderBy('users.name')->get()->map(fn (object $row) => (array) $row)->all();
+        }
+
+        return ['sites' => array_values($sites), 'engineers' => array_values($engineers)];
     }
 
     /** Days of the period's employees up to $date with an arrival and no departure. */

@@ -47,6 +47,7 @@ export const NAV: { group: string; items: { path: string; key: string; icon: Luc
       { path: '/attendance', key: 'nav.attendance', icon: CalendarCheck, abilities: ['attendance.view'] },
       { path: '/site-day', key: 'nav.siteDay', icon: ClipboardCheck, abilities: ['attendance.record'] },
       { path: '/leave', key: 'nav.leave', icon: CalendarDays, abilities: ['leave.view'] },
+      { path: '/attendance-requests', key: 'nav.attendanceRequests', icon: HandCoins, abilities: ['attendance_request.decide'] },
       { path: '/wage-proposals', key: 'nav.wageProposals', icon: HandCoins, abilities: ['employee.approve_wage'] },
       { path: '/team-fares', key: 'nav.teamFares', icon: Bus, abilities: ['fare.manage', 'employee.view.own'] },
     ],

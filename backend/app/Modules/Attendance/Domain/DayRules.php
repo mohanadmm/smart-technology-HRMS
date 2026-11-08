@@ -14,7 +14,7 @@ final class DayRules
     public const FIELDS = [
         'office' => ['in_time', 'out_time'],
         'engineer' => ['in_time', 'out_time', 'late_minutes', 'ot_minutes', 'outside_minutes', 'advance_amount', 'note'],
-        'permanent_worker' => ['scheduled_in', 'scheduled_out', 'in_time', 'out_time', 'outside_amount', 'transport', 'advance_amount', 'note'],
+        'permanent_worker' => ['scheduled_in', 'scheduled_out', 'in_time', 'out_time', 'ot_minutes', 'outside_amount', 'transport', 'advance_amount', 'note'],
         'day_laborer' => ['in_time', 'out_time', 'ot_minutes', 'late_minutes', 'advance_amount', 'note'],
     ];
 
@@ -118,6 +118,22 @@ final class DayRules
         }
 
         return false;
+    }
+
+    /** Work after the scheduled end, allowing a permanent worker's overnight attendance. */
+    public static function fieldOvertime(string $start, string $end, string $in, string $out, bool $overnight): int
+    {
+        $arrival = self::minutes($in);
+        $departure = self::minutes($out);
+        $scheduledEnd = self::minutes($end);
+        if ($overnight && $departure < $arrival) {
+            $departure += 1440;
+        }
+        if ($overnight && $scheduledEnd < self::minutes($start)) {
+            $scheduledEnd += 1440;
+        }
+
+        return min(self::MAX_MINUTES, max(0, $departure - max($arrival, $scheduledEnd)));
     }
 
     /** "HH:MM" (or "HH:MM:SS") → minutes after midnight. */

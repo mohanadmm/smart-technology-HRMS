@@ -126,7 +126,7 @@ Applies to engineers, permanent workers and day laborers recorded on the site ma
 | Arrival | Required on a present day. A departure without an arrival, or before it, is refused. |
 | Late minutes (engineers, day laborers) | **Raw**: max(0, arrival − shift start), with no grace. §0a subtracts the 15-minute grace once at payroll. Recomputed only when the arrival changes. Permanent workers' lateness comes from `scheduled_in` and the arrival at payroll (§3). |
 | Early departure | Not a stored field: payroll reads it from the departure and the shift end (`scheduled_out` for permanent workers). |
-| Overtime | Departure after the shift end is shown as a difference only. Engineers' and day laborers' `ot_minutes` are stored as **0** until HR approves the overtime (Slice 3), and reset to 0 only when a time changes. |
+| Overtime | The manager's save proposes minutes worked after the employee's shift end. `ot_minutes` is **0** until HR approves those minutes. Changing the times sends any revised overtime back for review. |
 | Missing departure | A field day with an arrival and no departure is **open** (office days never are). The site manager cannot save a later day for that person until it is completed. After the yesterday window (`manager_yesterday_until`, 12:00) the site manager may still enter the **departure only**, until the period is locked: the arrival and the status stay, the late minutes stay as stored, and HR hears of each such save at once (owner, 2026-11-05). A day HR recorded, or one outside the site manager's reach that day, is HR's to complete. An open day in a locked period never blocks. HR gets the count of open days in the 21:00 alert. Locking a period is refused while any field day in it is open, and payroll counts no open day. |
 
 **Who changes a day**
@@ -138,7 +138,7 @@ Worked example (shift 09:00–16:00, grace 15): arrival 09:25 → 25 late minute
 ## 3. Permanent workers (عمال مثبتين): 26th → 25th
 Each day records: scheduled in/out (default: the field shift, §2b), actual in/out, site, outside-Alex money, transport (full / half / none), advance. Weekly off **Friday**.
 
-- Scheduled in/out are stored on each day; they default to the field shift setting (`worker_shift_start`/`worker_shift_end`: **09:00–16:00** once HR sets it, §2b; seeded **08:00–17:00**) or the pay-row override. Late minutes = max(0, actual in − scheduled in); OT minutes = max(0, time worked − **8** h), as below. Both are shown as hints.
+- Scheduled in/out are stored on each day; they default to the field shift setting (`worker_shift_start`/`worker_shift_end`: **09:00–16:00** once HR sets it, §2b; seeded **08:00–17:00**) or the pay-row override. Late minutes = max(0, actual in − scheduled in). Manager-recorded overtime follows §2b. For other attendance the legacy hint is max(0, time worked − **8** h).
 - ⚠️ While the setting is still 08:00–17:00, every default Present stores actual in/out 08:00–17:00 (§13), and permanent workers' OT is computed from the times, so each default day pays **60 OT minutes** unless HR edits the times (client question 20). At 09:00–16:00 a default day is 7 h and pays none; see the OT question in §2.
 - ⚠️ Late minutes do not wrap around midnight: scheduled 00:00 with arrival 23:50 the day before gives 1,430 late minutes; scheduled 23:50 with arrival 00:10 gives 0. Must a scheduled start that crosses midnight wrap?
 

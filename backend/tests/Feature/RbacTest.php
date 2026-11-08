@@ -11,6 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class RbacTest extends TestCase
@@ -21,16 +22,16 @@ class RbacTest extends TestCase
     {
         $grants = fn (string $slug) => Role::where('slug', $slug)->firstOrFail()->permissions
             ->map(fn ($p) => "{$p->resource}.{$p->action}.{$p->scope}")->sort()->values()->all();
-        $this->assertSame(40, Permission::count());
+        $this->assertSame(41, Permission::count());
         $this->assertSame(['attendance.record.own', 'employee.crew.own', 'employee.propose_laborer.own', 'employee.view.own', 'leave.request.own', 'leave.view.own', 'site.view.own'], $grants('manager'));
         $this->assertSame(['attendance.view.all', 'audit_log.view.all', 'employee.view.all', 'employee_document.view.all', 'leave.decide_escalated.all', 'leave.view.all', 'setting.view.all', 'site.view.all'], $grants('ceo'));
-        $this->assertCount(25, $grants('hr'));
-        foreach (['attendance.view.all', 'attendance.edit.all', 'attendance.lock.all', 'holiday.manage.all', 'employee.assign_site.all', 'employee.approve_wage.all', 'employee.edit_code.all', 'employee_document.view.all', 'employee_document.edit.all', 'fare.manage.all', 'leave.view.all', 'leave.request.all', 'leave.decide.all', 'leave.adjust.all'] as $name) {
+        $this->assertCount(26, $grants('hr'));
+        foreach (['attendance.view.all', 'attendance.edit.all', 'attendance.lock.all', 'attendance_request.decide.all', 'holiday.manage.all', 'employee.assign_site.all', 'employee.approve_wage.all', 'employee.edit_code.all', 'employee_document.view.all', 'employee_document.edit.all', 'fare.manage.all', 'leave.view.all', 'leave.request.all', 'leave.decide.all', 'leave.adjust.all'] as $name) {
             $this->assertContains($name, $grants('hr'));
         }
         $this->assertNotContains('user.manage.all', $grants('hr'));
         $this->assertNotContains('leave.decide_escalated.all', $grants('hr'));
-        $this->assertCount(32, $grants('developer'));
+        $this->assertCount(33, $grants('developer'));
         $this->assertNotContains('leave.view.own', $grants('developer'));
         $this->assertContains('system_log.view.all', $grants('developer'));
         $this->assertContains('user.impersonate.all', $grants('developer'));
@@ -97,7 +98,9 @@ class RbacTest extends TestCase
 
     public function test_me_lists_permissions(): void
     {
-        $token = $this->postJson('/api/v1/auth/login', ['email' => $this->makeUser('hr')->email, 'password' => 'secret123'])->json('data.token');
+        $password = Str::random(24);
+        $user = $this->makeUser('hr', ['password' => $password]);
+        $token = $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => $password])->json('data.token');
         $perms = $this->withToken($token)->getJson('/api/v1/auth/me')->json('data.permissions');
         $this->assertContains('employee.create.all', $perms);
         $this->assertNotContains('user.manage.all', $perms);

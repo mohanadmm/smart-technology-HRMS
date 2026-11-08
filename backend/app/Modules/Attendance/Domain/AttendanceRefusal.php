@@ -7,6 +7,8 @@ namespace App\Modules\Attendance\Domain;
 /** Why an attendance write was refused; the value is the API error code and the lang key suffix. */
 enum AttendanceRefusal: string
 {
+    case PeriodSigned = 'period_signed';
+    case SignoffNotDue = 'signoff_not_due';
     case PeriodLocked = 'period_locked';
     case FutureDate = 'future_date';
     case EmployeeNotActive = 'employee_not_active';
@@ -37,8 +39,8 @@ enum AttendanceRefusal: string
     {
         return match ($this) {
             self::PeriodAlreadyLocked, self::LeaveDaysBlocked => 409,
-            self::PeriodLocked => 423,
-            self::FutureDate, self::EmployeeNotActive, self::MissingDaysUnconfirmed, self::PeriodNotLocked, self::LeaveTypeMissing,
+            self::PeriodLocked, self::PeriodSigned => 423,
+            self::FutureDate, self::SignoffNotDue, self::EmployeeNotActive, self::MissingDaysUnconfirmed, self::PeriodNotLocked, self::LeaveTypeMissing,
             self::TemplateMismatch, self::UnreadableFile, self::TooManyRows, self::SiteNotInReach, self::LeaveNeedsRequest,
             self::OutsideManagerWindow, self::HrDay, self::OpenEarlierDay, self::OpenDays, self::ClearNotAllowed, self::SiteNotForManager,
             self::ArrivalRequired, self::DepartureOnly, self::CrewOnOtherSite, self::CrewHasDay, self::CrewMovedHasDay => 422,

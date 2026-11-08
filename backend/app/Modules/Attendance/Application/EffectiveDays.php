@@ -181,7 +181,7 @@ final class EffectiveDays
             $dayHours = $s['day_hours'];
             $m = DayRules::workerMinutes($scheduledIn, $day['in_time'], $day['out_time'], $dayHours);
 
-            return ['late_minutes' => $m['late'], 'ot_minutes' => $m['ot']];
+            return ['late_minutes' => $m['late'], 'ot_minutes' => ($day['source'] ?? null) === 'manager' ? (int) ($day['ot_minutes'] ?? 0) : $m['ot']];
         }
 
         return [];

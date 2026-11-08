@@ -2,7 +2,9 @@
 
 use App\Modules\Attendance\Presentation\AttendanceController;
 use App\Modules\Attendance\Presentation\AttendanceLockController;
+use App\Modules\Attendance\Presentation\AttendanceRequestController;
 use App\Modules\Attendance\Presentation\HolidayController;
+use App\Modules\Attendance\Presentation\SignoffController;
 use App\Modules\Attendance\Presentation\SiteDayController;
 use App\Modules\Attendance\Presentation\SiteDayCrewController;
 use App\Modules\Audit\Presentation\AuditLogController;
@@ -116,6 +118,17 @@ Route::middleware('auth')->group(function (): void {
             Route::delete('days/{employee}/{date}', 'destroy')->middleware(['permission:attendance.edit', 'employee.scope'])->where('date', $date);
         });
     });
+
+    Route::prefix('attendance/requests')->controller(AttendanceRequestController::class)->middleware('permission:attendance_request.decide')->whereUuid('id')->group(function (): void {
+        Route::get('/', 'index');
+        Route::get('{id}', 'show');
+        Route::post('{id}/approve', 'approve');
+        Route::post('{id}/refuse', 'refuse');
+    });
+
+    Route::get('attendance/site-period', [SignoffController::class, 'index'])->middleware('permission:attendance.record');
+    Route::post('attendance/signoffs', [SignoffController::class, 'sign'])->middleware('permission:attendance.record');
+    Route::post('attendance/signoffs/{id}/return', [SignoffController::class, 'sendBack'])->whereUuid('id')->middleware('permission:attendance.lock');
 
     Route::get('attendance/site-day', [SiteDayController::class, 'show'])->middleware('permission:attendance.record');
     Route::post('attendance/site-day', [SiteDayController::class, 'store'])->middleware('permission:attendance.record');
