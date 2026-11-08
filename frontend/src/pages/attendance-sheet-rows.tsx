@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { hhmm, type SheetAction, type SheetRow, statusOf } from '@/lib/day-sheet'
+import { hhmm, type SheetAction, type SheetRow, presentSite, statusOf } from '@/lib/day-sheet'
 import { cn, FOCUS } from '@/lib/utils'
 
 export type Status = ReturnType<typeof statusOf>
@@ -68,8 +68,8 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
   const pageAll = pageIds.every((id) => selected.has(id))
   const pageSome = pageIds.some((id) => selected.has(id))
   const noLeave = (a: SheetAction) => a.kind === 'leave' && !leaveTypeId(a.code)
-  // a field row is present at its last site; without one there is nowhere to put it (bulk paths skip such rows with a toast)
-  const noSite = (a: SheetAction, r: SheetRow) => a.kind === 'present' && !office && !r.last_site_id
+  // A field row needs a recorded, assigned or previous site before Present can be used.
+  const noSite = (a: SheetAction, r: SheetRow) => a.kind === 'present' && !office && !presentSite(r)
   const noSiteId = useId()
   // the select-page box: in the table header from xl, on its own line above the cards below it
   const pageCheck = <input type="checkbox" className={cn(FOCUS, 'size-4 accent-primary')} checked={pageAll} ref={(el) => { if (el) el.indeterminate = pageSome && !pageAll }} onChange={() => onToggle(pageIds, !pageAll)} />
@@ -157,10 +157,10 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
       </Badge>
     )
   }
-  // a field row's site: the day's site when present, else the last site on a missing row, else «choose a site»; a pick writes that site
+  // a field row's site: the day's site when present, else the suggested site on a missing row, else «choose a site»; a pick writes that site
   const siteChip = (r: SheetRow) => {
     const s = status(r)
-    const at = s === 'present' ? r.day.site_id : s === 'missing' ? r.last_site_id : null
+    const at = s === 'present' ? r.day.site_id : s === 'missing' ? presentSite(r) : null
     const text = at ? siteName(at) : t('attendance.sheet.bulk.pickSite')
     const checked = s === 'present' ? (r.day.site_id ?? '') : ''
     return (
@@ -189,6 +189,7 @@ export function SheetRows({ rows, office, editable, date, sites, selected, pendi
     if (editable) return siteChip(r)
     const s = status(r)
     if (s === 'present') return <span className="rounded-md border bg-card px-2 py-0.5 text-xs">{siteName(r.day.site_id)}</span>
+    if (s === 'missing' && r.assigned_site_id) return <span className="text-xs text-muted-foreground">{siteName(r.assigned_site_id)}</span>
     if (s === 'missing' && r.last_site_id) return <span className="text-xs text-muted-foreground">{t('attendance.sheet.lastSite', { site: siteName(r.last_site_id) })}</span>
     return null
   }

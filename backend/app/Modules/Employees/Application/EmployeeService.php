@@ -261,18 +261,24 @@ final class EmployeeService
      */
     public function addPayChange(string $id, array $data): array
     {
-        $employee = Employee::findOrFail($id);
-        $this->assertFreeDate($employee->payChanges(), $data['effective_from']);
+        DB::transaction(function () use ($id, $data): void {
+            $employee = Employee::lockForUpdate()->findOrFail($id);
+            $date = $data['effective_from'];
+            $this->assertFreeDate($employee->payChanges(), $date);
 
-        $types = $employee->typeChanges->map(fn ($t) => $this->row($t))->all();
-        $type = EffectiveDated::at($types, $data['effective_from']);
-        if ($type === null) {
-            throw ValidationException::withMessages(['effective_from' => __('errors.no_type_on_date')]);
-        }
-        $pay = $this->payRow($data);
-        $this->assertPay(EmployeeType::from($type['type']), $pay);
+            $types = $employee->typeChanges->map(fn ($t) => $this->row($t))->all();
+            $type = EffectiveDated::at($types, $date);
+            if ($type === null) {
+                throw ValidationException::withMessages(['effective_from' => __('errors.no_type_on_date')]);
+            }
 
-        $employee->payChanges()->create($pay);
+            $group = EmployeeType::from($type['type']);
+            $previous = $employee->payChanges()->where('effective_from', '<', $date)->orderByDesc('effective_from')->first();
+            $carry = $group === EmployeeType::DayLaborer ? ['shift_start', 'shift_end'] : ['raise', 'insured_basic', 'shift_start', 'shift_end'];
+            $pay = $this->payRow([...($previous?->only($carry) ?? []), ...$data]);
+            $this->assertPay($group, $pay);
+            $employee->payChanges()->create($pay);
+        });
 
         return $this->show($id);
     }

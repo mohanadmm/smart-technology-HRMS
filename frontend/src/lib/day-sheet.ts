@@ -10,6 +10,7 @@ export type SheetRow = {
   day: { state: 'stored' | 'derived' | 'missing'; source: string | null; version: number | null; site_id: string | null; leave_code: string | null } & Record<DayValue, string | number | null>
   hints: { late_minutes?: number; ot_minutes?: number }
   last_site_id: string | null
+  assigned_site_id?: string | null
   totals: { worked: number; leave: number; absent: number; missing: number }
 }
 
@@ -58,6 +59,9 @@ export function parseBatch(input: string, rows: SheetRow[]): { matches: SheetRow
 /** A stored time ("HH:MM" or "HH:MM:SS") as "HH:MM"; null stays null. */
 export const hhmm = (t: string | number | null) => (t == null ? null : String(t).slice(0, 5))
 
+export const presentSite = (row: SheetRow) =>
+  (row.day.state === 'stored' && row.day.leave_code === null ? row.day.site_id : null) ?? row.assigned_site_id ?? row.last_site_id
+
 /** The bulk rows for one action over the chosen rows; rows already in the target state are left out. */
 export function bulkRows(action: SheetAction, rows: SheetRow[], leaveTypeId: (code: string) => string | undefined, office: boolean): { rows: BulkRow[]; skipped: SheetRow[] } {
   const out: BulkRow[] = []
@@ -68,7 +72,7 @@ export function bulkRows(action: SheetAction, rows: SheetRow[], leaveTypeId: (co
     const stored = d.state === 'stored'
     const base = { employee_id: r.employee.id, version: d.version }
     if (action.kind === 'present') {
-      const site = office ? null : r.last_site_id
+      const site = office ? null : presentSite(r)
       if (!office && !site) skipped.push(r)
       else if (!(stored && d.site_id === site && d.leave_code === null)) out.push({ ...base, site_id: site })
     } else if (action.kind === 'leave') {

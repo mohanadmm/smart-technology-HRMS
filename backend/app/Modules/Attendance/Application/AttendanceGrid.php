@@ -147,6 +147,7 @@ final class AttendanceGrid
                 'day' => array_intersect_key($day, array_flip(['state', 'source', 'version', 'site_id', 'leave_code', ...EffectiveDays::VALUES])),
                 'hints' => (object) $this->days->hints($g, $e, $day, $settings),
                 'last_site_id' => $lastSites[$e['id']] ?? null,
+                'assigned_site_id' => $g === EmployeeType::Office || $g === EmployeeType::Engineer ? null : Employment::homeSiteOn($e, $date),
                 'totals' => $totals,
             ];
         }
