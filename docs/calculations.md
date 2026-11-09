@@ -41,7 +41,13 @@ lateness deduction      = chargeable late minutes × wage ÷ divisor × multipli
 - No rounding inside the formula (as everywhere); ⚠️ the rounding of the payable amount is still open (question 12).
 - ⚠️ Changes from the earlier spec: the multiplier was per type (office 1, engineers 1.5, permanent workers 2, day laborers 2) and field types had no grace. Both changes can move the October fixture; every difference goes in the Excel-difference report with its reason. Do not edit the fixture to make a test pass.
 
-## 1. Office staff (موظفين مثبتين شركة): calendar month
+## Payroll periods (R16 and R26)
+
+- Day laborers are paid each half-month, for the 1st–15th and the 16th–last day of the calendar month.
+- Office staff, engineers and permanent workers have one payroll period from the 26th to the 25th inclusive. Payday is two or three days after cutoff, usually the 27th or 28th.
+- The office attendance screen and locks currently use calendar months. The payroll date range must cover the relevant days across both attendance periods. Use a fixed divisor of 30 for the daily rate of monthly staff, regardless of the number of days in the payroll period (R26, confirmed 2026-11-09).
+
+## 1. Office staff (موظفين مثبتين شركة): payroll 26th → 25th
 
 **Salary parts**
 - Salary = basic + raise. The raise is paid (this fixes Excel error #2).
