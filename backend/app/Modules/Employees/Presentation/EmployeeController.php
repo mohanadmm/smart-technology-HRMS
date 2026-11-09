@@ -58,6 +58,19 @@ final class EmployeeController
         return ApiEnvelope::single($request, $this->employees->update($employee, $data));
     }
 
+    public function linkAccount(Request $request, string $employee): JsonResponse
+    {
+        if (RequestScope::ownerId($request) !== null) {
+            throw AuthorizationRefused::of('employee.edit');
+        }
+
+        $data = $request->validate([
+            'account_id' => ['present', 'nullable', 'uuid', Rule::exists('users', 'id')->whereNull('deleted_at')],
+        ]);
+
+        return ApiEnvelope::single($request, $this->employees->linkAccount($employee, $data['account_id']));
+    }
+
     public function changeCode(Request $request, string $employee): JsonResponse
     {
         // A swap touches the holder, who may be outside an own-scope caller's reach, and the 409 names them: only `.all` renumbers.

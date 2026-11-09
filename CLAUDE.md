@@ -18,12 +18,12 @@ It replaces 6 Excel workbooks. Standalone now; a REST API for the company's Lara
 Mirror the CRM (github.com/mr-h12/smart-technology-CRM, see `docs/adr/0001-mirror-crm-stack.md`): Laravel 13 / PHP 8.4, PostgreSQL 17, Redis queues, Docker; `/api/v1`, UUIDv7 ids, the CRM response envelope; modules `Domain/Application/Infrastructure/Presentation` enforced by deptrac; PHPStan; PHPUnit; the CRM's custom RBAC, audit log and browsershot PDF queue. Frontend keeps the demo's look (Tailwind 4, shadcn/Radix, tokens, fonts) and uses react-i18next; the demo's mock data and DOM-rewrite translator are not carried over.
 
 ## Users and permissions
-- Accounts: Developer, CEO, HR, Site manager (مدير الموقع; role slug `manager`, 5 today). **Most employees have no account.** A site manager can also be an employee: HR records and reviews their attendance like anyone else's, and their account permissions stay separate from their pay (the account-to-employee link is not built yet).
+- Accounts: Developer, CEO, HR, Site manager (مدير الموقع; role slug `manager`, 5 today). **Most employees have no account.** HR can link an account to an employee from the employee profile. HR records and reviews the employee's attendance. Identity manages account permissions. Employees manages pay.
 - Site manager (مدير الموقع) is the domain and UI term (owner, 2026-11-04, replacing Team lead / مسؤول التيم from 2026-11-03); a site may have more than one; code, permissions and existing assignments keep `manager`. A site manager never sees or sets wages; HR owns wages and rates. A manager acts on behalf of their own employees: field attendance, leave, requests, the "signed" mark. A manager covers one or more sites and reaches, on each date, the workers whose home site is one of their sites and the engineers assigned to them. A worker has one dated home site; only HR moves it. Engineers have one dated manager and work at any of that manager's sites. Office staff keep a dated department manager for reference; HR enters their attendance, leave and requests.
 - Office staff attendance comes from the fingerprint import and HR, not from managers.
 - HR can view and edit everything managers enter. Every manager action notifies HR: instantly for requests, warnings and edits to past days; in a daily digest for routine attendance.
 - Approval flow: manager → HR → (HR chooses) CEO. Escalation is HR's per-request decision, not a rule.
-- Only the Developer role creates accounts and sets or changes passwords. There is no self-service password reset or change. ⚠️ The owner said on 2026-11-03 that HR handles accounts; HR holds `user.view` but not `user.manage` today. Unchanged until R22 in `docs/client-questions.md` is answered.
+- The Developer manages accounts. HR can create HR and site manager accounts and change their passwords (R22).
 - Roles and permissions are data (CRM-style `resource.action.scope`), editable from the developer console. Check permissions by name, never by role name.
 
 ## Domain
@@ -31,7 +31,7 @@ Employee types, each with its own payroll cycle:
 
 | Type | Arabic | Pay basis | Period |
 |---|---|---|---|
-| office | موظفين مثبتين شركة | monthly salary + fingerprint lateness | calendar month |
+| office | موظفين مثبتين شركة | monthly salary + fingerprint lateness | 26th → 25th |
 | engineer | مهندسين | monthly salary, daily site timesheet | 26th → 25th |
 | permanent_worker | عمال مثبتين | monthly salary, daily site timesheet | 26th → 25th |
 | day_laborer | عمال باليومية | the worker's daily wage + site allowance | 1–15, 16–end |

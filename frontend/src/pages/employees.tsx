@@ -381,6 +381,7 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
           <dd>{worker ? emp.current_site?.name_ar ?? t('site.homeNone') : emp.current_manager?.name ?? t('manager.none')}</dd>
         </dl>
         {worker ? can('employee.assign_site') && <MoveSiteDialog empId={emp.id} /> : can('employee.assign_manager') && <AssignManagerDialog empId={emp.id} />}
+        {has('account_id') && can('employee.edit.all') && can('user.view') && <EmployeeAccountDialog emp={emp} />}
         {can('employee.edit') && emp.termination_date && emp.termination_date < cairoToday() && (
           // the open form drops the cleared values too, so a later Save cannot send them back
           <ReactivateDialog emp={emp} onDone={() => ['termination_date', 'termination_reason'].forEach((k) => set(k, ''))} />
@@ -408,6 +409,38 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
         </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+function EmployeeAccountDialog({ emp }: { emp: Row }) {
+  const { t } = useTranslation()
+  const send = useSave()
+
+  return (
+    <FormDialog
+      title={t('employee.linkAccount')}
+      description={t('employee.linkAccountHint')}
+      trigger={<Button type="button" variant="outline">{t(emp.account_id ? 'employee.changeAccount' : 'employee.linkAccount')}</Button>}
+      init={{ account_id: emp.account_id ?? '' }}
+      submit={({ account_id }) => send(`/employees/${emp.id}/account`, { method: 'PATCH', body: { account_id: account_id || null } })}
+      onDone={() => {}}
+      shown={['account_id']}
+    >
+      {(form) => <EmployeeAccountSelect {...form} />}
+    </FormDialog>
+  )
+}
+
+function EmployeeAccountSelect(form: FormApi) {
+  const { t } = useTranslation()
+  const { data: users, err } = useApi<Row[]>(USERS)
+
+  return (
+    <>
+      <ErrorBanner err={err} shown={[]} />
+      <SelectField name="account_id" label={t('employee.account')} blank={t('employee.noAccount')} disabled={!users}
+        options={(users ?? []).map((user) => [user.id, `${user.name} (${user.email})`])} {...form} />
+    </>
   )
 }
 

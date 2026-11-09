@@ -9,6 +9,7 @@ use App\Modules\Identity\Infrastructure\Eloquent\Role;
 use Illuminate\Foundation\Http\Middleware\TrimStrings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class EmployeesApiTest extends TestCase
@@ -43,6 +44,22 @@ class EmployeesApiTest extends TestCase
     {
         $this->postJson('/api/v1/employees', $this->payload())->assertCreated()->assertJsonPath('data.code', 1);
         $this->postJson('/api/v1/employees', $this->payload(['name_ar' => 'منى']))->assertCreated()->assertJsonPath('data.code', 2);
+    }
+
+    public function test_hr_links_one_employee_to_an_account_and_can_unlink_it(): void
+    {
+        $account = (string) $this->makeUser('manager')->id;
+        $employee = $this->make();
+        $other = $this->make();
+        $this->patchJson("/api/v1/employees/{$employee}/account", ['account_id' => $account])
+            ->assertOk()->assertJsonPath('data.account_id', $account);
+        $this->patchJson("/api/v1/employees/{$other}/account", ['account_id' => $account])->assertUnprocessable();
+        $this->getJson("/api/v1/employees/{$employee}")->assertJsonPath('data.account_id', $account);
+        $this->patchJson("/api/v1/employees/{$employee}/account", ['account_id' => null])
+            ->assertOk()->assertJsonPath('data.account_id', null);
+        $this->patchJson("/api/v1/employees/{$other}/account", ['account_id' => $account])->assertOk();
+        $this->signIn('manager');
+        $this->patchJson("/api/v1/employees/{$other}/account", ['account_id' => null])->assertForbidden();
     }
 
     public function test_validation_rules(): void
@@ -127,7 +144,7 @@ class EmployeesApiTest extends TestCase
     {
         $employee = $this->make(['hire_date' => '2026-01-01']);
         DB::table('attendance_locks')->insert([
-            'id' => (string) \Illuminate\Support\Str::uuid7(),
+            'id' => (string) Str::uuid7(),
             'employee_type' => 'office',
             'period_start' => '2026-10-01',
             'period_end' => '2026-10-31',

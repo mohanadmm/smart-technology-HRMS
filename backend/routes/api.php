@@ -54,6 +54,7 @@ Route::middleware('auth')->group(function (): void {
             Route::get('{employee}', 'show')->middleware(['permission:employee.view', 'employee.scope']);
             Route::patch('{employee}', 'update')->middleware(['permission:employee.edit', 'employee.scope']);
             Route::delete('{employee}', 'destroy')->middleware(['permission:employee.delete', 'employee.scope']);
+            Route::patch('{employee}/account', 'linkAccount')->middleware(['permission:employee.edit', 'employee.scope']);
             Route::patch('{employee}/code', 'changeCode')->middleware(['permission:employee.edit_code', 'employee.scope']);
             Route::post('{employee}/type-changes', 'typeChange')->middleware(['permission:employee.edit', 'employee.scope']);
             Route::post('{employee}/pay-changes', 'payChange')->middleware(['permission:employee.edit', 'employee.scope']);

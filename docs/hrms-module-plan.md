@@ -10,7 +10,7 @@ Smart Technology runs HR and payroll today on 6 hand-built Excel workbooks (anal
 | Stack | Mirror the CRM (`docs/adr/0001-mirror-crm-stack.md`): Laravel 13 / PHP 8.4, PostgreSQL 17, Redis, `/api/v1`, UUIDv7, modular + deptrac, PHPUnit, CRM-style RBAC + audit log, browsershot PDFs. Frontend: the demo's look + react-i18next |
 | Hosting | Client's on-prem server, delivered as **Docker**. ⚠️ **Backups are NOT set up: manual until the owner confirms. Keep this warning visible in the release notes and the developer console.** |
 | Language | Arabic + English (RTL/LTR) |
-| Users | 7 accounts: 1 CEO, 1 HR, 5 managers. **No employee or worker accounts.** Developer role can add accounts |
+| Users | 7 accounts: 1 CEO, 1 HR, 5 managers. Most employees have no account. HR can link an employee to an existing account and manage HR and site manager credentials. |
 | Roles | Developer (super-admin) > CEO > HR > Manager. HR can edit everything a manager enters |
 | Data entry | Manager records attendance, absence, lateness, leave and requests for the people on their sites; attendance is HR-only for now (see Attendance entry (1c)) |
 | Approvals | Manager → HR → (HR decides) CEO, or HR approves alone |
@@ -72,11 +72,15 @@ Smart Technology runs HR and payroll today on 6 hand-built Excel workbooks (anal
      - Failures are logged. The counts are cumulative, so the next run covers a failed day.
    - **Paste site attendance messages**: HR selects a field group, date and work site. Each line is `employee ID HH:MM HH:MM` or `employee ID absent` (`غياب`). Preview resolves IDs to employee names, flags lines that would replace an existing status, and blocks the entire batch when a line is invalid. The versioned save supports session undo.
    - HR can correct a past date in the day sheet after reopening a locked period with an audit reason.
-   - Later, separate items:
-     - **Manager mobile screen**: the manager enters today, and yesterday until 12:00; older days are HR-only. «زي امبارح» quick fill; the manager's own sites only; the «تم التوقيع» sign-off per employee period, after which only HR edits; HR returns a period with a notification to the manager; an alert to HR when a manager skips a day.
+   - **Manager workspace**: site picker, bulk arrival and checkout, individual corrections, one-day crew changes, yesterday entry until noon, departure-only completion for open days, and period sign-off. HR can correct and return attendance. Daily alerts cover missing attendance and manager activity.
 6. **Leave**: balances and rules above, recorded by the manager, HR approves or escalates. Built in 6 slices per `docs/superpowers/plans/2026-11-03-leave.md`.
 7. **Notifications**: in-app, instant + daily digest.
 8. **Migration step 1**: step 1 (master data: employees, sites, rates, fares) is done by `hrms:import-master`; opening leave and advance balances follow their modules.
+
+**Release 1 acceptance**
+- Verify login and account permissions, employee and account linking, site scope, bulk entry, period lock and reopen, Excel preview and confirmation, leave approval, and notifications with demo data.
+- Run the backend and frontend commands in `.github/workflows/checks.yml` against an isolated test database. Check the audit runtime grants using [audit database access](audit-database-access.md).
+- HR reviews the local staging workbook, resolves incomplete employee and site data, and approves the first live import after a clean dry run. Record the manual backup and HR and General Manager acceptance before rollout.
 
 ### Release 2 — end of Month 2: Payroll
 1. **Fingerprint import** (office) → late minutes with grace, exemptions.
@@ -197,7 +201,7 @@ Status is verified against `main` at `7be93b9` (PR #3 merged) by reading the cod
 | Q1 (items 17) | **Site manager / مدير الموقع** is the domain and UI term (owner, 2026-11-04; it replaces Team lead / مسؤول التيم, chosen 2026-11-03). One or more per site, as built (ADR 0004). Keep the `manager` slug, assignments and permissions. | Renamed in #18 (`9ce8ad2`): the role's display name (its migration), `site.managers`, `perm.site.assign_manager` and the sites' validation attribute. Kept on purpose, because they also name an engineer's or an office worker's manager: `employee.tab.manager`, `manager.*` and the audit entity `employee_manager_assignments`. | None. `CONTEXT.md` done. | Foundation (locales), Site-manager workspace |
 | Q2 (item 19) | Employee ID stays visible; **0 is the CEO's**; never reused; UUID stays the key; name search is the normal way to select. | Allocator in `EmployeeService::create` locks `employees` (`SHARE ROW EXCLUSIVE`) and takes `greatest(employee_code_counter.last_issued, max(code)) + 1`, so a deleted or renumbered-down code is never reissued; `employees_code_unique` (deferrable) backs it. **0 is not reserved**: `changeCode` accepts any free number from 0. | Refuse 0 for anyone but the CEO (needs a way to mark the CEO; R23). Make sure the counter table always has exactly its one row. If it were empty, numbering would restart at 1: the unique index refuses any code a live or soft-deleted employee holds, but a code whose row was hard-deleted could be issued again. | Employees |
 | Q3 (item 21) | Workday **09:00–16:00** for the three field types, set by HR in Settings (R19, 2026-11-04; was 08:00–16:00 on 2026-11-03); ADR 0002 daily wage stands; no hourly pay; HR owns wages; site managers never set or see wages. For early departure, day laborers have missed minutes deducted using their own multiplier (R25). | The shared field shift `worker_shift_end` became **17:00** in `2026_11_02_000001_set_field_shift_end.php`, for engineers, permanent workers and day laborers alike. Site managers (`.own` scope) get no pay fields from `EmployeeService::show` (`$full` false). | R19 answered 2026-11-04: the field shift is **09:00–16:00** for the three field types, set by HR in Settings at rollout (no migration; never edit the 2026-11-02 one). No wage access for site managers is already true; keep a test for it. | Settings, Attendance |
-| Q4 (item 12) | A site manager can be an employee and an account holder; optional account-to-employee link; HR records and reviews their attendance; permissions and pay stay separate. | No link between `users` and `employees`. | A nullable, unique link (owned by Employees, read by Identity), set by HR. Attendance needs no change: the site manager is an ordinary employee row. | Employees, Identity |
+| Q4 (item 12) | A site manager can be an employee and an account holder; optional account-to-employee link; HR records and reviews their attendance; permissions and pay stay separate. | HR can link, change or remove the account in the employee profile. A unique foreign key on `employees.account_id` enforces one employee per account. | HR identifies the account and employee to link during setup. | Employees, Identity |
 | Q5 (item 22) | Pay cycles **by type**, no per-person setting. Day laborers 1–15 and 16–month end. Office staff, engineers and permanent workers 26→25, paid 2–3 days after cutoff (R26). | `Attendance/Domain/Period` currently uses the calendar month for office attendance locks. | Office payroll needs a 26→25 date range across the existing office attendance periods. Divide the monthly salary by a fixed 30 to get the day rate (R26). | Payroll |
 | Q6 (item 4) | HR notes in the employee list, **HR and CEO only**, preview with full text on hover or tap; enforced on the server. | `hr_notes` is in `EmployeeService::SENSITIVE`, stripped for own-scope callers, and not a list column. | Add it to the list response for `.all` viewers only, plus a test that a site manager's list and detail responses contain no notes. | Employees |
 | Q7 (item 14) | Search by name → explicit pick → add to batch → apply to save. Show ID and site for duplicates. No auto-save, even for one match. | `parseBatch` (`frontend/src/lib/day-sheet.ts`) writes ID batches only; names only select. | A name picker that adds to the batch. The "a name never writes on its own" rule stays. | Attendance |
@@ -241,7 +245,7 @@ Status is verified against `main` at `7be93b9` (PR #3 merged) by reading the cod
   - The name picker (Q7) replaces order 4's "quick entry by name".
 - **Second developer:**
   - WP-B1 gains the phone check on a database copy (Q8), the server-side notes rule (Q6) and the CEO-only 0 (Q2, after R23).
-  - The account-to-employee link (Q4) is a new small PR in Employees, before the site-manager workspace.
+  - The account-to-employee link (Q4) is available in the employee profile.
   - Add the fixed per-employee deduction multiplier to Employees before payroll (R27).
 - **Third developer (Payroll):** builds §0a against the matched multipliers. Use the confirmed rules in R21, R25, R26 and R27. HR still needs to match and review the multiplier data by employee code.
 

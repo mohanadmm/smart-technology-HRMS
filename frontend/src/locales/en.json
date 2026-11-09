@@ -1,4 +1,9 @@
 {
+  "pageError": {
+    "title": "This page could not load",
+    "body": "Reload the page or open another page from the menu.",
+    "reload": "Reload page"
+  },
   "common": {
     "saving": "Saving…",
     "all": "All",
@@ -71,6 +76,11 @@
   },
   "skip": "Skip to content",
   "employee": {
+    "linkAccount": "Link account",
+    "changeAccount": "Change linked account",
+    "linkAccountHint": "Choose the account for this employee. Choose “No account” to remove the link.",
+    "account": "User account",
+    "noAccount": "No account",
     "add": "Add employee",
     "search": "Search name or ID",
     "allTypes": "All types",
@@ -287,6 +297,8 @@
     "endViewAs": "Return to my account"
   },
   "console": {
+    "manualBackupTitle": "Backups are manual",
+    "manualBackupBody": "Back up the database and files before updating the system.",
     "addAccount": "Add account",
     "name": "Name",
     "role": "Role",

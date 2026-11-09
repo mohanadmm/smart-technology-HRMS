@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
+import { Alert } from '@/components/common/Alert'
 import { DataList } from '@/components/common/DataList'
 import { PageHeader } from '@/components/common/PageHeader'
 import { RowActions } from '@/components/common/RowActions'
@@ -174,6 +175,7 @@ export function AccountsPage() {
         description={t('console.accountsSubtitle')}
         action={canAdd ? { label: t('console.addAccount'), icon: UserPlus, onClick: () => setDlg({ type: 'add' }) } : undefined}
       />
+      {can('system_log.view') && <Alert tone="warning" title={t('console.manualBackupTitle')}>{t('console.manualBackupBody')}</Alert>}
       <ErrorBanner err={err ?? rolesErr ?? actErr} shown={[]} />
       <Card className="overflow-hidden">
         <DataList

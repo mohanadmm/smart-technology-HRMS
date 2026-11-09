@@ -34,6 +34,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/
 import { useTheme } from '@/hooks/useTheme'
 import { useAuth } from '@/lib/auth'
 import { cn, FOCUS } from '@/lib/utils'
+import { PageErrorBoundary } from './PageErrorBoundary'
 import { NotificationBell } from './NotificationBell'
 import { TableSkeleton } from './PageSkeleton'
 import { SegmentedControl } from './SegmentedControl'
@@ -333,6 +334,7 @@ function Navbar({ onOpenMobile }: { onOpenMobile: () => void }) {
  *   RTL: mirrored by `dir`; the sidebar is the inline-start child of one flex row.
  */
 export function AppLayout() {
+  const location = useLocation()
   const { t, i18n } = useTranslation()
   const { theme } = useTheme()
   const [collapsed, setCollapsed] = useState(false)
@@ -372,9 +374,11 @@ export function AppLayout() {
           <ViewAsBanner />
           <Navbar onOpenMobile={() => setMobileOpen(true)} />
           <main id="page-content" className="mx-auto w-full max-w-[1600px] flex-1 scroll-mt-20 p-4 sm:p-6">
-            <Suspense fallback={<TableSkeleton />}>
-              <Outlet />
-            </Suspense>
+            <PageErrorBoundary key={location.pathname}>
+              <Suspense fallback={<TableSkeleton />}>
+                <Outlet />
+              </Suspense>
+            </PageErrorBoundary>
           </main>
         </div>
 

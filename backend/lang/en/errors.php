@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 return [
+    'employee_account_taken' => 'This account is already linked to an employee.',
     'validation_failed' => 'The given data was invalid.',
     'not_found' => 'Resource not found.',
     'unauthenticated' => 'Unauthenticated.',

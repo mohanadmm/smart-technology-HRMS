@@ -39,7 +39,7 @@ final class EmployeeService
     private const PAY_FIELDS = ['effective_from', 'salary', 'raise', 'insured_basic', 'daily_wage', 'shift_start', 'shift_end'];
 
     /** Coding standard §9: kept out of own-scoped (manager-facing) responses. */
-    private const SENSITIVE = ['national_id', 'insurance_no', 'bank_account', 'hr_notes'];
+    private const SENSITIVE = ['national_id', 'insurance_no', 'bank_account', 'hr_notes', 'account_id'];
 
     public function __construct(private readonly AuthorizeAction $authorize) {}
 
@@ -206,6 +206,18 @@ final class EmployeeService
         return $this->show($id);
     }
 
+    /** @return array<string, mixed> */
+    public function linkAccount(string $id, ?string $accountId): array
+    {
+        try {
+            DB::transaction(fn () => Employee::lockForUpdate()->findOrFail($id)->update(['account_id' => $accountId]));
+        } catch (UniqueConstraintViolationException) {
+            throw ValidationException::withMessages(['account_id' => __('errors.employee_account_taken')]);
+        }
+
+        return $this->show($id);
+    }
+
     /**
      * HR renumbers an employee. A deleted employee's code is never reused; a live holder's (active or archived) is refused unless
      * $swap, which exchanges the two codes in one transaction, each save audited.
@@ -266,6 +278,7 @@ final class EmployeeService
             PeriodGuard::protectHistory();
             $employee = Employee::lockForUpdate()->findOrFail($id);
             $this->assertEmploymentHistoryOpen($employee, '');
+            $employee->update(['account_id' => null]);
             $employee->delete();
         });
     }

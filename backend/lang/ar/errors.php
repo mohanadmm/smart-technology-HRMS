@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 return [
+    'employee_account_taken' => 'الحساب ده مرتبط بموظف بالفعل.',
     'validation_failed' => 'البيانات المُرسلة غير صحيحة.',
     'not_found' => 'المورد غير موجود.',
     'unauthenticated' => 'يرجى تسجيل الدخول.',
