@@ -32,12 +32,12 @@ lateness deduction      = chargeable late minutes × wage ÷ divisor × multipli
 | Monthly site staff (engineers, permanent workers) | **the employee's own**: 1.5 or 2 in October | 14,400 | the monthly salary used in that employee's sheet |
 | Day laborers | 2 in every extracted formula | 480 = 8 × 60 | the daily wage in force on the day |
 
-- The multiplier is the employee's, never derived from type or job title. A blank multiplier is **unresolved, not 0**: payroll must refuse to compute that employee's lateness, not deduct nothing.
+- HR matches the multiplier by employee code and stores one fixed multiplier per employee (R27). A missing multiplier requires HR review before payroll can compute a deduction that uses it.
 - The wage is the system's wage in force on the day. No EGP-per-minute amount is imported or stored.
 - Allowances, fares and transport are not part of the wage here.
 - The grace is subtracted once. Late minutes stored on a day are the **raw** minutes after the shift start. Attendance shows chargeable minutes after grace (R18): a 09:00 shift is charged zero minutes at 09:15 and one minute at 09:16. The October office sheet typed `=42-15`, so its already-adjusted minutes are used as-is.
 - Example, 08:00 start: arrival 08:15 → 0; arrival 08:20 → 5 chargeable minutes. Day laborer on 330 with multiplier 2: 5 × 330 ÷ 480 × 2 = **6.875**. Office, salary 9,000, multiplier 1: 5 × 9,000 ÷ 14,400 × 1 = **3.125**.
-- Early leave and overtime have their own rules; they reuse neither the multiplier nor the grace.
+- Day laborer early departure uses the employee's multiplier (§4). The grace applies to arrival only. Overtime has its own multiplier.
 - No rounding inside the formula (as everywhere); ⚠️ the rounding of the payable amount is still open (question 12).
 - ⚠️ Changes from the earlier spec: the multiplier was per type (office 1, engineers 1.5, permanent workers 2, day laborers 2) and field types had no grace. Both changes can move the October fixture; every difference goes in the Excel-difference report with its reason. Do not edit the fixture to make a test pass.
 
@@ -69,7 +69,7 @@ lateness deduction      = chargeable late minutes × wage ÷ divisor × multipli
 - Bonus = entered by HR
 
 **Deductions**
-- Absence = absence days × day rate
+- Absence = days marked absent × day rate × the employee's multiplier (R21). Multiplier 1 deducts one day rate per absence.
 - Social insurance (employee share) = entered by HR; blank = 0 (section 5)
 - Income tax = entered by HR; blank = 0
 - Advance installment = section 6
@@ -96,7 +96,7 @@ Each day records: site, arrival and departure, OT minutes, late minutes, minutes
 
 - Day extra = OT min × minute rate × **1.5** − chargeable late min × minute rate × the employee's multiplier (§0a; was a flat **1.5**) + outside-Alex min × minute rate
 - Day cost = day rate + day extra (used for site costing, section 8)
-- Absence = days marked غ × day rate. HR marks them for now (1c); the manager later. ⚠️ Verified only for office staff (§1); confirm for engineers before payroll (R21).
+- Absence = days marked غ × day rate × the employee's multiplier, as for office staff (R21).
 - Deduction (الخصم) = penalty entered by HR with a reason
 - Net = salary + Σ day extra − absence − deduction − insurance − tax − advance installments
 
@@ -155,6 +155,7 @@ Each day records: scheduled in/out (default: the field shift, §2b), actual in/o
 - OT money = OT hours × hour rate × **1.5** + outside-Alex money
 - Transport = fare (section 4 fare rule; HR sets every fare) for full, fare ÷ 2 for half. HR picks per day for now (1c), the manager later; default full, including on a missing or future work day. A leave day stores none.
 - Day cost = day rate + OT money (site costing)
+- Absence = days marked غ × day rate × the employee's multiplier (R21).
 - Net = salary + Σ OT money + Σ transport − Σ lateness − absence − deduction − insurance − tax − advance installments
 
 The Excel worker template **adds** lateness to the net (Excel error #4) and leaves transport out. The system subtracts lateness and pays transport.
@@ -171,12 +172,15 @@ Each day records a site, arrival and departure (§2 defaults and hints), OT and 
 | Transport | fare: the worker's override for that site if set, else the residence × site fare, else 0 (no fare, or no residence). Engineers get transport only from an override, never the residence × site fare (owner default, 2026-11-05). HR sets every fare (the residence × site default, plus per-worker overrides); the team lead reads their own team's fares. ⚠️ the October Excel pays 0 transport to every day laborer: the October fixture runs with no day-laborer fares, and the difference goes in the Excel-difference report. |
 | OT money | OT min × (wage ÷ 8 ÷ 60) × **1.5** |
 | Lateness | chargeable late min × wage ÷ 480 × the worker's multiplier (§0a; 2 in October) |
-| Day total | wage + allowance + transport + OT − lateness |
+| Early departure (R25) | max(0, scheduled end − actual departure) in minutes × (wage ÷ 480) × the worker's multiplier |
+| Day total | wage + allowance + transport + OT − lateness − early departure |
 
 ```
 Net = Σ wage + Σ allowance + Σ transport + Σ OT + bonuses
-      − Σ lateness − advance installments − deductions
+      − Σ lateness − Σ early departure − advance installments − deductions
 ```
+An absent day earns zero daily wage. Early departure applies to a worked day with recorded departure. For a daily wage of 400 and a multiplier of 1.5, leaving 120 minutes early deducts 150 (120 × 400 ÷ 480 × 1.5).
+
 Day laborers have no social insurance and no leave balance.
 ⚠️ Does a worker's wage itself ever change by site, or only the allowance?
 
@@ -224,7 +228,7 @@ Spec: `docs/superpowers/specs/2026-11-03-leave-design.md`. Attendance is the led
 **Leave pay (Release 2 payroll)**
 - Annual and casual leave are paid in full for monthly staff, like the weekly off.
 - Sick leave is paid at **100%** of the day rate (`sick_leave_pay_percent`); below 100, each sick day deducts (100 − %) × day rate. ⚠️ (L1, client question 8; the Excel pays it in full)
-- Unpaid leave deducts one day rate per day, like absence (غ), but is reported as unpaid leave.
+- Unpaid leave deducts one day rate per day and is reported separately from absence (غ).
 
 ## 8. Site labor cost (ملخص المواقع)
 For each site and period:
