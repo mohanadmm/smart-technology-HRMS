@@ -165,7 +165,7 @@ test('morning: «حضور الكل» fills the shift start, keeps a typed arriva
   const arrivalB = within(group('Laborer-B')).getByRole('textbox', { name: 'حضور Laborer-B' })
   await user.clear(arrivalB)
   await user.type(arrivalB, '9:15')
-  expect(within(group('Laborer-B')).getByText('تأخير 75 دقيقة')).toBeInTheDocument()
+  expect(within(group('Laborer-B')).getByText('تأخير 60 دقيقة')).toBeInTheDocument()
 
   await user.click(screen.getByRole('button', { name: 'حضور الكل (2)' }))
   expect(screen.getByRole('button', { name: 'حضور الكل (0)' })).toBeDisabled()

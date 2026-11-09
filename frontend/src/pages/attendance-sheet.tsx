@@ -18,7 +18,7 @@ import { useAuth } from '@/lib/auth'
 import { type BulkRow, bulkRows, MAX_BATCH, matches, type SheetAction, type SheetRow, statusOf, undoRows } from '@/lib/day-sheet'
 import { queryKey, SITES, useApi, useSave } from '@/lib/query'
 import { cn, FOCUS, OFF } from '@/lib/utils'
-import { PasteDialog, TimesDialog } from './attendance-sheet-command'
+import { PasteDialog, SiteMessageDialog, TimesDialog } from './attendance-sheet-command'
 import { QUICK, SheetRows, type Status } from './attendance-sheet-rows'
 
 type Filter = 'all' | 'missing' | 'present' | 'late' | 'leave' | 'absent'
@@ -73,6 +73,7 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [query, setQuery] = useState('') // the search: filters the list, never writes
   const [pasting, setPasting] = useState(false)
+  const [pastingMessage, setPastingMessage] = useState(false)
   const [timing, setTiming] = useState(false) // the bulk bar's times dialog
   const [siteChoice, setSiteChoice] = useState('') // the bulk bar's Set site: chosen first, written only by its Apply button
   const unselect = () => { setSelected(new Set()); setSiteChoice('') }
@@ -80,6 +81,7 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
   if (shownDate !== date) {
     setShownDate(date)
     setPage(1)
+    setPastingMessage(false)
     unselect()
   }
   // employee ids with a write in flight: the ref guards against a double send before React re-renders, the state disables their controls
@@ -136,6 +138,11 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
     else if (!out.length) toast.info(t('attendance.sheet.toast.nothingToChange'))
     if (!out.length) return null
     const before = out.map((b) => free.find((r) => r.employee.id === b.employee_id)!)
+    return record(out, before, label)
+  }
+
+  async function record(out: BulkRow[], before: SheetRow[], label: string): Promise<Applied | null> {
+    if (out.some((row) => flight.current.has(row.employee_id))) return null
     const after = await write(date, out, before, 'attendance.sheet.toast.conflict')
     if (!after) return null
     // one toast id: a newer write replaces this toast, so its Undo is always the newest write's
@@ -296,6 +303,11 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
                   {t('attendance.sheet.paste.button')}
                 </Button>
               )}
+              {editable && !office && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => setPastingMessage(true)}>
+                  {t('attendance.sheet.message.title')}
+                </Button>
+              )}
               {editable && (
                 <Button type="button" variant="ghost" size="sm" className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50" aria-disabled={!undoCount || pending.size > 0} onClick={() => void undo()}>
                   <Undo2 aria-hidden />
@@ -313,6 +325,11 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
           </div>
         )}
         {editable && <PasteDialog open={pasting} onOpenChange={setPasting} rows={rows} leaveTypeId={leaveTypeId} onApply={async (action, chosen, label) => !!(await apply(action, chosen, label))} />}
+        {editable && !office && pastingMessage && (
+          <SiteMessageDialog key={`${group}:${date}`} rows={rows} sites={workSites} date={date} absentId={leaveTypeId('absent')}
+            pending={pending.size > 0} onClose={() => setPastingMessage(false)}
+            onApply={async (out, before) => !!(await record(out, before, t('attendance.sheet.message.title')))} />
+        )}
         {!rows.length ? (
           <EmptyState icon={Users} title={t('attendance.empty')} />
         ) : !shown.length ? (

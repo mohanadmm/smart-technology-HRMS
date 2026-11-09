@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Modules\Employees\Application;
 
+use App\Modules\Attendance\Domain\AttendanceRefusal;
+use App\Modules\Attendance\Domain\AttendanceRefused;
+use App\Modules\Attendance\Infrastructure\PeriodGuard;
 use App\Modules\Employees\Domain\DocumentKind;
 use App\Modules\Employees\Domain\EffectiveDated;
 use App\Modules\Employees\Domain\EmployeeCodeTaken;
@@ -17,6 +20,7 @@ use App\Modules\Employees\Infrastructure\Eloquent\EmployeeSiteAssignment;
 use App\Modules\Employees\Infrastructure\Eloquent\EmployeeTypeChange;
 use App\Modules\Identity\Application\Rbac\AuthorizeAction;
 use App\Modules\Identity\Domain\Rbac\Scope;
+use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -112,6 +116,10 @@ final class EmployeeService
         $this->assertPay($type, $pay);
 
         $id = DB::transaction(function () use ($data, $type, $pay): string {
+            $from = max($data['effective_from'], $data['hire_date'] ?? $data['effective_from']);
+            if (PeriodGuard::lockedBetween($from, self::dayAfter($data['termination_date'] ?? null), $type)) {
+                throw AttendanceRefused::because(AttendanceRefusal::PeriodLocked);
+            }
             $code = EmployeeCodes::issueNext();
 
             $employee = Employee::create([...Arr::except($data, ['type', ...self::PAY_FIELDS]), 'code' => $code]);
@@ -175,10 +183,25 @@ final class EmployeeService
      */
     public function update(string $id, array $data): array
     {
-        $employee = Employee::findOrFail($id);
-        $employee->fill($data);
-        $this->assertBank($employee->only(['pay_method', 'bank_account']));
-        $employee->save();
+        DB::transaction(function () use ($id, $data): void {
+            PeriodGuard::protectHistory();
+            $employee = Employee::lockForUpdate()->findOrFail($id);
+            $employee->fill($data);
+            $this->assertBank($employee->only(['pay_method', 'bank_account']));
+            if ($employee->isDirty('hire_date')) {
+                $old = $employee->getOriginal('hire_date');
+                $new = $employee->hire_date;
+                $until = self::earlierEnd(max($old, $new), self::dayAfter($employee->termination_date));
+                $this->assertEmploymentHistoryOpen($employee, (string) min($old, $new), $until, false);
+            }
+            if ($employee->isDirty('termination_date')) {
+                $old = self::dayAfter($employee->getOriginal('termination_date'));
+                $new = self::dayAfter($employee->termination_date);
+                $start = min($old ?? $new, $new ?? $old);
+                $this->assertEmploymentHistoryOpen($employee, max((string) $start, $employee->hire_date ?? ''), $old === null || $new === null ? null : max($old, $new), false);
+            }
+            $employee->save();
+        });
 
         return $this->show($id);
     }
@@ -239,7 +262,12 @@ final class EmployeeService
 
     public function delete(string $id): void
     {
-        Employee::findOrFail($id)->delete();
+        DB::transaction(function () use ($id): void {
+            PeriodGuard::protectHistory();
+            $employee = Employee::lockForUpdate()->findOrFail($id);
+            $this->assertEmploymentHistoryOpen($employee, '');
+            $employee->delete();
+        });
     }
 
     /**
@@ -248,9 +276,19 @@ final class EmployeeService
      */
     public function addTypeChange(string $id, array $data): array
     {
-        $employee = Employee::findOrFail($id);
-        $this->assertFreeDate($employee->typeChanges(), $data['effective_from']);
-        $employee->typeChanges()->create($data);
+        DB::transaction(function () use ($id, $data): void {
+            PeriodGuard::protectHistory();
+            $employee = Employee::lockForUpdate()->findOrFail($id);
+            $from = $data['effective_from'];
+            $this->assertFreeDate($employee->typeChanges(), $from);
+            $until = $employee->typeChanges()->where('effective_from', '>', $from)->min('effective_from');
+            $this->assertEmploymentHistoryOpen($employee, $from, $until);
+            $newType = EmployeeType::from($data['type']);
+            if (PeriodGuard::lockedBetween(max($from, $employee->hire_date ?? $from), self::earlierEnd($until, self::dayAfter($employee->termination_date)), $newType)) {
+                throw AttendanceRefused::because(AttendanceRefusal::PeriodLocked);
+            }
+            $employee->typeChanges()->create($data);
+        });
 
         return $this->show($id);
     }
@@ -262,6 +300,7 @@ final class EmployeeService
     public function addPayChange(string $id, array $data): array
     {
         DB::transaction(function () use ($id, $data): void {
+            PeriodGuard::protectHistory();
             $employee = Employee::lockForUpdate()->findOrFail($id);
             $date = $data['effective_from'];
             $this->assertFreeDate($employee->payChanges(), $date);
@@ -277,6 +316,8 @@ final class EmployeeService
             $carry = $group === EmployeeType::DayLaborer ? ['shift_start', 'shift_end'] : ['raise', 'insured_basic', 'shift_start', 'shift_end'];
             $pay = $this->payRow([...($previous?->only($carry) ?? []), ...$data]);
             $this->assertPay($group, $pay);
+            $until = $employee->payChanges()->where('effective_from', '>', $date)->min('effective_from');
+            $this->assertEmploymentHistoryOpen($employee, $date, $until);
             $employee->payChanges()->create($pay);
         });
 
@@ -307,9 +348,15 @@ final class EmployeeService
      */
     public function assignManager(string $id, array $data): array
     {
-        $employee = Employee::findOrFail($id);
-        $this->assertFreeDate($employee->managerAssignments(), $data['effective_from']);
-        $employee->managerAssignments()->create($data);
+        DB::transaction(function () use ($id, $data): void {
+            PeriodGuard::protectHistory();
+            $employee = Employee::lockForUpdate()->findOrFail($id);
+            $from = $data['effective_from'];
+            $this->assertFreeDate($employee->managerAssignments(), $from);
+            $until = $employee->managerAssignments()->where('effective_from', '>', $from)->min('effective_from');
+            $this->assertEmploymentHistoryOpen($employee, $from, $until);
+            $employee->managerAssignments()->create($data);
+        });
 
         return $this->show($id);
     }
@@ -323,7 +370,8 @@ final class EmployeeService
     public function assignSite(string $id, array $data): array
     {
         DB::transaction(function () use ($id, $data): void {
-            $employee = Employee::findOrFail($id);
+            PeriodGuard::protectHistory();
+            $employee = Employee::lockForUpdate()->findOrFail($id);
             $from = $data['effective_from'];
             $type = EffectiveDated::at($employee->typeChanges->map(fn ($t) => $this->row($t))->all(), $from)['type'] ?? null;
             if (! in_array($type, [EmployeeType::PermanentWorker->value, EmployeeType::DayLaborer->value], true)) {
@@ -344,10 +392,38 @@ final class EmployeeService
                 $rows[] = ['site_id' => $previous, 'effective_from' => $returnsOn];
             }
 
+            $until = $returnsOn ?? $employee->siteAssignments()->where('effective_from', '>', $from)->min('effective_from');
+            $this->assertEmploymentHistoryOpen($employee, $from, $until);
             $employee->siteAssignments()->createMany($rows);
         });
 
         return $this->show($id);
+    }
+
+    private function assertEmploymentHistoryOpen(Employee $employee, string $from, ?string $until = null, bool $limitToEmployment = true): void
+    {
+        if ($limitToEmployment) {
+            $from = max($from, $employee->hire_date ?? $from);
+            $until = self::earlierEnd($until, self::dayAfter($employee->termination_date));
+        }
+        $types = $employee->typeChanges()->orderBy('effective_from')->get()->values();
+        foreach ($types as $i => $row) {
+            $start = max($from, $row->effective_from);
+            $end = self::earlierEnd($until, $types->get($i + 1)?->effective_from);
+            if (PeriodGuard::lockedBetween($start, $end, EmployeeType::from($row->type))) {
+                throw AttendanceRefused::because(AttendanceRefusal::PeriodLocked);
+            }
+        }
+    }
+
+    private static function dayAfter(?string $date): ?string
+    {
+        return $date === null ? null : (new DateTimeImmutable($date))->modify('+1 day')->format('Y-m-d');
+    }
+
+    private static function earlierEnd(?string $left, ?string $right): ?string
+    {
+        return $left === null || $right === null ? ($left ?? $right) : min($left, $right);
     }
 
     private static function today(): string

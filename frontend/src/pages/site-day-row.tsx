@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input, Textarea } from '@/components/ui/input'
 import { useSave } from '@/lib/query'
-import { arrivalDiff, changed, departureDiff, type Draft, type LeaveDayTypes, type Mark, MARKS, MORE, type SiteDayRow } from '@/lib/site-day'
+import { chargeableLate, changed, departureDiff, type Draft, type LeaveDayTypes, type Mark, MARKS, MORE, type SiteDayRow } from '@/lib/site-day'
 import { cn } from '@/lib/utils'
 
 const PRESSED: Record<Mark, string> = {
@@ -20,8 +20,8 @@ const PRESSED: Record<Mark, string> = {
 const leaveOf = (d: Draft | null, leave: LeaveDayTypes) => (d ? (Object.entries(leave).find(([, id]) => id === d.site_id)?.[0] ?? null) : null)
 
 /** One person: status buttons, then (when present) the arrival and the departure with its difference from the shift end. */
-export function PersonRow({ r, draft, siteId, date, siteName, leave, sites, set, removable, onRemoved, locked, onOpenDay }: {
-  r: SiteDayRow; draft: Draft | null; siteId: string; date: string; siteName: string; leave: LeaveDayTypes; sites: Row[]; set: (d: Draft | null) => void; removable: boolean; onRemoved: () => void; locked: boolean
+export function PersonRow({ r, draft, siteId, date, siteName, grace, leave, sites, set, removable, onRemoved, locked, onOpenDay }: {
+  r: SiteDayRow; draft: Draft | null; siteId: string; date: string; siteName: string; grace: number; leave: LeaveDayTypes; sites: Row[]; set: (d: Draft | null) => void; removable: boolean; onRemoved: () => void; locked: boolean
   onOpenDay: (date: string, site: string) => void
 }) {
   const { t, i18n } = useTranslation()
@@ -60,7 +60,7 @@ export function PersonRow({ r, draft, siteId, date, siteName, leave, sites, set,
   const out = draft?.out_time ?? null
   const diff = present && isHhmm(out) ? departureDiff(out, r.shift.end) : null
   const arrival = draft?.in_time ?? null
-  const late = present && isHhmm(arrival) ? arrivalDiff(arrival, r.shift.start) : null
+  const late = present && isHhmm(arrival) ? chargeableLate(arrival, r.shift.start, grace) : null
   const missingOut = present && isHhmm(draft?.in_time ?? null) && !out
   const [advanceOpen, setAdvanceOpen] = useState(false)
   const advance = r.requests?.advance

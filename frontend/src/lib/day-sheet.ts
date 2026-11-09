@@ -56,6 +56,29 @@ export function parseBatch(input: string, rows: SheetRow[]): { matches: SheetRow
   return { matches: [...found], unknown: [...unknown], capped, byName: false }
 }
 
+/** One site message line is an employee code followed by two 24-hour times or an absence. */
+export function parseSiteMessage(input: string, rows: SheetRow[]) {
+  const byCode = new Map(rows.map((row) => [row.employee.code, row]))
+  const seen = new Set<string>()
+  const lines = asciiDigits(input).split(/\r?\n/).map((line, i) => ({ line: line.trim(), number: i + 1 })).filter(({ line }) => line)
+  const invalid: number[] = []
+  const entries: { row: SheetRow; inTime?: string; outTime?: string }[] = []
+  const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/
+  for (const { line, number } of lines.slice(0, MAX_BATCH)) {
+    const [code, inTime = '', outTime = '', extra] = line.split(/[\s,;،]+/)
+    const row = /^\d+$/.test(code) ? byCode.get(Number(code)) : undefined
+    const absent = !outTime && ['غياب', 'absent'].includes(inTime.toLowerCase())
+    const timed = time.test(inTime) && time.test(outTime) && outTime >= inTime
+    if (!row || seen.has(row.employee.id) || extra !== undefined || !(absent || timed)) {
+      invalid.push(number)
+      continue
+    }
+    seen.add(row.employee.id)
+    entries.push(absent ? { row } : { row, inTime, outTime })
+  }
+  return { entries, invalid, capped: lines.length > MAX_BATCH }
+}
+
 /** A stored time ("HH:MM" or "HH:MM:SS") as "HH:MM"; null stays null. */
 export const hhmm = (t: string | number | null) => (t == null ? null : String(t).slice(0, 5))
 

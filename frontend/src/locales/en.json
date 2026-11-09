@@ -1,5 +1,6 @@
 {
   "common": {
+    "saving": "Saving…",
     "all": "All",
     "close": "Close",
     "save": "Save",
@@ -333,6 +334,7 @@
     "user": {
       "view": "User accounts: view",
       "manage": "User accounts: manage",
+      "manage_staff": "HR and site manager accounts: create and set passwords",
       "impersonate": "User accounts: view as"
     },
     "role": {
@@ -699,6 +701,16 @@
       "matched": "{{count}} matched",
       "unknown": "Not on this sheet: {{ids}}",
       "capped": "Only the first {{max}} IDs were used",
+      "message": {
+        "title": "Paste site message",
+        "hint": "Select the site and paste one employee per line, for example 12 09:00 16:00 or 12 absent. Review before saving for",
+        "site": "Work site",
+        "label": "Attendance message",
+        "invalid": "Check these lines for an unknown employee ID, a duplicate, or an invalid time: {{lines}}",
+        "preview": "Attendance preview",
+        "replaces": "Replaces existing status",
+        "save": "Save {{count}} rows"
+      },
       "paste": {
         "button": "Paste IDs",
         "title": "Paste employee IDs",

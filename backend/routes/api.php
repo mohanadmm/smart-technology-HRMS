@@ -167,13 +167,14 @@ Route::middleware('auth')->group(function (): void {
 
     Route::prefix('users')->controller(UserController::class)->group(function (): void {
         Route::get('/', 'index')->middleware('permission:user.view');
-        Route::post('/', 'store')->middleware('permission:user.manage');
+        Route::get('assignable-roles', 'staffRoles')->middleware('permission:user.manage,user.manage_staff');
+        Route::post('/', 'store')->middleware('permission:user.manage,user.manage_staff');
         Route::middleware([])->whereUuid(['user', 'session'])->group(function (): void {
             Route::get('{user}', 'show')->middleware('permission:user.view');
             Route::patch('{user}', 'update')->middleware('permission:user.manage');
             Route::patch('{user}/deactivate', 'deactivate')->middleware('permission:user.manage');
             Route::patch('{user}/reactivate', 'reactivate')->middleware('permission:user.manage');
-            Route::put('{user}/password', 'password')->middleware('permission:user.manage');
+            Route::put('{user}/password', 'password')->middleware('permission:user.manage,user.manage_staff');
             Route::get('{user}/sessions', 'sessions')->middleware('permission:user.manage');
             Route::delete('{user}/sessions/{session}', 'terminateSession')->middleware('permission:user.manage');
         });

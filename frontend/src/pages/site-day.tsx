@@ -130,7 +130,7 @@ export function SiteDayPage() {
     if (!(saveErr instanceof ApiError && saveErr.status === 409)) setSaveState(key, null)
   }
   const pending = rows.filter((r) => changed(r, drafts[r.employee.id])).length
-  const c = counts(rows, drafts, siteId)
+  const c = counts(rows, drafts, siteId, day?.late_grace_minutes ?? 15)
   const isToday = !!day && day.date === day.today
 
   const onSave = async () => {
@@ -196,7 +196,7 @@ export function SiteDayPage() {
   const siteName = site ? localName(day?.site ?? site, lang) : ''
   const crewTools = isToday && (can('employee.crew') || can('employee.propose_laborer'))
   const person = (r: SiteDayRow, removable: boolean) => (
-    <PersonRow key={r.employee.id} r={r} draft={current(r, drafts)} siteId={siteId} date={day?.date ?? ''} siteName={siteName} leave={day?.leave_day_types ?? {}} sites={mine} locked={locked} onOpenDay={openDate}
+    <PersonRow key={r.employee.id} r={r} draft={current(r, drafts)} siteId={siteId} date={day?.date ?? ''} siteName={siteName} grace={day?.late_grace_minutes ?? 15} leave={day?.leave_day_types ?? {}} sites={mine} locked={locked} onOpenDay={openDate}
       removable={removable && !locked} onRemoved={reload} set={(d) => setDrafts(d === null ? omit(drafts, r.employee.id) : { ...drafts, [r.employee.id]: d })} />
   )
 

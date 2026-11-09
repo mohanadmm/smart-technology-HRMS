@@ -25,13 +25,13 @@ import { USERS, useApi, useList, useSave } from '@/lib/query'
  */
 const noGenerator = { type: 'text', dir: 'ltr', autoComplete: 'off', autoCapitalize: 'off', autoCorrect: 'off', spellCheck: false } as const
 
-/** Without role.view the role list is not loaded, so the field stays locked to the account's current role. */
+/** Staff account creation uses the restricted role list. Full role editing requires role.view. */
 function AccountDialog({ account, roles, ...dialog }: { account?: Row; roles: Row[] } & Controlled) {
   const { t } = useTranslation()
   const send = useSave()
   const { can } = useAuth()
   const roleName = useRoleName()
-  const pick = can('role.view')
+  const pick = can('role.view') || (!account && can('user.manage_staff'))
   const label = t(account ? 'common.edit' : 'console.addAccount')
   const options = pick ? roles : account?.role ? [account.role] : []
   return (
@@ -151,12 +151,14 @@ export function AccountsPage() {
   const { me, can } = useAuth()
   const roleName = useRoleName()
   const manage = can('user.manage')
+  const manageStaff = can('user.manage_staff')
   const impersonate = can('user.impersonate')
   const viewRoles = can('role.view')
+  const canAdd = (manage && viewRoles) || manageStaff
   // ponytail: one 100-account page; there are a handful of accounts
   const { rows, err, loading } = useList(USERS)
   const send = useSave()
-  const { data: roles = [], err: rolesErr } = useApi<Row[]>(manage && viewRoles ? '/roles' : null)
+  const { data: roles = [], err: rolesErr } = useApi<Row[]>(manage && viewRoles ? '/roles' : manageStaff ? '/users/assignable-roles' : null)
   const [actErr, setActErr] = useState<unknown>()
   const [dlg, setDlg] = useState<{ type: 'add' } | { type: 'edit' | 'password' | 'sessions' | 'viewAs'; row: Row }>()
   const close = { open: true, onOpenChange: () => setDlg(undefined) }
@@ -170,7 +172,7 @@ export function AccountsPage() {
       <PageHeader
         title={t('page.accounts')}
         description={t('console.accountsSubtitle')}
-        action={manage && viewRoles ? { label: t('console.addAccount'), icon: UserPlus, onClick: () => setDlg({ type: 'add' }) } : undefined}
+        action={canAdd ? { label: t('console.addAccount'), icon: UserPlus, onClick: () => setDlg({ type: 'add' }) } : undefined}
       />
       <ErrorBanner err={err ?? rolesErr ?? actErr} shown={[]} />
       <Card className="overflow-hidden">
@@ -201,14 +203,16 @@ export function AccountsPage() {
               </div>
             ),
           }}
-          actions={manage || impersonate ? (u) => (
+          actions={manage || manageStaff || impersonate ? (u) => (
             <RowActions
               items={[
                 ...(manage ? [
                   { label: t('common.edit'), onSelect: () => setDlg({ type: 'edit', row: u }) },
-                  { label: t('console.setPassword'), onSelect: () => setDlg({ type: 'password', row: u }) },
                   { label: t(u.is_active ? 'console.deactivate' : 'console.reactivate'), onSelect: () => toggle(u), destructive: u.is_active },
                   { label: t('console.sessions'), onSelect: () => setDlg({ type: 'sessions', row: u }) },
+                ] : []),
+                ...(manage || (manageStaff && ['hr', 'manager'].includes(u.role?.slug)) ? [
+                  { label: t('console.setPassword'), onSelect: () => setDlg({ type: 'password', row: u }) },
                 ] : []),
                 ...(impersonate && u.is_active && u.id !== me?.id ? [{ label: t('console.viewAs'), onSelect: () => setDlg({ type: 'viewAs', row: u }) }] : []),
               ]}

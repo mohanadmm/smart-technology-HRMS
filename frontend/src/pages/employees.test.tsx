@@ -286,6 +286,20 @@ test('create form shows a server field error under its field', async () => {
 const createForm = () =>
   renderWithAuth(<MemoryRouter initialEntries={['/employees/new']}><Routes><Route path="employees/new" element={<EmployeeFormPage />} /></Routes></MemoryRouter>, ALL, { router: false })
 
+test('rapid employee form submissions send only one create request', async () => {
+  const post = vi.fn(() => json(422, { error: { code: 'validation_failed', message: 'راجع البيانات' } }))
+  mockFetch({ 'GET /api/v1/residences': residences, 'POST /api/v1/employees': post })
+  createForm()
+  const form = screen.getByRole('button', { name: 'حفظ' }).closest('form')!
+  act(() => {
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
+  expect(post).toHaveBeenCalledTimes(1)
+  expect(screen.getByRole('button', { name: 'جارٍ الحفظ…' })).toBeDisabled()
+  expect(await screen.findByRole('button', { name: 'حفظ' })).toBeEnabled()
+})
+
 test('a 500 on save shows the error banner', async () => {
   mockFetch({
     'GET /api/v1/residences': residences,

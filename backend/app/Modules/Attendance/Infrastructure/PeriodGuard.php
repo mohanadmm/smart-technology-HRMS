@@ -26,6 +26,7 @@ final class PeriodGuard
     /** The lock-taker's form: waits for every open write on the period and blocks new ones until the caller's transaction ends. */
     public static function exclusive(Period $p): void
     {
+        DB::select('select pg_advisory_xact_lock(hashtextextended(?, 0))', ['attendance:history']);
         DB::select('select pg_advisory_xact_lock(hashtextextended(?, 0))', [self::key($p)]);
     }
 
@@ -34,16 +35,28 @@ final class PeriodGuard
         return AttendanceLock::where(['employee_type' => $p->group->value, 'period_start' => $p->start])->whereNull('reopened_at')->exists();
     }
 
-    /**
-     * Whether a locked period of these groups ends on or after the date. Call inside the caller's transaction: the lock table is held in
-     * share mode until its commit, so a lock or reopen of any period, however far after the date, waits for the caller's write.
-     */
+    /** Call before acquiring employee or attendance row locks when changing employment history. */
+    public static function protectHistory(): void
+    {
+        DB::select('select pg_advisory_xact_lock_shared(hashtextextended(?, 0))', ['attendance:history']);
+    }
+
     public static function lockedFrom(string $date, EmployeeType ...$groups): bool
     {
-        DB::statement('lock table attendance_locks in share mode');
+        return self::lockedBetween($date, null, ...$groups);
+    }
+
+    /** The date range is inclusive at the start and exclusive at the end. Call in the write transaction. */
+    public static function lockedBetween(string $start, ?string $until, EmployeeType ...$groups): bool
+    {
+        if ($until !== null && $start >= $until) {
+            return false;
+        }
+        self::protectHistory();
 
         return AttendanceLock::whereIn('employee_type', array_map(fn (EmployeeType $g) => $g->value, $groups))
-            ->where('period_end', '>=', $date)->whereNull('reopened_at')->exists();
+            ->where('period_end', '>=', $start)->when($until !== null, fn ($q) => $q->where('period_start', '<', $until))
+            ->whereNull('reopened_at')->exists();
     }
 
     private static function key(Period $p): string

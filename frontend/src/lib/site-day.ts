@@ -28,7 +28,7 @@ export const dayPath = (siteId: string, date: string | null) => `/attendance/sit
 /** The leave day-types a site manager may store (P11): code → the leave day-type's id. */
 export type LeaveDayTypes = Partial<Record<'absent' | 'sick' | 'rest' | 'other', string>>
 
-export type SiteDay = { site: { id: string; name_ar: string; name_en: string | null }; date: string; today: string; editable_yesterday: string | null; leave_day_types: LeaveDayTypes; rows: SiteDayRow[] }
+export type SiteDay = { site: { id: string; name_ar: string; name_en: string | null }; date: string; today: string; late_grace_minutes?: number; editable_yesterday: string | null; leave_day_types: LeaveDayTypes; rows: SiteDayRow[] }
 
 export const MARKS = ['present', 'absent', 'sick'] as const
 export type Mark = (typeof MARKS)[number]
@@ -115,7 +115,7 @@ export const likeYesterdayCount = (rows: SiteDayRow[], drafts: Drafts, siteId: s
   Object.keys(likeYesterday(rows, drafts, siteId, leave)).length - Object.keys(drafts).length
 
 /** What is still open on the screen: people with nothing recorded, and present people with no departure. Leave days count as recorded. */
-export function counts(rows: SiteDayRow[], drafts: Drafts, siteId: string) {
+export function counts(rows: SiteDayRow[], drafts: Drafts, siteId: string, grace = 15) {
   let present = 0
   let away = 0
   let unrecorded = 0
@@ -129,7 +129,7 @@ export function counts(rows: SiteDayRow[], drafts: Drafts, siteId: string) {
     } else if (isPresent(d, siteId)) {
       present++
       if (d.in_time && !d.out_time) noCheckout++
-      if (isHhmm(d.in_time) && minutes(d.in_time) > minutes(r.shift.start)) late++
+      if (isHhmm(d.in_time) && chargeableLate(d.in_time, r.shift.start, grace) > 0) late++
     } else away++
   }
   return { present, away, unrecorded, noCheckout, late }
@@ -154,8 +154,9 @@ export function saveBody(siteId: string, date: string, rows: SiteDayRow[], draft
 
 const minutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
 
-/** The arrival against the shift start: positive = late (raw minutes; payroll takes the daily grace off once, calculations §0a). */
-export const arrivalDiff = (arrival: string | null, shiftStart: string): number | null => (arrival ? minutes(arrival) - minutes(shiftStart) : null)
+/** Chargeable minutes start after the grace period. The recorded arrival time is unchanged. */
+export const chargeableLate = (arrival: string, shiftStart: string, grace: number): number =>
+  Math.max(0, minutes(arrival) - minutes(shiftStart) - grace)
 
 /** The departure against the shift end: negative = left early, positive = stayed later (a time difference only; overtime needs HR's approval). */
 export const departureDiff = (out: string | null, shiftEnd: string): number | null => (out ? minutes(out) - minutes(shiftEnd) : null)

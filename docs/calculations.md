@@ -35,7 +35,7 @@ lateness deduction      = chargeable late minutes × wage ÷ divisor × multipli
 - The multiplier is the employee's, never derived from type or job title. A blank multiplier is **unresolved, not 0**: payroll must refuse to compute that employee's lateness, not deduct nothing.
 - The wage is the system's wage in force on the day. No EGP-per-minute amount is imported or stored.
 - Allowances, fares and transport are not part of the wage here.
-- The grace is subtracted once. Late minutes stored on a day are the **raw** minutes after the shift start (⚠️ R18: confirm; the October office sheet typed `=42-15`, minutes already net of grace, so imported office history must not be reduced again).
+- The grace is subtracted once. Late minutes stored on a day are the **raw** minutes after the shift start. Attendance shows chargeable minutes after grace (R18): a 09:00 shift is charged zero minutes at 09:15 and one minute at 09:16. The October office sheet typed `=42-15`, so its already-adjusted minutes are used as-is.
 - Example, 08:00 start: arrival 08:15 → 0; arrival 08:20 → 5 chargeable minutes. Day laborer on 330 with multiplier 2: 5 × 330 ÷ 480 × 2 = **6.875**. Office, salary 9,000, multiplier 1: 5 × 9,000 ÷ 14,400 × 1 = **3.125**.
 - Early leave and overtime have their own rules; they reuse neither the multiplier nor the grace.
 - No rounding inside the formula (as everywhere); ⚠️ the rounding of the payable amount is still open (question 12).

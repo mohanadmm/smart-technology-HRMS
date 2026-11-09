@@ -9,6 +9,8 @@ use App\Modules\Employees\Domain\EmployeeType;
 /** What a day may hold per employee type, and the minutes computed from its times (docs/calculations.md §1–4). Times are HH:MM wall-clock. */
 final class DayRules
 {
+    public const FIELD_GRACE_MINUTES = 15;
+
     public const MAX_MINUTES = 960;
 
     public const FIELDS = [
@@ -137,6 +139,11 @@ final class DayRules
     }
 
     /** "HH:MM" (or "HH:MM:SS") → minutes after midnight. */
+    public static function chargeableFieldLateMinutes(string $scheduledIn, string $in): int
+    {
+        return max(0, self::lateMinutes($scheduledIn, $in) - self::FIELD_GRACE_MINUTES);
+    }
+
     /** Raw late minutes: the arrival after the scheduled start, no grace (calculations §0a subtracts it once at payroll). */
     public static function lateMinutes(string $scheduledIn, string $in): int
     {

@@ -217,6 +217,7 @@ final class DayCrew
     public function decide(string $proposalId, int $version, bool $approve, ?string $wage, string $hrId, string $today): void
     {
         DB::transaction(function () use ($proposalId, $version, $approve, $wage, $hrId, $today): void {
+            PeriodGuard::protectHistory();
             $p = EmployeeWageProposal::lockForUpdate()->findOrFail($proposalId);
             if ($p->status !== WageProposalStatus::Pending || $p->version !== $version) {
                 throw new ConcurrencyConflict;

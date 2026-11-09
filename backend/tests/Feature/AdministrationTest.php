@@ -42,7 +42,7 @@ class AdministrationTest extends TestCase
         return $status;
     }
 
-    public function test_developer_creates_an_account_and_only_the_developer_can(): void
+    public function test_developer_can_create_an_account_and_hr_can_list_accounts(): void
     {
         $this->signIn('developer');
         $res = $this->postJson('/api/v1/users', ['name' => 'منى', 'email' => 'mona@smart.test', 'password' => Str::random(24), 'role_id' => Role::where('slug', 'manager')->value('id')])
@@ -50,8 +50,30 @@ class AdministrationTest extends TestCase
         $new = DB::table('audit_log')->where(['event' => 'USER_CREATED', 'entity_id' => $res->json('data.id')])->value('new_values');
         $this->assertStringNotContainsString('password', $new);
         $this->signIn('hr');
-        $this->postJson('/api/v1/users', [])->assertStatus(403);
         $this->getJson('/api/v1/users')->assertOk();                    // HR may list accounts to pick managers
+    }
+
+    public function test_hr_can_manage_staff_credentials_but_not_privileged_accounts(): void
+    {
+        $developer = $this->makeUser('developer');
+        $ceo = $this->makeUser('ceo');
+        $manager = $this->makeUser('manager');
+        $hr = $this->signIn('hr');
+        $password = Str::random(24).'A1';
+        $account = ['name' => 'Demo user', 'email' => 'demo-staff@smart.test', 'password' => $password];
+
+        $this->getJson('/api/v1/users/assignable-roles')->assertOk()
+            ->assertJsonPath('data.0.slug', 'hr')->assertJsonPath('data.1.slug', 'manager')->assertJsonCount(2, 'data');
+        $this->postJson('/api/v1/users', [...$account, 'role_id' => $ceo->role_id])->assertForbidden();
+        $this->postJson('/api/v1/users', [...$account, 'role_id' => $developer->role_id])->assertForbidden();
+        $this->postJson('/api/v1/users', [...$account, 'role_id' => $hr->role_id])->assertCreated();
+        foreach ([$manager, $hr] as $target) {
+            $this->putJson("/api/v1/users/{$target->id}/password", ['password' => $password])->assertNoContent();
+        }
+        foreach ([$ceo, $developer] as $target) {
+            $this->putJson("/api/v1/users/{$target->id}/password", ['password' => $password])->assertForbidden();
+        }
+        $this->patchJson("/api/v1/users/{$manager->id}", ['role_id' => $developer->role_id])->assertForbidden();
     }
 
     public function test_create_normalises_email_and_rejects_case_duplicate(): void
@@ -118,7 +140,7 @@ class AdministrationTest extends TestCase
     public function test_role_matrix_is_editable_and_audited(): void
     {
         $this->signIn('developer');
-        $this->getJson('/api/v1/permissions')->assertJsonCount(41, 'data');
+        $this->getJson('/api/v1/permissions')->assertJsonCount(42, 'data');
         $role = $this->postJson('/api/v1/roles', ['slug' => 'auditor', 'name' => 'Auditor', 'name_ar' => 'مراجع'])->assertCreated()->json('data.id');
         $pid = Permission::where(['resource' => 'audit_log', 'action' => 'view', 'scope' => 'all'])->value('id');
         $this->patchJson("/api/v1/roles/$role/permissions", ['permission_ids' => [$pid]])->assertOk()->assertJsonPath('data.permissions', ['audit_log.view.all']);

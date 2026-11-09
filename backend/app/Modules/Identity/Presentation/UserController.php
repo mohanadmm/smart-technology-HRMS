@@ -26,9 +26,14 @@ final class UserController
         return ApiEnvelope::collection($request, $r['data'], $r['pagination']);
     }
 
+    public function staffRoles(Request $request): JsonResponse
+    {
+        return ApiEnvelope::single($request, $this->users->staffRoles());
+    }
+
     public function store(Request $request): JsonResponse
     {
-        return ApiEnvelope::single($request, $this->users->create($request->all()), 201);
+        return ApiEnvelope::single($request, $this->users->create($request->all(), staffOnly: ! $request->attributes->has(AuthorizePermission::ATTRIBUTE.':user.manage')), 201);
     }
 
     public function show(Request $request, string $user): JsonResponse
@@ -54,7 +59,7 @@ final class UserController
     public function password(Request $request, string $user): Response
     {
         $request->validate(['password' => ['required', 'string']]);
-        $this->users->setPassword($user, $request->string('password')->toString());
+        $this->users->setPassword($user, $request->string('password')->toString(), staffOnly: ! $request->attributes->has(AuthorizePermission::ATTRIBUTE.':user.manage'));
 
         return response()->noContent();
     }

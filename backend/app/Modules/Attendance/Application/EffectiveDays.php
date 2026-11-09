@@ -174,14 +174,17 @@ final class EffectiveDays
 
             return ['late_minutes' => DayRules::officeLateMinutes($day['in_time'], $start, (int) $s['office_grace_minutes'])];
         }
-        // Field types; for engineers and day laborers a hint only: payroll reads their stored minutes (calculations §2).
-        if ($type !== EmployeeType::Office && $day['site_id'] !== null && $day['leave_code'] === null && $day['in_time'] !== null && $day['out_time'] !== null) {
+        if ($type !== EmployeeType::Office && $day['site_id'] !== null && $day['leave_code'] === null && $day['in_time'] !== null) {
             $scheduledIn = $day['scheduled_in'] ?? self::fieldShift($employee, $day['date'], $s)['start'];
-            /** @var numeric-string $dayHours */
-            $dayHours = $s['day_hours'];
-            $m = DayRules::workerMinutes($scheduledIn, $day['in_time'], $day['out_time'], $dayHours);
+            $hints = ['late_minutes' => DayRules::chargeableFieldLateMinutes($scheduledIn, $day['in_time'])];
+            if ($day['out_time'] !== null) {
+                /** @var numeric-string $dayHours */
+                $dayHours = $s['day_hours'];
+                $m = DayRules::workerMinutes($scheduledIn, $day['in_time'], $day['out_time'], $dayHours);
+                $hints['ot_minutes'] = ($day['source'] ?? null) === 'manager' ? (int) ($day['ot_minutes'] ?? 0) : $m['ot'];
+            }
 
-            return ['late_minutes' => $m['late'], 'ot_minutes' => ($day['source'] ?? null) === 'manager' ? (int) ($day['ot_minutes'] ?? 0) : $m['ot']];
+            return $hints;
         }
 
         return [];

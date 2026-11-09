@@ -140,6 +140,20 @@ test('account create shows a server field error under its field', async () => {
   expect(await screen.findByText('البريد مستخدم')).toBeInTheDocument()
 })
 
+test('HR can select only the roles returned for staff account creation', async () => {
+  const roles = [{ ...role, slug: 'manager', name_ar: 'مدير الموقع' }, { ...role, id: 'r2', slug: 'hr', name_ar: 'الموارد البشرية' }]
+  mockFetch({
+    'GET /api/v1/users': () => json(200, { data: [account], meta: { pagination } }),
+    'GET /api/v1/users/assignable-roles': () => json(200, { data: roles }),
+  })
+  renderWithAuth(<AccountsPage />, ['user.view.all', 'user.manage_staff.all'])
+  await user.click(await screen.findByRole('button', { name: 'إضافة حساب' }))
+  const dialog = screen.getByRole('dialog')
+  expect(within(dialog).getByRole('combobox', { name: 'الدور' })).toBeEnabled()
+  expect(within(dialog).getByRole('option', { name: 'مدير الموقع' })).toBeInTheDocument()
+  expect(within(dialog).getByRole('option', { name: 'الموارد البشرية' })).toBeInTheDocument()
+})
+
 test('without user.manage there are no account actions', async () => {
   mockFetch({ 'GET /api/v1/users': () => json(200, { data: [account], meta: { pagination } }), 'GET /api/v1/roles': () => json(200, { data: [role] }) })
   renderWithAuth(<AccountsPage />, ['user.view.all'])

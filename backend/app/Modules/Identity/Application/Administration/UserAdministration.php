@@ -8,6 +8,8 @@ use App\Modules\Audit\Infrastructure\AuditLog;
 use App\Modules\Identity\Domain\Authentication\IdentityAuditEvents;
 use App\Modules\Identity\Domain\Authentication\IdleTimeout;
 use App\Modules\Identity\Domain\Authentication\ViewAsEnding;
+use App\Modules\Identity\Domain\Rbac\AuthorizationRefused;
+use App\Modules\Identity\Infrastructure\Eloquent\Role;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
 use App\Modules\Identity\Infrastructure\Eloquent\UserSession;
 use App\Support\Http\Paginates;
@@ -24,6 +26,8 @@ use SensitiveParameter;
 final class UserAdministration
 {
     use Paginates;
+
+    private const STAFF_ROLES = ['hr', 'manager'];
 
     /**
      * @param  array<string, mixed>  $filters
@@ -47,11 +51,14 @@ final class UserAdministration
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    public function create(array $data): array
+    public function create(array $data, bool $staffOnly = false): array
     {
         $v = Validator::make(self::normalised($data), self::rules())->validate();
 
-        return DB::transaction(function () use ($v): array {
+        return DB::transaction(function () use ($v, $staffOnly): array {
+            if ($staffOnly) {
+                self::assertStaffRole((string) $v['role_id']);
+            }
             $user = User::create([...$v, 'is_active' => true]);
             AuditLog::record(IdentityAuditEvents::USER_CREATED, 'users', (string) $user->id, null, [
                 'name' => $user->name, 'email' => $user->email, 'role_id' => $user->role_id, 'is_active' => true,
@@ -115,16 +122,33 @@ final class UserAdministration
         });
     }
 
-    public function setPassword(string $id, #[SensitiveParameter] string $password): void
+    public function setPassword(string $id, #[SensitiveParameter] string $password, bool $staffOnly = false): void
     {
         Validator::make(['password' => $password], Arr::only(self::rules(), 'password'))->validate();
 
-        DB::transaction(function () use ($id, $password): void {
-            $user = User::findOrFail($id);
+        DB::transaction(function () use ($id, $password, $staffOnly): void {
+            $user = User::lockForUpdate()->findOrFail($id);
+            if ($staffOnly) {
+                self::assertStaffRole((string) $user->role_id);
+            }
             $user->update(['password' => $password, 'failed_login_attempts' => 0, 'locked_until' => null]);
             $user->revokeSessions();
             AuditLog::record(IdentityAuditEvents::PASSWORD_SET, 'users', (string) $user->id);
         });
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function staffRoles(): array
+    {
+        return array_values(Role::whereIn('slug', self::STAFF_ROLES)->orderBy('slug')->get()
+            ->map(fn (Role $role) => $role->only(['id', 'slug', 'name', 'name_ar']))->all());
+    }
+
+    private static function assertStaffRole(string $roleId): void
+    {
+        if (! Role::whereKey($roleId)->whereIn('slug', self::STAFF_ROLES)->exists()) {
+            throw AuthorizationRefused::of('user.manage_staff');
+        }
     }
 
     /** @return list<array<string, mixed>> live sessions, newest activity first */

@@ -123,6 +123,33 @@ class EmployeesApiTest extends TestCase
             ->assertJsonCount(1, 'data.type_changes');
     }
 
+    public function test_a_closed_period_protects_employment_history_until_hr_reopens_it(): void
+    {
+        $employee = $this->make(['hire_date' => '2026-01-01']);
+        DB::table('attendance_locks')->insert([
+            'id' => (string) \Illuminate\Support\Str::uuid7(),
+            'employee_type' => 'office',
+            'period_start' => '2026-10-01',
+            'period_end' => '2026-10-31',
+            'locked_at' => now(),
+        ]);
+
+        $this->patchJson("/api/v1/employees/$employee", ['name_ar' => 'اسم مصحح'])->assertOk();
+        $this->patchJson("/api/v1/employees/$employee", ['termination_date' => '2026-10-25'])
+            ->assertStatus(423)->assertJsonPath('error.code', 'period_locked');
+        $this->postJson("/api/v1/employees/$employee/type-changes", ['effective_from' => '2026-10-15', 'type' => 'engineer'])
+            ->assertStatus(423);
+        $this->postJson("/api/v1/employees/$employee/pay-changes", ['effective_from' => '2026-09-15', 'salary' => '9500'])
+            ->assertStatus(423);
+        $this->postJson("/api/v1/employees/$employee/pay-changes", ['effective_from' => '2026-11-01', 'salary' => '10000'])
+            ->assertCreated();
+
+        $this->postJson('/api/v1/attendance/locks/reopen', ['group' => 'office', 'period_start' => '2026-10-01', 'reason' => 'Correct history'])
+            ->assertOk();
+        $this->postJson("/api/v1/employees/$employee/pay-changes", ['effective_from' => '2026-09-15', 'salary' => '9500'])
+            ->assertCreated();
+    }
+
     public function test_a_salary_change_preserves_the_omitted_insurance_raise_and_shift(): void
     {
         $id = $this->make(['raise' => '300', 'insured_basic' => '4000', 'shift_start' => '09:30', 'shift_end' => '17:30']);

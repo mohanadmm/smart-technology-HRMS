@@ -1,5 +1,5 @@
 import { Briefcase, CalendarDays, FileText, HardHat, History as HistoryIcon, IdCard, type LucideIcon, MapPin, RotateCcw, UserCog, UserPlus, Users, Wrench } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { MiniStat, type Tone } from '@/components/cards/StatCard'
@@ -254,6 +254,8 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
   const { data: residences = [], err: residencesErr } = useApi<Row[]>(RESIDENCES)
   const send = useSave() // refreshes every employees list and summary, and the detail
   const [err, setErr] = useState<unknown>()
+  const [saving, setSaving] = useState(false)
+  const saveInFlight = useRef(false)
   const errs = toErrs(err)
   // An own-scoped (manager) record comes without the sensitive identity and pay fields; never render or send what was not received.
   const has = (k: string) => !emp || k in emp
@@ -261,7 +263,9 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
 
   async function save(ev: React.FormEvent<HTMLFormElement>) {
     ev.preventDefault()
-    if (stopAtMissingPeriod(ev.currentTarget)) return
+    if (saveInFlight.current || stopAtMissingPeriod(ev.currentTarget)) return
+    saveInFlight.current = true
+    setSaving(true)
     setErr(undefined)
     try {
       if (id) {
@@ -274,6 +278,9 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
       }
     } catch (e) {
       setErr(e)
+    } finally {
+      saveInFlight.current = false
+      setSaving(false)
     }
   }
 
@@ -290,7 +297,7 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
   const profile = (
     <form onSubmit={save} className="space-y-6">
       <ErrorBanner err={err ?? residencesErr} shown={shown} />
-      <fieldset disabled={!editable} className="min-w-0 space-y-6">
+      <fieldset disabled={!editable || saving} className="min-w-0 space-y-6">
         {section('employee.identity', (
           <>
             <TextField name="name_ar" label={t('employee.name_ar')} {...f} />
@@ -334,7 +341,7 @@ function EmployeeForm({ emp, loadErr }: { emp?: Row; loadErr?: unknown }) {
       </fieldset>
       {editable && (
         <div className="flex justify-end">
-          <Button type="submit">{t('common.save')}</Button>
+          <Button type="submit" disabled={saving}>{t(saving ? 'common.saving' : 'common.save')}</Button>
         </div>
       )}
     </form>

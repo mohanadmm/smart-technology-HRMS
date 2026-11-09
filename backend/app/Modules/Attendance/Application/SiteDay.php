@@ -100,6 +100,7 @@ final class SiteDay
             'site' => ['id' => (string) $site->getKey(), 'name_ar' => (string) $site->name_ar, 'name_en' => $site->name_en],
             'date' => $date,
             'today' => $today,
+            'late_grace_minutes' => DayRules::FIELD_GRACE_MINUTES,
             'editable_yesterday' => $this->windowAllows($yesterday, $settings) ? $yesterday : null,
             'leave_day_types' => $this->managerLeaveDayTypes(),
             'rows' => array_map(function (array $l) use ($days, $date, $siteId, $settings, $window, $open, $previous, $requests, $signoffs, $managerId, &$locked): array {

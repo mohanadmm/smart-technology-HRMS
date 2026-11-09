@@ -42,13 +42,13 @@ Smart Technology runs HR and payroll today on 6 hand-built Excel workbooks (anal
 ## Modules by release
 
 ### Release 1 — end of Month 1: Foundation & daily operations
-1. **Auth**: email + password, sessions. Passwords are set and changed only by the Developer role (no self-service reset or change).
+1. **Auth**: email + password, sessions. The Developer manages credentials. HR can create HR and site manager accounts and change their passwords.
 2. **Developer console**:
    - RBAC: create roles and edit permissions per role.
    - Account management.
    - Audit-log panel (who did what, before/after values).
    - Error & request/response log screen: done (`/console/logs`, Developer only via `system_log.view.all`).
-   - Retention: 1 year for audit, 90 days for request/error logs: done by `logs:prune` (daily 03:00 Cairo).
+   - Retention: 1 year for audit, 90 days for request/error logs: done by `logs:prune` (daily 03:00 Cairo). Configure the deployed app with a dedicated PostgreSQL login as described in [audit database access](audit-database-access.md).
 3. **Employees**:
    - Auto sequential code; optional `crm_user_id`.
    - Type (office / engineer / permanent worker / day laborer), with dated type history.
@@ -70,9 +70,10 @@ Smart Technology runs HR and payroll today on 6 hand-built Excel workbooks (anal
      - Idempotent on (user, type, date), so a re-run is a no-op.
      - 3 tries with 60 s / 300 s backoff, on the `maintenance` queue.
      - Failures are logged. The counts are cumulative, so the next run covers a failed day.
+   - **Paste site attendance messages**: HR selects a field group, date and work site. Each line is `employee ID HH:MM HH:MM` or `employee ID absent` (`غياب`). Preview resolves IDs to employee names, flags lines that would replace an existing status, and blocks the entire batch when a line is invalid. The versioned save supports session undo.
+   - HR can correct a past date in the day sheet after reopening a locked period with an audit reason.
    - Later, separate items:
      - **Manager mobile screen**: the manager enters today, and yesterday until 12:00; older days are HR-only. «زي امبارح» quick fill; the manager's own sites only; the «تم التوقيع» sign-off per employee period, after which only HR edits; HR returns a period with a notification to the manager; an alert to HR when a manager skips a day.
-     - **Paste site attendance messages**: HR pastes a site's attendance message in a fixed format, and the system parses it per person.
 6. **Leave**: balances and rules above, recorded by the manager, HR approves or escalates. Built in 6 slices per `docs/superpowers/plans/2026-11-03-leave.md`.
 7. **Notifications**: in-app, instant + daily digest.
 8. **Migration step 1**: step 1 (master data: employees, sites, rates, fares) is done by `hrms:import-master`; opening leave and advance balances follow their modules.
@@ -219,7 +220,7 @@ Status is verified against `main` at `7be93b9` (PR #3 merged) by reading the cod
 
 ### Other decisions recorded
 - **Roles:** HR administers the system, manages employee records, rates and site assignments, and reviews and corrects attendance. Site managers record attendance and absences for their site teams and never see wages. HR and the General Manager review and approve Releases 1–2.
-  - ⚠️ "HR handles accounts" conflicts with "only the Developer creates accounts and sets passwords" (`CLAUDE.md`): R22.
+  - HR can create HR and site manager accounts and change their passwords (R22).
   - ⚠️ "General Manager" may or may not be the CEO, and the CEO's account already sees every employee's current pay: R28.
 - **Advances:** the approval is on paper; the system records the request and prints it. Approval, disbursement (the advance amount on a day, or a ledger entry) and repayment (installments) stay separate records. ⚠️ This changes Release 3 item 1, which listed "advance" as an in-app request type.
 - **Forms:** the existing Word and PDF forms print as PDFs in their planned release. Releases 1–2 come first: employees and sites, attendance and leave, then payroll, fingerprint import, advances and payslips.
