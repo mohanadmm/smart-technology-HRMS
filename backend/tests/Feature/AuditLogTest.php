@@ -81,7 +81,7 @@ class AuditLogTest extends TestCase
         }
         $this->assertSame(5, DB::table('audit_log')->where(['event' => 'LOGIN_FAILED', 'entity_id' => $u->id])->count());
         $this->assertDatabaseHas('audit_log', ['event' => 'ACCOUNT_LOCKED', 'entity_id' => $u->id]);
-        $this->postJson('/api/v1/auth/login', ['email' => 'hr@smart.test', 'password' => 'nope'])->assertStatus(423);
+        $this->postJson('/api/v1/auth/login', ['email' => 'hr@smart.test', 'password' => 'nope'])->assertUnauthorized();
         $this->assertSame(['reason' => 'account_locked'], json_decode(DB::table('audit_log')->where(['event' => 'LOGIN_BLOCKED', 'entity_id' => $u->id])->value('new_values'), true));
         $this->postJson('/api/v1/auth/login', ['email' => 'ghost@smart.test', 'password' => 'x']);
         $this->assertSame(['email' => 'ghost@smart.test'], json_decode(DB::table('audit_log')->whereNull('entity_id')->where('event', 'LOGIN_FAILED')->value('new_values'), true));

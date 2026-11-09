@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use SensitiveParameter;
 
-/** Login: lock first, then the password, then is_active (so a stranger cannot probe who was deactivated). */
+/** Login only discloses the account state after the password is verified. */
 final class AuthenticateUser
 {
     /**
@@ -32,19 +32,22 @@ final class AuthenticateUser
         $outcome = DB::transaction(function () use ($email, $password, $ip, $userAgent): array|RefusalReason {
             $user = User::where('email', $email)->lockForUpdate()->first();
             if ($user === null) {
+                // Match the password work performed for an existing account.
+                Hash::make(bin2hex(random_bytes(32)));
                 AuditLog::record(IdentityAuditEvents::LOGIN_FAILED, 'users', null, null, ['email' => $email]);
 
                 return RefusalReason::InvalidCredentials;
             }
 
             $now = now();
+            $validPassword = Hash::check($password, $user->password);
             if (LockoutPolicy::isLocked($user->locked_until, $now)) {
                 AuditLog::record(IdentityAuditEvents::LOGIN_BLOCKED, 'users', $user->id, null, ['reason' => RefusalReason::AccountLocked->value]);
 
-                return RefusalReason::AccountLocked;
+                return $validPassword ? RefusalReason::AccountLocked : RefusalReason::InvalidCredentials;
             }
 
-            if (! Hash::check($password, $user->password)) {
+            if (! $validPassword) {
                 $before = $user->failed_login_attempts;
                 $lockedBefore = $user->locked_until?->toIso8601String();
                 $user->failed_login_attempts++;
@@ -58,7 +61,7 @@ final class AuthenticateUser
                     AuditLog::record(IdentityAuditEvents::ACCOUNT_LOCKED, 'users', $user->id, ['locked_until' => $lockedBefore], ['locked_until' => $user->locked_until?->toIso8601String()]);
                 }
 
-                return $locks ? RefusalReason::AccountLocked : RefusalReason::InvalidCredentials;
+                return RefusalReason::InvalidCredentials;
             }
 
             if (! $user->is_active) {

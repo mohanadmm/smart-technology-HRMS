@@ -13,6 +13,7 @@ use App\Modules\Attendance\Infrastructure\Eloquent\AttendanceSignoff;
 use App\Modules\Attendance\Infrastructure\PeriodGuard;
 use App\Modules\Employees\Application\DayCrew;
 use App\Modules\Employees\Application\EmployeeRoster;
+use App\Modules\Employees\Domain\EffectiveDated;
 use App\Modules\Employees\Domain\EmployeeType;
 use App\Modules\Identity\Application\Rbac\PermissionHolders;
 use App\Modules\Notifications\Application\Notifier;
@@ -82,7 +83,8 @@ final class Signoffs
             $signoffs = $this->overlapping($ids, $period->start, $period->end, $type);
             $days = $this->days->forPeriod($period, $employees);
             $pending = AttendanceRequest::whereIn('employee_id', $ids)->where('status', 'pending')
-                ->whereBetween('date', [$period->start, $asOf])->selectRaw('employee_id, count(*) as total')->groupBy('employee_id')->pluck('total', 'employee_id');
+                ->whereIn('site_id', $managedSites)->whereBetween('date', [$period->start, $asOf])
+                ->get(['employee_id', 'date', 'site_id'])->groupBy('employee_id');
             $locked = PeriodGuard::isLocked($period);
             foreach ($employees as $employee) {
                 $id = $employee['id'];
@@ -90,7 +92,17 @@ final class Signoffs
                 $editableReturn = $signoff !== null && $signoff->returned_at !== null && $signoff->signed_by === $manager;
                 $correctionDays = [];
                 $marked = $missing = $open = 0;
+                $reachableDates = [];
                 foreach ($days[$id] as $day) {
+                    $on = $day['date'];
+                    $reachesEmployee = $type === EmployeeType::Engineer
+                        ? (EffectiveDated::at($employee['managers'], $on)['manager_id'] ?? null) === $manager
+                        : Employment::homeSiteOn($employee, $on) === $site;
+                    if ($on > $asOf || $day['type'] !== $type->value || ! $reachesEmployee
+                        || ($day['leave_code'] === null && $day['site_id'] !== null && ! in_array($day['site_id'], $managedSites, true))) {
+                        continue;
+                    }
+                    $reachableDates[$on] = true;
                     $isOpen = $day['state'] === 'stored' && $day['leave_code'] === null && $day['in_time'] !== null && $day['out_time'] === null;
                     $marked += $day['state'] === 'stored' ? 1 : 0;
                     $missing += $day['state'] === 'missing' ? 1 : 0;
@@ -105,8 +117,8 @@ final class Signoffs
                 $rows[] = [
                     'employee' => [...array_intersect_key($employee, array_flip(['id', 'code', 'name_ar', 'name_en'])), 'type' => $type->value],
                     'period' => ['start' => $period->start, 'end' => $period->end],
-                    'marked' => $marked, 'missing' => $missing, 'open' => $open, 'pending' => (int) ($pending[$id] ?? 0),
-                    'signoff' => $signoff === null ? null : self::summary($signoff),
+                    'marked' => $marked, 'missing' => $missing, 'open' => $open, 'pending' => ($pending[$id] ?? collect())->filter(fn (AttendanceRequest $r) => isset($reachableDates[$r->date]))->count(),
+                    'signoff' => $signoff === null ? null : [...self::summary($signoff), 'return_note' => $signoff->signed_by === $manager ? $signoff->return_note : null],
                     'can_sign' => ! $locked && $today >= $period->end && ($signoff === null || $editableReturn),
                     'locked' => $locked,
                     'correction_days' => $locked ? [] : $correctionDays,
@@ -177,7 +189,7 @@ final class Signoffs
     /** @return list<array<string, mixed>> */
     private function atSite(string $site, string $date, EmployeeType $type, string $manager): array
     {
-        return $type === EmployeeType::Engineer ? $this->roster->engineersOf($manager, $date) : $this->roster->onSite($site, $date);
+        return $type === EmployeeType::Engineer ? $this->roster->engineersOf($manager, $date, withManagerHistory: true) : $this->roster->onSite($site, $date);
     }
 
     /** @param list<string> $sites */

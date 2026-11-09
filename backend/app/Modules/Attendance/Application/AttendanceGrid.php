@@ -209,7 +209,11 @@ final class AttendanceGrid
             }
         }
         $sites = Site::whereKey(array_keys($siteCounts))->whereHas('managers')->orderBy('name_ar')->get()
-            ->map(fn (Site $site) => ['site_id' => (string) $site->id, 'name_ar' => $site->name_ar, 'name_en' => $site->name_en, 'missing' => $siteCounts[$site->id]])->all();
+            ->map(function (Site $site) use ($siteCounts): array {
+                $id = (string) $site->getAttribute('id');
+
+                return ['site_id' => $id, 'name_ar' => $site->name_ar, 'name_en' => $site->name_en, 'missing' => $siteCounts[$id]];
+            })->all();
 
         $missingEngineers = array_column($missing['engineer'] ?? [], 'id');
         $engineers = [];

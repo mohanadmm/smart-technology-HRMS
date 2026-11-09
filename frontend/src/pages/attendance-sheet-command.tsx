@@ -88,11 +88,12 @@ export function PasteDialog({ open, onOpenChange, rows, leaveTypeId, onApply }: 
   )
 }
 
-export function SiteMessageDialog({ rows, sites, date, absentId, pending, onClose, onApply }: {
+export function SiteMessageDialog({ rows, sites, date, absentId, allowOvernight, pending, onClose, onApply }: {
   rows: SheetRow[]
   sites: Row[]
   date: string
   absentId?: string
+  allowOvernight: boolean
   pending: boolean
   onClose: () => void
   onApply: (out: BulkRow[], before: SheetRow[]) => Promise<boolean>
@@ -102,7 +103,7 @@ export function SiteMessageDialog({ rows, sites, date, absentId, pending, onClos
   const [input, setInput] = useState('')
   const [siteId, setSiteId] = useState('')
   const selectedSite = sites.find((site) => site.id === siteId)
-  const { entries, invalid, capped } = parseSiteMessage(input, rows)
+  const { entries, invalid, capped } = parseSiteMessage(input, rows, allowOvernight)
   const ready = !pending && !capped && !invalid.length && entries.length > 0
     && entries.every(({ inTime }) => inTime ? !!selectedSite : !!absentId)
 

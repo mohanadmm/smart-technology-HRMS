@@ -59,7 +59,8 @@ class AuthenticationTest extends TestCase
         foreach (range(1, 4) as $_) {
             $this->login(password: 'nope')->assertStatus(401);
         }
-        $this->login(password: 'nope')->assertStatus(423)->assertJsonPath('error.code', 'account_locked');
+        $this->login(password: 'nope')->assertUnauthorized()->assertJsonPath('error.code', 'invalid_credentials');
+        $this->login(password: 'nope')->assertUnauthorized()->assertJsonPath('error.code', 'invalid_credentials');
         $this->assertSame('2026-10-17 10:30:00', $u->fresh()->locked_until->utc()->format('Y-m-d H:i:s'));
         $this->login()->assertStatus(423);              // right password, still locked
         $this->travelTo('2026-10-17 10:31:00');

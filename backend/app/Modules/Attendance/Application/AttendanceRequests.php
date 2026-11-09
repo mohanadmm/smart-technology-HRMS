@@ -85,7 +85,7 @@ final class AttendanceRequests
     {
         $key = ['employee_id' => $employee, 'date' => $date, 'type' => $type];
         $request = AttendanceRequest::where($key)->lockForUpdate()->first();
-        if ($type === 'advance' && $request !== null && ($request->status !== 'pending' || (! $withdrawForAttendance && $request->requested_by !== $manager))) {
+        if ($type === 'advance' && $request !== null && ($request->status !== 'pending' || $request->requested_by !== $manager)) {
             if (! $withdrawForAttendance) {
                 throw new ConcurrencyConflict;
             }
@@ -119,9 +119,7 @@ final class AttendanceRequests
             if ($request->status !== 'pending' || $request->version !== $version) {
                 throw new ConcurrencyConflict;
             }
-            if ($approve) {
-                $this->days->applyRequest($request);
-            }
+            $this->days->decideRequest($request, $approve);
             $status = $approve ? 'approved' : 'refused';
             $request->update(['status' => $status, 'version' => $version + 1, 'decided_by' => $by, 'decided_at' => now(), 'reason' => $reason]);
             $this->notify($request, (string) $request->requested_by, 'attendance_request_decided');

@@ -324,10 +324,11 @@ class AttendanceImportTest extends TestCase
         $this->upload('preview', $versions(fn (string $n) => "  $n "))->assertOk()->assertJsonPath('data.errors', [])->assertJsonPath('data.summary.changes', 1);
         $this->upload('preview', $versions(fn (string $n) => $n.'x'))->assertOk()->assertJsonPath('data.errors.0.error', 'code_name_mismatch');
         $this->upload('preview', $versions(fn (string $n) => null))->assertOk()->assertJsonPath('data.errors.0.error', 'code_name_mismatch');
-        // The visible name column is the user's to edit; only the hidden sheet is checked.
+        // A visible name must still describe the employee identified by the ID.
         $visible = $this->rewrite($file->getPathname(), fn (string $sheet, array $rows) => $sheet !== 'attendance' ? $rows
             : [$rows[0], ...array_map(fn (array $r) => [$r[0], 'Someone else', ...array_slice($r, 2)], array_slice($rows, 1))]);
-        $this->upload('preview', $visible)->assertOk()->assertJsonPath('data.errors', [])->assertJsonPath('data.summary.changes', 1);
+        $this->upload('preview', $visible)->assertOk()->assertJsonPath('data.errors.0.error', 'code_name_mismatch')->assertJsonPath('data.summary.changes', 0);
+        $this->upload('confirm', $visible)->assertOk()->assertJsonPath('data.applied', 0);
     }
 
     public function test_an_english_preview_names_employees_and_leave_types_in_english(): void

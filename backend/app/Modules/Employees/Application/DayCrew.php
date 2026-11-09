@@ -77,6 +77,7 @@ final class DayCrew
     public function locked(array $employeeIds, \Closure $fn): mixed
     {
         return DB::transaction(function () use ($employeeIds, $fn): mixed {
+            PeriodGuard::protectHistory();
             $ids = array_values(array_unique($employeeIds));
             sort($ids);
             if ($ids !== []) {

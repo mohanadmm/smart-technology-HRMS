@@ -88,6 +88,33 @@ class AttendanceRequestTest extends TestCase
         $this->assertNull($this->day()->advance_amount);
     }
 
+    public function test_an_attendance_change_by_another_manager_preserves_the_pending_advance(): void
+    {
+        $this->save('16:00', null, ['advance_request' => '250'])->assertOk();
+        $other = $this->managerOf($this->site);
+        $this->actingAs($other, 'api')->postJson('/api/v1/attendance/site-day', [
+            'site_id' => $this->site, 'date' => self::DATE,
+            'rows' => [['employee_id' => $this->worker, 'version' => 1, 'clear' => true]],
+        ])->assertOk();
+        $this->assertDatabaseHas('attendance_requests', [
+            'employee_id' => $this->worker, 'type' => 'advance', 'requested_by' => $this->manager->id,
+            'status' => 'pending', 'deleted_at' => null,
+        ]);
+    }
+
+    public function test_a_locked_period_blocks_both_decisions(): void
+    {
+        $this->leaveTypes();
+        $id = $this->save('16:00', null, ['advance_request' => '250'])->assertOk()->json('data.rows.0.requests.advance.id');
+        $this->signIn('hr');
+        $this->postJson('/api/v1/attendance/locks', [
+            'group' => 'permanent_worker', 'period_start' => '2026-09-26', 'confirm_missing' => true,
+        ])->assertCreated();
+        $this->approve($id, 1)->assertStatus(423);
+        $this->postJson("/api/v1/attendance/requests/{$id}/refuse", ['version' => 1, 'reason' => 'Test'])->assertStatus(423);
+        $this->assertDatabaseHas('attendance_requests', ['id' => $id, 'status' => 'pending', 'version' => 1]);
+    }
+
     /** @param array<string, mixed> $extra */
     private function save(?string $out, ?int $version = null, array $extra = []): TestResponse
     {

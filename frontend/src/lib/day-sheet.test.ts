@@ -204,3 +204,10 @@ test('site messages resolve employee IDs and reject invalid, repeated and unknow
   expect(result.invalid).toEqual([3, 4, 5, 6])
   expect(parseSiteMessage('1 absent\n'.repeat(501), sheet).capped).toBe(true)
 })
+
+test('site messages allow overnight shifts for permanent workers only', () => {
+  expect(parseSiteMessage('1 22:00 06:00', sheet).invalid).toEqual([1])
+  expect(parseSiteMessage('1 22:00 06:00', sheet, true).entries).toEqual([
+    { row: sheet[0], inTime: '22:00', outTime: '06:00' },
+  ])
+})

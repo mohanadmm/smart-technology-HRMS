@@ -63,4 +63,31 @@ class SignoffsTest extends TestCase
             ->assertCreated()->assertJsonPath('data.is_locked', true);
         $this->postJson("/api/v1/attendance/signoffs/{$submission}/return", ['version' => 3, 'note' => 'Too late'])->assertStatus(423);
     }
+
+    public function test_new_manager_cannot_see_days_before_assignment_or_previous_managers_return_note(): void
+    {
+        $this->cairo('2026-10-25 18:00');
+        $hr = $this->signIn('hr');
+        $this->leaveTypes();
+        $site = $this->workSite();
+        $previous = $this->managerOf($site);
+        $current = $this->managerOf($site);
+        $employee = $this->employee('engineer');
+        $employees = app(EmployeeService::class);
+        $employees->assignManager($employee, ['manager_id' => $previous->id, 'effective_from' => '2026-09-26']);
+        $this->putDay($employee, '2026-10-10', ['site_id' => $site, 'in_time' => '09:00', 'out_time' => '16:00'])->assertOk();
+        $this->actingAs($previous, 'api');
+        $id = $this->postJson('/api/v1/attendance/signoffs', [
+            'site_id' => $site, 'employee_id' => $employee, 'employee_type' => 'engineer',
+            'period_start' => '2026-09-26', 'version' => null,
+        ])->assertCreated()->json('data.id');
+
+        $this->actingAs($hr, 'api');
+        $this->postJson("/api/v1/attendance/signoffs/{$id}/return", ['version' => 1, 'note' => 'Private correction'])->assertOk();
+        $employees->assignManager($employee, ['manager_id' => $current->id, 'effective_from' => '2026-10-24']);
+
+        $this->actingAs($current, 'api')->getJson("/api/v1/attendance/site-period?site_id={$site}")
+            ->assertOk()->assertJsonPath('data.0.marked', 0)
+            ->assertJsonPath('data.0.signoff.return_note', null)->assertJsonMissing(['return_note' => 'Private correction']);
+    }
 }

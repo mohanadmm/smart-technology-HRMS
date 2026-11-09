@@ -138,11 +138,12 @@ final class AttendanceImport
             // Legacy sheets have only the name. They cannot disambiguate two employees with that name.
             $metadata = $versions[$code] ?? null;
             $currentName = self::key((string) $employee['name_ar']);
-            if ($metadata !== null && (
+            $visibleName = self::key($values[1] ?? '');
+            if (($visibleName !== '' && $visibleName !== $currentName) || ($metadata !== null && (
                 self::key($metadata[1] ?? '') !== $currentName
                 || ($hasIdentity && ($metadata[$identityIndex] ?? null) !== $employee['id'])
                 || (! $hasIdentity && $namesInRoster[$currentName] > 1)
-            )) {
+            ))) {
                 $plan['errors'][] = self::error($row, 0, $code, null, 'code_name_mismatch');
 
                 continue;

@@ -326,7 +326,7 @@ export function DaySheet({ group, date, period, onDate, onOpenDay }: { group: st
         )}
         {editable && <PasteDialog open={pasting} onOpenChange={setPasting} rows={rows} leaveTypeId={leaveTypeId} onApply={async (action, chosen, label) => !!(await apply(action, chosen, label))} />}
         {editable && !office && pastingMessage && (
-          <SiteMessageDialog key={`${group}:${date}`} rows={rows} sites={workSites} date={date} absentId={leaveTypeId('absent')}
+          <SiteMessageDialog key={`${group}:${date}`} rows={rows} sites={workSites} date={date} absentId={leaveTypeId('absent')} allowOvernight={group === 'permanent_worker'}
             pending={pending.size > 0} onClose={() => setPastingMessage(false)}
             onApply={async (out, before) => !!(await record(out, before, t('attendance.sheet.message.title')))} />
         )}
