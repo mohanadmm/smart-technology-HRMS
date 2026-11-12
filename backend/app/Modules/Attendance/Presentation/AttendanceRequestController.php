@@ -48,9 +48,11 @@ final class AttendanceRequestController
     {
         $q = $request->validate([
             'version' => ['required', 'integer', 'min:1'],
+            'paper_decision_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'reason' => $approve ? ['prohibited'] : ['required', 'string', 'max:500'],
         ]);
-        $status = $this->requests->decide($id, (int) $q['version'], $approve, $q['reason'] ?? null, (string) $request->user()?->getAuthIdentifier());
+        $status = $this->requests->decide($id, (int) $q['version'], $approve, $q['reason'] ?? null, (string) $request->user()?->getAuthIdentifier(),
+            $q['paper_decision_date'] ?? null, array_key_exists('paper_decision_date', $q));
 
         return ApiEnvelope::single($request, ['id' => $id, 'status' => $status]);
     }

@@ -1229,6 +1229,9 @@
     "clearRequestId": "إلغاء التصفية بمعرّف الطلب"
   },
   "attendanceRequests": {
+    "paperDateOptional": "تاريخ القرار الورقي (اختياري)",
+    "systemDecisionTime": "وقت تسجيل القرار في النظام",
+    "paperDate": "تاريخ القرار الورقي",
     "title": "طلبات الحضور",
     "description": "راجع الإضافي وسجّل القرارات الورقية للسلف.",
     "statusLabel": "الحالة",
@@ -1276,6 +1279,16 @@
     }
   },
   "hrForms": {
+    "advanceRequest": "نموذج طلب سلفة",
+    "advanceReason": "سبب السلفة",
+    "repaymentMethod": "طريقة التسديد",
+    "receipts": "عند تقديم الفواتير",
+    "cash": "الدفع نقدًا",
+    "salaryDeduction": "خصم شهري من الراتب",
+    "previousAdvance": "سلفة سابقة",
+    "yes": "نعم",
+    "no": "لا",
+    "financeRemarks": "ملاحظات المالية",
     "leaveRequest": "نموذج طلب إجازة",
     "notificationMethod": "طريقة التبليغ",
     "managerOpinion": "رأي مدير القسم",

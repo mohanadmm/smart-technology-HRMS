@@ -5,12 +5,14 @@ import { useSearchParams } from 'react-router-dom'
 import { AdvancePrint } from '@/components/AdvancePrint'
 import { DataList } from '@/components/common/DataList'
 import { PageHeader } from '@/components/common/PageHeader'
-import { ErrorBanner, localName, useMoney } from '@/components/form'
+import { cairoToday, ErrorBanner, localName, useCairoTime, useMoney } from '@/components/form'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/input'
+import { Input, Textarea } from '@/components/ui/input'
 import { useApi, useList, useSave } from '@/lib/query'
+import { useAuth } from '@/lib/auth'
+import { AdvanceRequestPdf } from './advance-request-pdf'
 
 type RequestRow = {
   id: string
@@ -23,6 +25,8 @@ type RequestRow = {
   employee: { id: string; code: number; name_ar: string; name_en: string | null } | null
   site: { id: string; name_ar: string; name_en: string | null } | null
   reason: string | null
+  decided_at?: string | null
+  paper_decision_date?: string | null
 }
 
 const PAGE_SIZE = 20
@@ -107,13 +111,16 @@ function RequestDialog({ row, value, close }: { row: RequestRow; value: string |
   const [busy, setBusy] = useState(false)
   const [refusing, setRefusing] = useState(false)
   const [reason, setReason] = useState('')
+  const [paperDate, setPaperDate] = useState('')
+  const time = useCairoTime()
+  const { can } = useAuth()
   const name = row.employee ? localName(row.employee, i18n.language) : '—'
   const site = row.site ? localName(row.site, i18n.language) : '—'
   const decide = async (action: 'approve' | 'refuse') => {
     setBusy(true)
     setError(undefined)
     try {
-      await save(`/attendance/requests/${row.id}/${action}`, { body: { version: row.version, ...(action === 'refuse' && { reason: reason.trim() }) } }, ['/attendance', '/notifications'])
+      await save(`/attendance/requests/${row.id}/${action}`, { body: { version: row.version, ...(action === 'refuse' && { reason: reason.trim() }), ...(row.type === 'advance' && paperDate && { paper_decision_date: paperDate }) } }, ['/attendance', '/notifications'])
       close()
     } catch (e) {
       setError(e)
@@ -134,6 +141,19 @@ function RequestDialog({ row, value, close }: { row: RequestRow; value: string |
           {row.type === 'advance' && row.amount && row.employee && (
             <div><AdvancePrint id={row.id} version={row.version} name={name} code={row.employee.code} site={site} date={row.date} amount={row.amount} /></div>
           )}
+          {row.type === 'advance' && row.status === 'pending' && (
+            <label className="grid gap-1">
+              {t('attendanceRequests.paperDateOptional')}
+              <Input type="date" min={row.date} max={cairoToday()} value={paperDate} disabled={busy} onChange={(event) => setPaperDate(event.target.value)} />
+            </label>
+          )}
+          {row.type === 'advance' && row.decided_at && (
+            <dl className="grid gap-1 text-sm sm:grid-cols-2">
+              <div><dt>{t('attendanceRequests.systemDecisionTime')}</dt><dd>{time(row.decided_at)}</dd></div>
+              <div><dt>{t('attendanceRequests.paperDate')}</dt><dd><bdi>{row.paper_decision_date ?? '—'}</bdi></dd></div>
+            </dl>
+          )}
+          {row.type === 'advance' && row.employee && can('employee.view.all') && (can('hr_forms.generate') || can('hr_forms.view')) && <AdvanceRequestPdf id={row.id} />}
           {refusing && (
             <label className="grid gap-1">
               {t('attendanceRequests.refusalReason')}

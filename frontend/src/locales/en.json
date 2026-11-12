@@ -1206,6 +1206,9 @@
     "clearRequestId": "Clear the request ID filter"
   },
   "attendanceRequests": {
+    "paperDateOptional": "Paper decision date (optional)",
+    "systemDecisionTime": "System decision time",
+    "paperDate": "Paper decision date",
     "title": "Attendance requests",
     "description": "Review overtime and record paper decisions for advances.",
     "statusLabel": "Status",
@@ -1253,6 +1256,16 @@
     }
   },
   "hrForms": {
+    "advanceRequest": "Advance request PDF",
+    "advanceReason": "Reason for advance",
+    "repaymentMethod": "Repayment method",
+    "receipts": "Present receipts",
+    "cash": "Pay cash",
+    "salaryDeduction": "Monthly salary deduction",
+    "previousAdvance": "Previous advance",
+    "yes": "Yes",
+    "no": "No",
+    "financeRemarks": "Finance remarks",
     "leaveRequest": "Leave request PDF",
     "notificationMethod": "Notification method",
     "managerOpinion": "Department manager’s opinion",

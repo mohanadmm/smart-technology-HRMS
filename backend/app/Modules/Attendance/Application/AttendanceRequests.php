@@ -10,6 +10,7 @@ use App\Modules\Identity\Application\Rbac\PermissionHolders;
 use App\Modules\Notifications\Application\Notifier;
 use App\Support\Database\ConcurrencyConflict;
 use App\Support\Http\Paginates;
+use Illuminate\Validation\ValidationException;
 use Ramsey\Uuid\Uuid;
 
 final class AttendanceRequests
@@ -110,18 +111,27 @@ final class AttendanceRequests
         }
     }
 
-    public function decide(string $id, int $version, bool $approve, ?string $reason, string $by): string
+    public function decide(string $id, int $version, bool $approve, ?string $reason, string $by, ?string $paperDate = null, bool $paperDateSupplied = false): string
     {
         $employee = (string) AttendanceRequest::findOrFail($id)->employee_id;
 
-        return $this->crew->locked([$employee], function () use ($id, $version, $approve, $reason, $by): string {
+        return $this->crew->locked([$employee], function () use ($id, $version, $approve, $reason, $by, $paperDate, $paperDateSupplied): string {
             $request = AttendanceRequest::find($id) ?? throw new ConcurrencyConflict;
             if ($request->status !== 'pending' || $request->version !== $version) {
                 throw new ConcurrencyConflict;
             }
+            if ($paperDateSupplied && $request->type !== 'advance') {
+                throw ValidationException::withMessages(['paper_decision_date' => __('errors.advance_paper_date_type')]);
+            }
+            if ($paperDate !== null && $paperDate > now('Africa/Cairo')->toDateString()) {
+                throw ValidationException::withMessages(['paper_decision_date' => __('errors.advance_paper_date_future')]);
+            }
+            if ($paperDate !== null && $paperDate < $request->date) {
+                throw ValidationException::withMessages(['paper_decision_date' => __('errors.advance_paper_date_before_request')]);
+            }
             $this->days->decideRequest($request, $approve);
             $status = $approve ? 'approved' : 'refused';
-            $request->update(['status' => $status, 'version' => $version + 1, 'decided_by' => $by, 'decided_at' => now(), 'reason' => $reason]);
+            $request->update(['status' => $status, 'version' => $version + 1, 'decided_by' => $by, 'decided_at' => now(), 'reason' => $reason, 'paper_decision_date' => $paperDate]);
             $this->notify($request, (string) $request->requested_by, 'attendance_request_decided');
 
             return $status;

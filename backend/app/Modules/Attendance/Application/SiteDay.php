@@ -37,6 +37,8 @@ final class SiteDay
 {
     /** The save body; nothing else in a row is read. */
     public const FORMAT = [
+        'paper_decision_date' => ['missing'],
+        'rows.*.paper_decision_date' => ['missing'],
         'site_id' => ['required', 'uuid'],
         'date' => ['required', 'date_format:Y-m-d'],
         'rows' => ['required', 'list', 'min:1', 'max:'.AttendanceDays::BULK_MAX_ROWS],
