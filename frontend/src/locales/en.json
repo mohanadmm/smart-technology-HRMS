@@ -1251,5 +1251,31 @@
       "finance": "Finance and administration: salary, hire date, prior advances and remarks",
       "director": "General manager: approved / refused, signature and date"
     }
+  },
+  "hrForms": {
+    "certificate": "Experience certificate",
+    "jobTitle": "Job title",
+    "praise": "Praise paragraph (optional)",
+    "generate": "Generate PDF",
+    "regenerate": "Regenerate PDF",
+    "cancel": "Cancel",
+    "empty": "No certificates to show",
+    "serial": "Serial {{serial}}",
+    "unsigned": "Unsigned",
+    "signed": "Signed",
+    "approvedViaViewAs": "Approved through View as",
+    "pending": "Generating PDF",
+    "ready": "Ready",
+    "failed": "PDF generation failed",
+    "download": "Download PDF",
+    "retry": "Retry",
+    "approvals": "Form approvals",
+    "approve": "Approve and sign",
+    "signature": "My signature",
+    "viewAsBlocked": "Signature preview and upload are unavailable in View as.",
+    "signatureFile": "Signature file (PNG or JPG, up to 2 MB)",
+    "upload": "Upload signature",
+    "previous": "Previous",
+    "next": "Next"
   }
 }

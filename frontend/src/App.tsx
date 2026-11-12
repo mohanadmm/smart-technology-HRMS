@@ -19,6 +19,8 @@ const SiteDayPage = page(() => import('@/pages/site-day'), 'SiteDayPage')
 const AttendanceRequestsPage = page(() => import('@/pages/attendance-requests'), 'AttendanceRequestsPage')
 const WageProposalsPage = page(() => import('@/pages/wage-proposals'), 'WageProposalsPage')
 const TeamFaresPage = page(() => import('@/pages/team-fares'), 'TeamFaresPage')
+const FormApprovalsPage = page(() => import('@/pages/hr-forms'), 'FormApprovalsPage')
+const SignaturePage = page(() => import('@/pages/hr-forms'), 'SignaturePage')
 const NotFoundPage = page(() => import('@/pages/pages'), 'NotFoundPage')
 
 function Home() {
@@ -47,6 +49,8 @@ export function AppRoutes() {
         <Route path="site-day" element={<SiteDayPage />} />
         <Route path="attendance-requests" element={nav('/attendance-requests', <AttendanceRequestsPage />)} />
         <Route path="wage-proposals" element={nav('/wage-proposals', <WageProposalsPage />)} />
+        <Route path="hr-form-approvals" element={nav('/hr-form-approvals', <FormApprovalsPage />)} />
+        <Route path="my-signature" element={nav('/my-signature', <SignaturePage />)} />
         <Route path="team-fares" element={<TeamFaresPage />} />
         <Route path="settings" element={nav('/settings', <SettingsPage />)} />
         {/* old links, kept for one release */}
