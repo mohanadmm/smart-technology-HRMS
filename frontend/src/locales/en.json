@@ -1265,12 +1265,20 @@
       "leave_permit": "Departure Permit",
       "late_permit": "Late Arrival Permit",
       "notice": "Printing only. Attendance, leave, payroll inputs, employee status and other records are unaffected.",
+      "job_offer": "Job Offer",
       "sim_receipt": "SIM Receipt",
       "notices": {
+        "job_offer": "Printing only. This creates no employee, contract, or pay record.",
         "sim_receipt": "Printing only. This creates no custody or asset record and leaves employee records unchanged.",
         "warning_notice": "Printing only. This creates no disciplinary record, deduction or payroll input and makes no changes to employee records."
       },
       "fields": {
+        "candidate_name": "Candidate name",
+        "address": "Address",
+        "monthly_salary": "Monthly salary",
+        "evaluation_months": "Evaluation period in months",
+        "reply_deadline": "Reply deadline",
+        "start_date": "Start date",
         "sim_number": "Mobile line number",
         "mission_date": "Mission date",
         "mission_reason": "Reason for the mission",
