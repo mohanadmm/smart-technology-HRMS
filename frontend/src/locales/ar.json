@@ -1276,6 +1276,10 @@
     }
   },
   "hrForms": {
+    "leaveRequest": "نموذج طلب إجازة",
+    "notificationMethod": "طريقة التبليغ",
+    "managerOpinion": "رأي مدير القسم",
+    "substitute": "الموظف البديل",
     "certificate": "شهادة خبرة",
     "jobTitle": "المسمى الوظيفي",
     "praise": "فقرة الإشادة (اختيارية)",

@@ -51,7 +51,7 @@ final class ExperienceCertificateController
     {
         $this->employees->show($employee, RequestScope::ownerId($request));
 
-        return self::list($request, $this->certificates->history($employee));
+        return self::list($request, $this->certificates->history($employee, $request->query('form_type') === 'experience_certificate' ? 'experience_certificate' : null));
     }
 
     public function awaitingApproval(Request $request): JsonResponse
@@ -68,7 +68,7 @@ final class ExperienceCertificateController
         $path = (string) $row->storage_path;
         abort_unless($row->status === 'ready' && $disk->exists($path), 404);
 
-        return $disk->download($path, "experience-certificate-{$row->serial_number}-{$row->stage}.pdf", [
+        return $disk->download($path, str_replace('_', '-', (string) $row->form_type)."-{$row->serial_number}-{$row->stage}.pdf", [
             'Content-Type' => 'application/pdf',
             'Cache-Control' => 'private, no-store',
             'X-Content-Type-Options' => 'nosniff',
@@ -101,7 +101,7 @@ final class ExperienceCertificateController
     }
 
     /** @return array<string, mixed> */
-    private static function queue(stdClass $row): array
+    public static function queue(stdClass $row): array
     {
         if ($row->status === 'pending') {
             RenderHrForm::dispatch((string) $row->id);

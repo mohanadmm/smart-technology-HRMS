@@ -22,10 +22,10 @@ class RbacTest extends TestCase
     {
         $grants = fn (string $slug) => Role::where('slug', $slug)->firstOrFail()->permissions
             ->map(fn ($p) => "{$p->resource}.{$p->action}.{$p->scope}")->sort()->values()->all();
-        $this->assertSame(46, Permission::count());
+        $this->assertSame(47, Permission::count());
         $this->assertSame(['attendance.record.own', 'employee.crew.own', 'employee.propose_laborer.own', 'employee.view.own', 'leave.request.own', 'leave.view.own', 'site.view.own'], $grants('manager'));
-        $this->assertSame(['attendance.view.all', 'audit_log.view.all', 'employee.view.all', 'employee_document.view.all', 'hr_forms.approve.all', 'hr_forms.view.all', 'hr_signatures.manage.own', 'leave.decide_escalated.all', 'leave.view.all', 'setting.view.all', 'site.view.all'], $grants('ceo'));
-        $this->assertCount(30, $grants('hr'));
+        $this->assertSame(['attendance.view.all', 'audit_log.view.all', 'employee.view.all', 'employee_document.view.all', 'hr_forms.approve.all', 'hr_forms.approve_leave_request.all', 'hr_forms.view.all', 'hr_signatures.manage.own', 'leave.decide_escalated.all', 'leave.view.all', 'setting.view.all', 'site.view.all'], $grants('ceo'));
+        $this->assertCount(31, $grants('hr'));
         foreach (['attendance.view.all', 'attendance.edit.all', 'attendance.lock.all', 'attendance_request.decide.all', 'holiday.manage.all', 'employee.assign_site.all', 'employee.approve_wage.all', 'employee.edit_code.all', 'employee_document.view.all', 'employee_document.edit.all', 'fare.manage.all', 'leave.view.all', 'leave.request.all', 'leave.decide.all', 'leave.adjust.all'] as $name) {
             $this->assertContains($name, $grants('hr'));
         }
@@ -36,6 +36,8 @@ class RbacTest extends TestCase
         $this->assertContains('hr_forms.generate.all', $grants('developer'));
         $this->assertContains('hr_forms.view.all', $grants('developer'));
         $this->assertNotContains('hr_forms.approve.all', $grants('developer'));
+        $this->assertNotContains('hr_forms.approve_leave_request.all', $grants('developer'));
+        $this->assertContains('hr_forms.approve_leave_request.all', $grants('hr'));
         $this->assertNotContains('hr_signatures.manage.own', $grants('developer'));
         $this->assertContains('hr_forms.generate.all', $grants('hr'));
         $this->assertContains('hr_forms.view.all', $grants('hr'));

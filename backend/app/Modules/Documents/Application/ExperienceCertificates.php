@@ -60,33 +60,40 @@ final class ExperienceCertificates
                     throw ValidationException::withMessages([$field => __('errors.certificate_employee_data')]);
                 }
             }
-            $id = (string) Str::uuid7();
-            $now = now();
-            DB::table('hr_form_serial_counters')->insertOrIgnore(['form_type' => self::FORM, 'last_serial' => 0]);
-            $counter = DB::table('hr_form_serial_counters')->where('form_type', self::FORM);
-            $serial = (int) $counter->lockForUpdate()->firstOrFail()->last_serial + 1;
-            $counter->update(['last_serial' => $serial]);
-            DB::table('hr_form_exports')->insert([
-                'id' => $id, 'form_type' => self::FORM, 'serial_number' => $serial,
-                'stage' => 'unsigned', 'status' => 'pending', 'employee_id' => $employeeId,
-                'requested_by' => $actor, 'idempotency_key' => $key, 'template_version' => 1,
-                'snapshot' => json_encode([
-                    ...array_intersect_key($employee, array_flip(['name_ar', 'national_id', 'department', 'gender', 'hire_date', 'termination_date'])),
-                    'job_title' => $jobTitle, 'praise' => $praise ?? self::standardPraise($employee['gender']), 'issued_on' => $now->copy()->timezone('Africa/Cairo')->toDateString(),
-                ], JSON_THROW_ON_ERROR),
-                'storage_path' => "hr-forms/{$id}.pdf", 'regenerated_from_id' => $previousId,
-                'created_by' => $actor, 'updated_by' => $actor, 'created_at' => $now, 'updated_at' => $now,
-            ]);
 
-            return $this->find($id);
+            return $this->storeUnsigned(self::FORM, $employeeId, $actor, $key, [
+                ...array_intersect_key($employee, array_flip(['name_ar', 'national_id', 'department', 'gender', 'hire_date', 'termination_date'])),
+                'job_title' => $jobTitle, 'praise' => $praise ?? self::standardPraise($employee['gender']), 'issued_on' => now('Africa/Cairo')->toDateString(),
+            ], $previousId);
         });
     }
 
-    public function approve(string $id, string $approver): stdClass
+    /** @param array<string, mixed> $snapshot */
+    public function storeUnsigned(string $form, string $employee, string $actor, string $key, array $snapshot, ?string $previousId): stdClass
     {
-        return DB::transaction(function () use ($id, $approver): stdClass {
+        $id = (string) Str::uuid7();
+        $now = now();
+        DB::table('hr_form_serial_counters')->insertOrIgnore(['form_type' => $form, 'last_serial' => 0]);
+        $counter = DB::table('hr_form_serial_counters')->where('form_type', $form);
+        $serial = (int) $counter->lockForUpdate()->firstOrFail()->last_serial + 1;
+        $counter->update(['last_serial' => $serial]);
+        DB::table('hr_form_exports')->insert([
+            'id' => $id, 'form_type' => $form, 'serial_number' => $serial,
+            'stage' => 'unsigned', 'status' => 'pending', 'employee_id' => $employee,
+            'requested_by' => $actor, 'idempotency_key' => $key, 'template_version' => 1,
+            'snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR),
+            'storage_path' => "hr-forms/{$id}.pdf", 'regenerated_from_id' => $previousId,
+            'created_by' => $actor, 'updated_by' => $actor, 'created_at' => $now, 'updated_at' => $now,
+        ]);
+
+        return $this->find($id);
+    }
+
+    public function approve(string $id, string $approver, string $form = self::FORM, ?string $stampLine = null): stdClass
+    {
+        return DB::transaction(function () use ($id, $approver, $form, $stampLine): stdClass {
             $source = $this->find($id, lock: true);
-            if ($source->stage !== 'unsigned' || $source->status !== 'ready'
+            if ($source->form_type !== $form || $source->stage !== 'unsigned' || $source->status !== 'ready'
                 || DB::table('hr_form_exports')->where('regenerated_from_id', $id)->exists()) {
                 throw new ConcurrencyConflict;
             }
@@ -95,9 +102,16 @@ final class ExperienceCertificates
                 return $existing;
             }
             $signature = DB::table('hr_signature_images')->where('owner_id', $approver)->whereNull('deleted_at')
-                ->orderByDesc('version')->first(['id']);
+                ->orderByDesc('version')->first(['id', 'version']);
             if ($signature === null) {
                 throw ValidationException::withMessages(['signature' => __('errors.certificate_signature_required')]);
+            }
+            $snapshot = $source->snapshot;
+            if ($stampLine !== null) {
+                $snapshot = json_encode([
+                    ...json_decode((string) $snapshot, true, flags: JSON_THROW_ON_ERROR),
+                    'stamp_line' => $stampLine, 'decider_id' => $approver, 'signature_version' => (int) $signature->version,
+                ], JSON_THROW_ON_ERROR);
             }
             $viewer = Auth::user();
             $impersonator = $viewer instanceof User ? $viewer->viewAs?->byId : null;
@@ -107,7 +121,7 @@ final class ExperienceCertificates
                 'id' => $signedId, 'form_type' => $source->form_type, 'serial_number' => $source->serial_number,
                 'stage' => 'signed', 'status' => 'pending', 'employee_id' => $source->employee_id,
                 'requested_by' => $approver, 'idempotency_key' => (string) Str::uuid7(),
-                'template_version' => $source->template_version, 'snapshot' => $source->snapshot,
+                'template_version' => $source->template_version, 'snapshot' => $snapshot,
                 'storage_path' => "hr-forms/{$signedId}.pdf", 'unsigned_export_id' => $id,
                 'approved_by' => $approver, 'approved_at' => $now, 'signature_image_id' => $signature->id,
                 'impersonator_id' => $impersonator, 'created_by' => $impersonator ?? $approver,
@@ -121,11 +135,11 @@ final class ExperienceCertificates
         });
     }
 
-    public function retry(string $id): stdClass
+    public function retry(string $id, string $form = self::FORM, ?string $approver = null): stdClass
     {
-        return DB::transaction(function () use ($id): stdClass {
+        return DB::transaction(function () use ($id, $form, $approver): stdClass {
             $export = $this->find($id, lock: true);
-            if ($export->stage !== 'signed' || $export->status !== 'failed') {
+            if ($export->form_type !== $form || ($approver !== null && $export->approved_by !== $approver) || $export->stage !== 'signed' || $export->status !== 'failed') {
                 throw new ConcurrencyConflict;
             }
             DB::table('hr_form_exports')->where('id', $id)->update([
@@ -137,16 +151,17 @@ final class ExperienceCertificates
     }
 
     /** @return LengthAwarePaginator<int, stdClass> */
-    public function history(string $employee): LengthAwarePaginator
+    public function history(string $employee, ?string $form = null): LengthAwarePaginator
     {
         return DB::table('hr_form_exports')->where('employee_id', $employee)->whereNull('deleted_at')
+            ->when($form !== null, fn ($query) => $query->where('form_type', $form))
             ->orderByDesc('created_at')->orderByDesc('id')->paginate(25);
     }
 
     /** @return LengthAwarePaginator<int, stdClass> */
     public function awaitingApproval(): LengthAwarePaginator
     {
-        return DB::table('hr_form_exports as source')->where('source.stage', 'unsigned')->where('source.status', 'ready')
+        return DB::table('hr_form_exports as source')->where('source.form_type', self::FORM)->where('source.stage', 'unsigned')->where('source.status', 'ready')
             ->whereNull('source.deleted_at')->whereNotExists(fn ($query) => $query->selectRaw('1')
             ->from('hr_form_exports as successor')
             ->where(fn ($q) => $q->whereColumn('successor.unsigned_export_id', 'source.id')

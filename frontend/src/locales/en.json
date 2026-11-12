@@ -1253,6 +1253,10 @@
     }
   },
   "hrForms": {
+    "leaveRequest": "Leave request PDF",
+    "notificationMethod": "Notification method",
+    "managerOpinion": "Department manager’s opinion",
+    "substitute": "Substitute employee",
     "certificate": "Experience certificate",
     "jobTitle": "Job title",
     "praise": "Praise paragraph (optional)",

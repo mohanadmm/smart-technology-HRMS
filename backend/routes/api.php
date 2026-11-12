@@ -11,6 +11,7 @@ use App\Modules\Audit\Presentation\AuditLogController;
 use App\Modules\Audit\Presentation\ErrorLogController;
 use App\Modules\Audit\Presentation\RequestLogController;
 use App\Modules\Documents\Presentation\ExperienceCertificateController;
+use App\Modules\Documents\Presentation\LeaveRequestFormController;
 use App\Modules\Documents\Presentation\SignatureController;
 use App\Modules\Employees\Presentation\EmployeeController;
 use App\Modules\Employees\Presentation\EmployeeDocumentController;
@@ -65,6 +66,15 @@ Route::middleware('auth')->group(function (): void {
         ->whereUuid('export')->middleware('permission:hr_forms.approve');
     Route::post('hr-form-exports/{export}/retry', [ExperienceCertificateController::class, 'retry'])
         ->whereUuid('export')->middleware('permission:hr_forms.approve');
+
+    Route::post('leave/requests/{leaveRequest}/hr-forms/leave-request', [LeaveRequestFormController::class, 'store'])
+        ->whereUuid('leaveRequest')->middleware('permission:hr_forms.generate');
+    Route::get('leave/requests/{leaveRequest}/hr-form-exports', [LeaveRequestFormController::class, 'index'])
+        ->whereUuid('leaveRequest')->middleware('permission:hr_forms.view');
+    Route::post('hr-form-exports/{export}/approve-leave-request', [LeaveRequestFormController::class, 'approve'])
+        ->whereUuid('export')->middleware('permission:hr_forms.approve_leave_request');
+    Route::post('hr-form-exports/{export}/retry-leave-request', [LeaveRequestFormController::class, 'retry'])
+        ->whereUuid('export')->middleware('permission:hr_forms.approve_leave_request');
 
     Route::prefix('employees/wage-proposals')->controller(WageProposalController::class)->whereUuid('proposal')->group(function (): void {
         Route::get('/', 'index')->middleware('permission:employee.approve_wage');

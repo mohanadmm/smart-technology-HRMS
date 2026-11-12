@@ -13,11 +13,11 @@ const signaturePath = '/me/hr-signature'
 type ExportResult = { id: string }
 type Signature = { signature: { version: number } | null }
 
-async function download(id: string, serial: string, stage: string) {
+export async function download(id: string, serial: string, stage: string, form = 'experience-certificate') {
   const url = URL.createObjectURL(await apiBlob(`${exportsPath}/${id}/download`))
   const link = document.createElement('a')
   link.href = url
-  link.download = `experience-certificate-${serial}-${stage}.pdf`
+  link.download = `${form}-${serial}-${stage}.pdf`
   link.click()
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
@@ -34,7 +34,7 @@ export function CertificateDocuments({ employee }: { employee: string }) {
   const request = useRef<{ payload: string; key: string } | null>(null)
   const saving = useRef(false)
   const history = `/employees/${employee}/hr-form-exports`
-  const list = useList(`${history}?page=${page}`, { refetchInterval: 2500 })
+  const list = useList(`${history}?page=${page}&form_type=experience_certificate`, { refetchInterval: 2500 })
   const save = useSave()
   const certificatePath = `/employees/${employee}/hr-forms/experience-certificate`
   const defaults = useApi<{ praise: string }>(can('hr_forms.generate') ? `${certificatePath}/defaults` : null)

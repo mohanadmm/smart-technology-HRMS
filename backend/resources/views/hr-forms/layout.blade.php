@@ -20,11 +20,14 @@
     .signature { margin-top: 12mm; margin-right: auto; text-align: center; width: 56mm; break-inside: avoid; }
     .signature img { display: block; width: 100%; height: 18mm; object-fit: contain; }
     .signature-line { display: block; height: 18mm; border-bottom: 1px solid; }
+    @yield('form-css')
 </style>
 </head>
 <body>
+@unless ($plainPaper ?? false)
 <img class="letterhead" src="{{ $letterhead }}" alt="">
 <img class="footer" src="{{ $footer }}" alt="">
+@endunless
 <main>
     <div class="serial">الرقم المسلسل <bdi>{{ $serial }}</bdi></div>
     @yield('document')

@@ -6,6 +6,7 @@ namespace App\Modules\Documents\Application;
 
 use App\Modules\Audit\Infrastructure\AuditLog;
 use App\Modules\Documents\Domain\FormRenderer;
+use App\Support\Localization\ArabicFormDate;
 use App\Support\Localization\ArabicServiceDuration;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -83,15 +84,10 @@ final class RenderHrForm implements ShouldQueue
 
     private function html(stdClass $export): string
     {
-        if ($export->form_type !== 'experience_certificate' || (int) $export->template_version !== 1) {
+        if ((int) $export->template_version !== 1) {
             throw new RuntimeException('Unknown form template.');
         }
         $snapshot = json_decode((string) $export->snapshot, true, flags: JSON_THROW_ON_ERROR);
-        $issued = Carbon::parse($snapshot['issued_on'], 'Africa/Cairo');
-        $issued->locale('ar');
-        $start = Carbon::parse($snapshot['hire_date'], 'Africa/Cairo');
-        $end = $snapshot['termination_date'] === null ? $issued : Carbon::parse($snapshot['termination_date'], 'Africa/Cairo');
-        $service = ArabicServiceDuration::format($start->diff($end));
         $signature = null;
         if ($export->signature_image_id !== null) {
             $image = DB::table('hr_signature_images')->where('id', $export->signature_image_id)->firstOrFail();
@@ -102,19 +98,41 @@ final class RenderHrForm implements ShouldQueue
             $signature = self::dataUrl((string) $image->mime_type, $bytes);
         }
 
-        return view('hr-forms.experience-certificate', [
-            'snapshot' => $snapshot,
-            'serial' => $export->serial_number,
+        $common = [
+            'snapshot' => $snapshot, 'serial' => $export->serial_number, 'signature' => $signature,
             'feminine' => $snapshot['gender'] === 'female',
-            'weekday' => $issued->isoFormat('dddd'),
-            'issueDate' => $issued->format('d/m/Y'),
-            'service' => $service === '' ? 'أقل من يوم' : $service,
-            'praise' => $snapshot['praise'] ?? ExperienceCertificates::standardPraise($snapshot['gender']),
-            'signature' => $signature,
             'font' => self::asset('ibm-plex-sans-arabic-arabic-600-normal.woff2', 'font/woff2'),
             'boldFont' => self::asset('ibm-plex-sans-arabic-arabic-700-normal.woff2', 'font/woff2'),
+        ];
+        if ($export->form_type === LeaveRequestForms::FORM) {
+            $remaining = $snapshot['balance']['remaining'] ?? null;
+
+            return view('hr-forms.leave-request', [
+                ...$common, 'plainPaper' => true,
+                'duration' => ArabicServiceDuration::days((int) $snapshot['days']),
+                'from' => ArabicFormDate::format($snapshot['from_date']),
+                'to' => ArabicFormDate::format($snapshot['to_date']),
+                'balanceDays' => match ($remaining) {
+                    null => 'غير متاح', 0 => '0 يوم', default => ArabicServiceDuration::days((int) $remaining)
+                },
+            ])->render();
+        }
+        if ($export->form_type !== 'experience_certificate') {
+            throw new RuntimeException('Unknown form template.');
+        }
+
+        $issued = Carbon::parse($snapshot['issued_on'], 'Africa/Cairo');
+        $start = Carbon::parse($snapshot['hire_date'], 'Africa/Cairo');
+        $end = $snapshot['termination_date'] === null ? $issued : Carbon::parse($snapshot['termination_date'], 'Africa/Cairo');
+        $service = ArabicServiceDuration::format($start->diff($end));
+
+        return view('hr-forms.experience-certificate', [
+            ...$common,
             'footer' => self::asset('certificate-footer.jpg', 'image/jpeg'),
             'letterhead' => self::asset('certificate-letterhead.png', 'image/png'),
+            'issuedOn' => ArabicFormDate::format($snapshot['issued_on']),
+            'service' => $service === '' ? 'أقل من يوم' : $service,
+            'praise' => $snapshot['praise'] ?? ExperienceCertificates::standardPraise($snapshot['gender']),
         ])->render();
     }
 
