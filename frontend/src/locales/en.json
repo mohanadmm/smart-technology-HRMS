@@ -1258,6 +1258,7 @@
   "hrForms": {
     "manual": {
       "title": "Print-only forms",
+      "early_leave_request": "Early Departure Request",
       "late_permit": "Late Arrival Permit",
       "notice": "Printing only. Attendance, leave, payroll inputs, employee status and other records are unaffected.",
       "fields": {
@@ -1267,6 +1268,9 @@
         "end_time": "To time",
         "reason": "Reason",
         "responsible_manager": "Responsible manager",
+        "regular_start": "Regular start time",
+        "regular_end": "Regular end time",
+        "requested_end": "Requested departure time",
         "issued_on": "Issue date",
         "job_title": "Job title"
       }
