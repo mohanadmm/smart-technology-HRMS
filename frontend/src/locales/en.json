@@ -1262,6 +1262,7 @@
       "warning_notice": "Warning notice",
       "resignation": "Resignation",
       "mission_permit": "Mission Permit",
+      "leave_permit": "Departure Permit",
       "late_permit": "Late Arrival Permit",
       "notice": "Printing only. Attendance, leave, payroll inputs, employee status and other records are unaffected.",
       "notices": {
