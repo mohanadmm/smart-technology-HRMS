@@ -1259,9 +1259,13 @@
     "manual": {
       "title": "Print-only forms",
       "early_leave_request": "Early Departure Request",
+      "warning_notice": "Warning notice",
       "resignation": "Resignation",
       "late_permit": "Late Arrival Permit",
       "notice": "Printing only. Attendance, leave, payroll inputs, employee status and other records are unaffected.",
+      "notices": {
+        "warning_notice": "Printing only. This creates no disciplinary record, deduction or payroll input and makes no changes to employee records."
+      },
       "fields": {
         "addressee": "Addressed to",
         "permit_date": "Permit date",
@@ -1272,6 +1276,11 @@
         "regular_start": "Regular start time",
         "regular_end": "Regular end time",
         "requested_end": "Requested departure time",
+        "warning_date": "Warning date",
+        "warning_incident": "Incident",
+        "warning_period": "Dates or duration cited",
+        "warning_prior_occurrence": "Prior-occurrence statement",
+        "warning_explanation_request": "Request for explanation",
         "confirm_declarations": "I confirm that the employee has undertaken to hand over their assigned duties and has received their employment documents and all financial dues, as stated in the form.",
         "issued_on": "Issue date",
         "job_title": "Job title"
