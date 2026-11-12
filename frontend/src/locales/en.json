@@ -1256,6 +1256,9 @@
     }
   },
   "hrForms": {
+    "overtimeRequest": "Overtime request PDF",
+    "overtimeReason": "Reason for overtime",
+    "printOnly": "Printing does not change attendance, payroll inputs, or the request.",
     "advanceRequest": "Advance request PDF",
     "advanceReason": "Reason for advance",
     "repaymentMethod": "Repayment method",

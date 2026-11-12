@@ -42,3 +42,50 @@ test('prints the saved advance revision and records paper approval as one action
   const sent = vi.mocked(fetch).mock.calls.find(([url, opts]) => String(url).endsWith('/advance1/approve') && opts?.method === 'POST')
   expect(JSON.parse(String(sent?.[1]?.body))).toEqual({ version: 3 })
 })
+
+test.each([
+  ['overtime', true],
+  ['overtime', false],
+  ['advance', true],
+] as const)('overtime PDF action for a %s request with generate=%s', async (type, canGenerate) => {
+  const user = userEvent.setup()
+  const request = {
+    id: 'request1', version: 1, type, status: 'pending', date: '2026-10-22',
+    amount: '250.00', minutes: 60,
+    employee: { id: 'worker1', code: 1043, name_ar: 'عامل اختبار', name_en: null },
+  }
+  const generate = vi.fn(() => json(202, { data: { id: 'export1' } }))
+  mockFetch({
+    'GET /api/v1/attendance/requests': () => json(200, { data: [request], meta: { pagination } }),
+    'GET /api/v1/attendance/requests/request1': () => json(200, { data: request }),
+    'GET /api/v1/attendance/requests/request1/hr-form-exports': () => json(200, { data: { exports: [] } }),
+    'POST /api/v1/attendance/requests/request1/hr-forms/overtime-request': generate,
+  })
+  renderWithAuth(<AttendanceRequestsPage />, [
+    'attendance_request.decide.all', 'employee.view.all', 'hr_forms.view.all', ...(canGenerate ? ['hr_forms.generate.all'] : []),
+  ], { path: '/attendance-requests?request=request1' })
+
+  const review = within(await screen.findByRole('dialog'))
+  if (type !== 'overtime') {
+    expect(review.queryByText('نموذج طلب عمل إضافي')).toBeNull()
+    return
+  }
+  expect(review.getByText('الطباعة لا تغيّر الحضور أو مدخلات الرواتب أو الطلب.')).toBeInTheDocument()
+  if (!canGenerate) {
+    expect(review.queryByRole('button', { name: 'إنشاء الملف' })).toBeNull()
+    return
+  }
+
+  const title = review.getByLabelText('المسمى الوظيفي')
+  const reason = review.getByLabelText('سبب العمل الإضافي')
+  const submit = review.getByRole('button', { name: 'إنشاء الملف' })
+  expect(title).toBeRequired()
+  expect(reason).toBeRequired()
+  await user.click(submit)
+  await user.type(title, 'Synthetic technician')
+  await user.click(submit)
+  expect(generate).not.toHaveBeenCalled()
+  await user.type(reason, 'Synthetic reason')
+  await user.click(submit)
+  await waitFor(() => expect(generate).toHaveBeenCalledOnce())
+})

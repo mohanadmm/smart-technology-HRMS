@@ -1279,6 +1279,9 @@
     }
   },
   "hrForms": {
+    "overtimeRequest": "نموذج طلب عمل إضافي",
+    "overtimeReason": "سبب العمل الإضافي",
+    "printOnly": "الطباعة لا تغيّر الحضور أو مدخلات الرواتب أو الطلب.",
     "advanceRequest": "نموذج طلب سلفة",
     "advanceReason": "سبب السلفة",
     "repaymentMethod": "طريقة التسديد",
