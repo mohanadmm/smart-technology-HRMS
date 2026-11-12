@@ -1259,6 +1259,7 @@
     "manual": {
       "title": "Print-only forms",
       "early_leave_request": "Early Departure Request",
+      "resignation": "Resignation",
       "late_permit": "Late Arrival Permit",
       "notice": "Printing only. Attendance, leave, payroll inputs, employee status and other records are unaffected.",
       "fields": {
@@ -1271,6 +1272,7 @@
         "regular_start": "Regular start time",
         "regular_end": "Regular end time",
         "requested_end": "Requested departure time",
+        "confirm_declarations": "I confirm that the employee has undertaken to hand over their assigned duties and has received their employment documents and all financial dues, as stated in the form.",
         "issued_on": "Issue date",
         "job_title": "Job title"
       }
