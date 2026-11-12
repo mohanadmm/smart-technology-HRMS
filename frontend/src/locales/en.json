@@ -1261,12 +1261,16 @@
       "early_leave_request": "Early Departure Request",
       "warning_notice": "Warning notice",
       "resignation": "Resignation",
+      "mission_permit": "Mission Permit",
       "late_permit": "Late Arrival Permit",
       "notice": "Printing only. Attendance, leave, payroll inputs, employee status and other records are unaffected.",
       "notices": {
         "warning_notice": "Printing only. This creates no disciplinary record, deduction or payroll input and makes no changes to employee records."
       },
       "fields": {
+        "mission_date": "Mission date",
+        "mission_reason": "Reason for the mission",
+        "department_manager": "Department manager",
         "addressee": "Addressed to",
         "permit_date": "Permit date",
         "start_time": "From time",
