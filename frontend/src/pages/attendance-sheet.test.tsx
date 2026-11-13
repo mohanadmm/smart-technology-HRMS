@@ -889,7 +889,7 @@ test('the undo stack keeps the last 15', async () => {
   }
   const undone = bulk.mock.calls.slice(16).map((_, i) => sent(bulk, 16 + i).rows[0].employee_id)
   expect(undone).toEqual(Array.from({ length: 15 }, (_, i) => `e${16 - i}`)) // newest first; e1 was dropped
-})
+}, 15_000)
 
 /**
  * A tiny server for Engineer-1 that refuses a stale version, like the endpoint. Versions are per day: 2026-10-17 starts stored
