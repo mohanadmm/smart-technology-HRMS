@@ -76,3 +76,5 @@ These come from the client's list of 23 changes; `docs/hrms-module-plan.md` § C
 - R27. ~~معامل التأخير لكل موظف~~ *(قرار المالك: الـHR تربط المعامل بالكود الوظيفي، والمعامل ثابت لكل موظف. الملف المستخرج يحتوي على 32 صفًا بدون معامل و4 أسماء مكررة، تراجعها الـHR قبل استخدام المعامل في خصم.)*
 - R28. 💰 «المدير العام» هو المدير التنفيذي (CEO)؟ ولاعتماد المرتبات: هل يحتاج الإجماليات فقط أم مرتب كل موظف؟ *(حالياً حساب CEO يرى مرتب كل موظف في ملفه.)*
 - R29. 💰 بدء التشغيل: تاريخ بدء العمل بالنظام، والأرصدة الافتتاحية (السلف، الإجازات)، وهل نستورد أرشيف المرتبات القديم أصلاً؟
+
+- End-of-service print form. Confirm that the suggestion uses only completed years, with zero credit for partial years, and that a 29 February hire completes a year on 1 March in non-leap years.

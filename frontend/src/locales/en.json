@@ -1265,9 +1265,11 @@
       "leave_permit": "Departure Permit",
       "late_permit": "Late Arrival Permit",
       "notice": "Printing only. Attendance, leave, payroll inputs, employee status and other records are unaffected.",
+      "end_of_service": "End-of-Service Gratuity",
       "job_offer": "Job Offer",
       "sim_receipt": "SIM Receipt",
       "notices": {
+        "end_of_service": "Printing only. This creates no payroll input, payment, or ledger entry and does not end employment or change employee status.",
         "job_offer": "Printing only. This creates no employee, contract, or pay record.",
         "sim_receipt": "Printing only. This creates no custody or asset record and leaves employee records unchanged.",
         "warning_notice": "Printing only. This creates no disciplinary record, deduction or payroll input and makes no changes to employee records."
@@ -1279,6 +1281,11 @@
         "evaluation_months": "Evaluation period in months",
         "reply_deadline": "Reply deadline",
         "start_date": "Start date",
+        "last_working_day": "Last working day",
+        "last_total_wage": "Last total monthly wage",
+        "wage_month": "Wage month",
+        "final_amount": "Final amount if overriding",
+        "override_reason": "Override reason",
         "sim_number": "Mobile line number",
         "mission_date": "Mission date",
         "mission_reason": "Reason for the mission",
