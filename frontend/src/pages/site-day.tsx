@@ -188,7 +188,7 @@ export function SiteDayPage() {
   const siteName = site ? localName(day?.site ?? site, lang) : ''
   const crewTools = isToday && (can('employee.crew') || can('employee.propose_laborer'))
   const person = (r: SiteDayRow, removable: boolean) => (
-    <PersonRow key={r.employee.id} r={r} draft={current(r, drafts)} siteId={siteId} siteName={siteName} date={day?.date ?? date ?? ''} leave={day?.leave_day_types ?? {}} sites={mine} locked={locked} onOpenDay={openDate}
+    <PersonRow key={r.employee.id} r={r} draft={current(r, drafts)} siteId={siteId} leave={day?.leave_day_types ?? {}} sites={mine} locked={locked} onOpenDay={openDate}
       removable={removable && !locked} onRemoved={reload} set={(d) => setDrafts(d === null ? omit(drafts, r.employee.id) : { ...drafts, [r.employee.id]: d })} />
   )
 

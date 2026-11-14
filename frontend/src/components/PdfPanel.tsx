@@ -34,8 +34,11 @@ type Field = { name: string; label: string; kind: 'text' | 'textarea' | 'choice'
 
 const jobTitle: Field = { name: 'job_title', label: 'hrForms.jobTitle', kind: 'text', required: true, max: 160 }
 
-/** The four HR form PDFs. Field rules mirror each backend type's `rules()`; `finance` fields show only to a caller who sees pay. */
-export const PDF_TYPES: Record<PdfType, { title: string; ownScope: boolean; fields: Field[] }> = {
+/**
+ * The four HR form PDFs. Field rules mirror each backend type's `rules()`; `finance` fields show only to a caller who sees pay.
+ * `hint` shows once a file exists: the advance amount stays editable after its PDF froze it.
+ */
+export const PDF_TYPES: Record<PdfType, { title: string; ownScope: boolean; hint?: string; fields: Field[] }> = {
   experience_certificate: { title: 'hrForms.certificate', ownScope: false, fields: [jobTitle] },
   leave_request: {
     title: 'hrForms.leaveRequest',
@@ -50,6 +53,7 @@ export const PDF_TYPES: Record<PdfType, { title: string; ownScope: boolean; fiel
   advance_request: {
     title: 'hrForms.advanceRequest',
     ownScope: true,
+    hint: 'hrForms.amountChanged',
     fields: [
       jobTitle,
       { name: 'reason', label: 'hrForms.advanceReason', kind: 'textarea', required: true, max: 300 },
@@ -115,6 +119,7 @@ export function PdfPanel({ type, subject }: { type: PdfType; subject: string }) 
   const ownPending = !!rows?.some((r) => r.status === 'pending' && (r.shows_pay ?? seesPay) === seesPay)
   const item = (r: PdfExport) => <PdfRow key={r.id} row={r} noPay={seesPay && r.shows_pay === false} onChanged={reload} />
   const form = rows && canUsePdf(can, 'generate', type) && <GenerateForm type={type} subject={subject} blocked={ownPending} describedBy={statusId} />
+  const hint = PDF_TYPES[type].hint
 
   return (
     <section aria-labelledby={titleId} className="space-y-3 rounded-xl border bg-card p-4">
@@ -128,6 +133,7 @@ export function PdfPanel({ type, subject }: { type: PdfType; subject: string }) 
       ) : (
         <p className="text-sm text-muted-foreground">{t('hrForms.noFile')}</p>
       )}
+      {hint && !!rows?.length && <p className="text-sm text-muted-foreground">{t(hint)}</p>}
       {earlier.length > 0 && <Disclosure label={t('hrForms.earlier', { n: earlier.length })}><ul className="space-y-2">{earlier.map(item)}</ul></Disclosure>}
       {form && (rows.length ? <Disclosure label={t('hrForms.regenerate')}>{form}</Disclosure> : form)}
     </section>

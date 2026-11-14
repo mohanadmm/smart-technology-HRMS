@@ -252,6 +252,16 @@ test('the finance fields are absent and unsent for a caller who does not see pay
   expect(sent(post).fields).toEqual({ job_title: 'عامل', reason: 'علاج', repayment_method: 'cash' })
 })
 
+test('once a file exists, the advance panel says to generate a new copy if the amount changed; the other types do not', async () => {
+  for (const type of Object.keys(PDF_TYPES) as PdfType[]) {
+    mockFetch({ [LIST]: answer([row({ type })]) })
+    const panel = renderWithAuth(<PdfPanel type={type} subject="s1" />, HR)
+    await screen.findByRole('button', { name: 'عرض' })
+    expect(screen.queryByText(/تغيّر مبلغ السلفة/) !== null, type).toBe(type === 'advance_request')
+    panel.unmount()
+  }
+})
+
 test('reopening the panel asks the server again, so Approve follows a decision made meanwhile', async () => {
   let actions: PdfExport['actions'] = ['download']
   mockFetch({ [LIST]: () => json(200, { data: [row({ actions })], meta: { pagination } }) })

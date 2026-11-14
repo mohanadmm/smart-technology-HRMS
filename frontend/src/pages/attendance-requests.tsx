@@ -2,7 +2,6 @@ import { HandCoins } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
-import { AdvancePrint } from '@/components/AdvancePrint'
 import { DataList } from '@/components/common/DataList'
 import { PageHeader } from '@/components/common/PageHeader'
 import { PdfPanel } from '@/components/PdfPanel'
@@ -135,10 +134,7 @@ function RequestDialog({ row, value, close }: { row: RequestRow; value: string |
           <p><bdi>{name}</bdi> · <bdi>{site}</bdi> · <bdi>{row.date}</bdi></p>
           <p>{value} · {t(row.type === 'advance' && row.status === 'approved' ? 'attendanceRequests.paid' : `attendanceRequests.status.${row.status}`)}</p>
           {row.reason && <p>{row.reason}</p>}
-          {row.type === 'advance' && row.status === 'pending' && <p>{t('attendanceRequests.paperApproval', { version: row.version })}</p>}
-          {row.type === 'advance' && row.amount && row.employee && (
-            <div><AdvancePrint id={row.id} version={row.version} name={name} code={row.employee.code} site={site} date={row.date} amount={row.amount} /></div>
-          )}
+          {row.type === 'advance' && row.status === 'pending' && <p>{t('attendanceRequests.paperApproval')}</p>}
           {row.type === 'advance' && row.status === 'pending' && (
             <label className="grid gap-1">
               {t('attendanceRequests.paperDateOptional')}

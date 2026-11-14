@@ -161,7 +161,7 @@ Frontend:
   the signed paper's **amount and serial** with this request; and the panel on an advance says to generate a new copy if
   the amount changed after the file was made. **Owner to confirm** (a control changes its anchor).
 - Deleted: `components/AdvancePrint.tsx`, its test (`attendance-requests.test.tsx:9-44`), keys
-  `attendanceRequests.print`, `.advanceForm`, `.reference`, `.paper.*`; `hrForms.printOnly` is reworded or removed.
+  `attendanceRequests.print`, `.advanceForm`, `.reference`, `.paper.*` (`hrForms.printOnly` went with task 2b). The amount-changed hint shows once a file exists.
   Guard: `git grep "window.print\|AdvancePrint" frontend/src` is empty.
 - The developer console's role matrix reads permissions from data; the two new cells need no code.
 
