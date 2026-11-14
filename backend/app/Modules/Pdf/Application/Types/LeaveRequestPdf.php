@@ -63,6 +63,7 @@ final class LeaveRequestPdf implements PdfDocument
 
         return ['pdf.leave-request', [
             'plainPaper' => true,
+            'title' => 'نموذج طلب إجازة',
             'duration' => ArabicServiceDuration::days((int) $snapshot['days']),
             'from' => ArabicFormDate::format($snapshot['from_date']),
             'to' => ArabicFormDate::format($snapshot['to_date']),

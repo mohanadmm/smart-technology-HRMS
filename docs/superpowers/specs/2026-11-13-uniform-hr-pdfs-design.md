@@ -88,11 +88,11 @@ signature, `feminine`, fonts) and checks `template_version === 1` as today.
 | Subject (`subject_id`) | the employee; `subjectColumn()` = `employee_id` | `snapshot->leave_request_id` | `snapshot->advance_request_id` | `snapshot->overtime_request_id` |
 | Subject row locked | `employees` | `leave_requests` | `attendance_requests` with `type = 'advance'` | `attendance_requests` with `type = 'overtime'` |
 | Subject missing, deleted or of the other request type | 404 | 404 | 404 | 404 |
-| `fields` rules (today's validators) | `job_title`: required, string, max:160 | `job_title`: required, string, max:160; `notification_method`: nullable, string, max:160; `manager_opinion`: nullable, string, max:360; `substitute`: nullable, string, max:160 (null stored as `''`) | `job_title`: required, string, max:160; `reason`: required, string, max:300; `repayment_method`: required, in:receipts,cash,salary_deduction; `previous_advance`: required, boolean (stored as bool); `finance_remarks`: nullable, string, max:300 (null stored as `''`); `paper_decision_date`: missing | `job_title`: required, string, max:160; `reason`: required, string, max:300; `paper_decision_date`: missing |
+| `fields` rules (today's validators) | `job_title`: required, string, max:160 | `job_title`: required, string, max:160; `notification_method`: nullable, string, max:160; `manager_opinion`: nullable, string, max:360; `substitute`: nullable, string, max:160 (null stored as `''`) | `job_title`: required, string, max:160; `reason`: required, string, max:300; `repayment_method`: required, in:receipts,cash,salary_deduction; `previous_advance`: nullable, boolean (stored as bool, `null` when unanswered; optional since Step 2); `finance_remarks`: nullable, string, max:300 (null stored as `''`); `paper_decision_date`: missing | `job_title`: required, string, max:160; `reason`: required, string, max:300; `paper_decision_date`: missing |
 | Rules today | `ExperienceCertificateController.php:34-39` (minus `praise`, `regenerated_from_id`) | `LeaveRequestFormController.php:20-30` | `AttendanceRequestFormController.php:27-42` | same file, non-advance branch |
 | Snapshot (as today) | `name_ar, national_id, department, gender, hire_date, termination_date, job_title, issued_on`; 422 when `national_id`, `department`, `gender` or `hire_date` is empty (`errors.certificate_employee_data`) | `LeaveRequestForms.php:50-55` | `AttendanceRequestForms.php:58-71` + `shows_pay` | `AttendanceRequestForms.php:58-71` |
 | Signer rule (`approval()`) | any holder of `hr_forms.approve`; returns null (no stamp line) | the leave request (locked) must be `approved`, else 409; its `decided_by` must be the actor, else 403; returns `hr` when `escalated_at` is null, else `company_manager` (`LeaveRequestForms.php:73-87`) | not signed | not signed |
-| Own-scope callers | no | no | yes, employee in reach today | no |
+| Own-scope callers | no | no | yes, employee in reach on the request's date (Step 2; was today) | no |
 | Bears pay | no | no | yes, unless the snapshot says `"shows_pay": false` | no |
 | Archived employee | allowed | allowed (as today) | allowed (as today) | allowed (as today) |
 
@@ -187,7 +187,8 @@ prefixed `fields.`; only validated keys are kept. Then, in this order:
 2. One transaction: lock the caller's `users` row (as today); a row with `(requested_by, idempotency_key)` is a replay: same type,
    same subject, `unsigned`, not deleted, and the snapshot holds every normalised field (`PdfDocument::normalise`: optional keys
    filled with `''`, casts applied) with the identical value (type-strict) → return it when it passes the read gates of `visible`
-   (else 404), else 409 `concurrency_conflict`.
+   (else 404), else 409 `concurrency_conflict`. Since Step 2 the read gate runs before the field comparison: a row the caller
+   cannot read is 404 whatever the fields, because a caller without pay has the advance finance fields normalised away.
 3. `document(type)->snapshot(subject_id, fields, scope, canViewPay(caller))`: locks the subject row, 404 when missing or out of
    reach, 403 for an advance without pay (Step 1), 422 for missing certificate data.
 4. Supersede: the latest (`serial_number desc`) `unsigned` row of the same type and subject (`subjectColumn()`), whatever its
@@ -321,6 +322,9 @@ check `select count(*) from hr_form_exports where status = 'pending'` is 0 and t
 payloads name the old class and cannot be retried with `queue:retry`; a `failed` row is retried through the API instead.
 
 ## Known gaps for task 2c (not fixed in Step 1)
+Resolved in Step 2 (task 2c, `docs/superpowers/specs/2026-11-14-uniform-hr-pdfs-step-2-design.md` section 4): the no-pay advance
+copy, reach on the request's date (create, show, download, retry, and own-scope lists that name their subject), separate pay and
+no-pay supersede chains. The leave PDF reach gap stays unreachable (leave is not own-scope).
 - Leave PDF reach: `LeaveRequestForms.php:33,65` call `EmployeeService::show($id, $scope)`, which trims fields but checks no reach.
   Unreachable in Step 1 (`ownScope()` is false); if a type ever turns own-scope, its `snapshot()` must call `isManagedBy`.
 - Manager's advance copy: the snapshot reads `$employee['pay_changes']` (`AttendanceRequestForms.php:61`), which
@@ -349,7 +353,9 @@ Each keeps today's behaviour unless the owner plan says otherwise; the rejected 
 15. `q` matches the serial or the employee through `Employee::matching` without national ID; not a new search rule.
 16. `subject_id` requires `type`; not an OR over the four subject columns.
 17. `awaiting_approval` filters by permission only, the leave decider rule shows in `actions`; not a per-type SQL hook on `PdfDocument`.
-18. Own-scope lists filter with `EmployeeReach::ids(owner, today)`; not requiring a `subject_id`.
+18. Own-scope lists filter with `EmployeeReach::ids(owner, today)`; not requiring a `subject_id`. Replaced in Step 2 (task 2c): an
+    own-scope list must name `type=advance_request` and `subject_id` (422 otherwise) and returns the subject's rows when the
+    caller reaches the employee on the request's date, else none.
 19. The certificate's fixed praise paragraph moves into the view; a stored `praise` still prints (a retry reproduces what was approved); not ignoring it.
 20. Supersede takes the latest unsigned row of the type and subject whatever its status or approval (today's leave and attendance rule).
 21. `actions.download` means `status = ready`; the file is checked only by the download itself.

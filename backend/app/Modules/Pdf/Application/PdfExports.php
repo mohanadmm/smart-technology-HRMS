@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Modules\Pdf\Application;
 
 use App\Modules\Audit\Infrastructure\AuditLog;
-use App\Modules\Employees\Application\EmployeeReach;
 use App\Modules\Employees\Application\EmployeeService;
 use App\Modules\Employees\Infrastructure\Eloquent\Employee;
 use App\Modules\Identity\Application\Rbac\AuthorizeAction;
@@ -47,7 +46,7 @@ final class PdfExports
     /**
      * A replay of the caller's idempotency key returns its row behind the read gates (checked before the subject is read again);
      * the same key with another type, subject or normalised fields, or on a deleted row, is a conflict. The new row supersedes the
-     * subject's latest unsigned row.
+     * subject's latest unsigned row of the same pay kind, so no answer names a row the caller cannot read.
      *
      * @param  array<string, mixed>  $fields  validated with document($type)->rules()
      */
@@ -57,27 +56,36 @@ final class PdfExports
             throw AuthorizationRefused::of('hr_forms.generate');
         }
         $actorId = (string) $actor->getAuthIdentifier();
+        $showsPay = $this->canViewPay($actor);
+        if ($type === PdfType::AdvanceRequest && ! $showsPay) {
+            // The finance section is not answered by a caller without pay: what they send is ignored (owner, 2026-11-14).
+            unset($fields['previous_advance'], $fields['finance_remarks']);
+        }
         $fields = self::document($type)->normalise($fields);
 
-        return DB::transaction(function () use ($type, $subjectId, $key, $fields, $actor, $actorId, $scope): stdClass {
+        return DB::transaction(function () use ($type, $subjectId, $key, $fields, $actor, $actorId, $scope, $showsPay): stdClass {
             DB::table('users')->where('id', $actorId)->lockForUpdate()->firstOrFail();
             $unsigned = fn (): Builder => $this->subjectRows($type, $subjectId)->where('stage', 'unsigned');
             // Deleted rows too: a soft-deleted row still holds its key in the unique (requested_by, idempotency_key) index.
             $existing = DB::table('hr_form_exports')->where('requested_by', $actorId)->where('idempotency_key', $key)->first();
             if ($existing !== null) {
-                if ($existing->deleted_at !== null || ! $unsigned()->where('id', $existing->id)->exists()
-                    || ! self::sameFields(json_decode((string) $existing->snapshot, true, flags: JSON_THROW_ON_ERROR), $fields)) {
+                if ($existing->deleted_at !== null || ! $unsigned()->where('id', $existing->id)->exists()) {
                     throw new ConcurrencyConflict;
                 }
+                // Before the fields: what a caller without pay sends is normalised differently, and a row they cannot read answers nothing.
                 if (! $this->shows($existing, $actor, $scope)) {
                     throw new ModelNotFoundException;
+                }
+                if (! self::sameFields(json_decode((string) $existing->snapshot, true, flags: JSON_THROW_ON_ERROR), $fields)) {
+                    throw new ConcurrencyConflict;
                 }
 
                 return $existing;
             }
 
-            [$employeeId, $snapshot] = self::document($type)->snapshot($subjectId, $fields, $scope, $this->canViewPay($actor));
-            $previous = $unsigned()->orderByDesc('serial_number')->value('id');
+            [$employeeId, $snapshot] = self::document($type)->snapshot($subjectId, $fields, $scope, $showsPay);
+            $previous = $unsigned()->whereRaw("coalesce(snapshot->>'shows_pay', 'true') = ?", [($snapshot['shows_pay'] ?? true) === false ? 'false' : 'true'])
+                ->orderByDesc('serial_number')->value('id');
             $row = $this->storeUnsigned($type, $employeeId, $actorId, $key, $snapshot, $previous === null ? null : (string) $previous);
             // The fields only: the snapshot carries the salary.
             AuditLog::record('CREATED', 'hr_form_exports', (string) $row->id, null, [
@@ -158,14 +166,19 @@ final class PdfExports
         if (! $this->canViewPay($actor)) {
             $query->whereRaw("not (form_type = ? and coalesce(snapshot->>'shows_pay', 'true') <> 'false')", [PdfType::AdvanceRequest->value]);
         }
-        if ($scope !== null) {
-            $query->whereIn('form_type', self::served(fn (PdfType $type) => $type->ownScope()))
-                ->whereIn('employee_id', EmployeeReach::ids($scope, now('Africa/Cairo')->toDateString()));
-        }
         $type = PdfType::tryFrom((string) ($filters['type'] ?? ''));
         if ($type !== null) {
             $query->where('form_type', $type->value)
                 ->when($filters['subject_id'] ?? null, fn (Builder $q, string $subject) => $q->where(self::document($type)->subjectColumn(), $subject));
+        }
+        if ($scope !== null) {
+            // An own-scope list names its subject (PdfController requires it). Its rows share one employee and request date, so the
+            // read gate of one row decides them all.
+            $query->whereIn('form_type', self::served(fn (PdfType $type) => $type->ownScope()));
+            $sample = empty($filters['subject_id']) ? null : (clone $query)->first();
+            if ($sample === null || ! $this->shows($sample, $actor, $scope)) {
+                $query->whereRaw('false');
+            }
         }
         foreach (['employee_id', 'stage', 'status'] as $column) {
             $query->when($filters[$column] ?? null, fn (Builder $q, string $value) => $q->where($column, $value));
@@ -281,15 +294,27 @@ final class PdfExports
         }
     }
 
-    /** The read gates on one row: pay, and for an own-scope caller the type's ownScope() and the employee in reach today. */
+    /** True or false for an advance (the copy with or without the salary; a snapshot older than the flag has the salary), null for the types that never carry pay. */
+    public static function showsPay(stdClass $row): ?bool
+    {
+        return $row->form_type === PdfType::AdvanceRequest->value
+            ? (json_decode((string) $row->snapshot, true, flags: JSON_THROW_ON_ERROR)['shows_pay'] ?? true) !== false
+            : null;
+    }
+
+    /** The read gates on one row: pay, and for an own-scope caller the type's ownScope() and the employee in reach on the request's date. */
     private function shows(stdClass $row, Authenticatable $actor, ?string $scope): bool
     {
-        $type = PdfType::from((string) $row->form_type);
-        $bearsPay = $type === PdfType::AdvanceRequest
-            && (json_decode((string) $row->snapshot, true, flags: JSON_THROW_ON_ERROR)['shows_pay'] ?? true) !== false;
+        if (self::showsPay($row) === true && ! $this->canViewPay($actor)) {
+            return false;
+        }
+        if ($scope === null) {
+            return true;
+        }
+        $requestDate = json_decode((string) $row->snapshot, true, flags: JSON_THROW_ON_ERROR)['request_date'] ?? null;
 
-        return (! $bearsPay || $this->canViewPay($actor))
-            && ($scope === null || ($type->ownScope() && $row->employee_id !== null && $this->employees->isManagedBy((string) $row->employee_id, $scope)));
+        return PdfType::from((string) $row->form_type)->ownScope() && $row->employee_id !== null
+            && $this->employees->isManagedBy((string) $row->employee_id, $scope, $requestDate);
     }
 
     private function holdsAll(Authenticatable $actor, string $permission): bool

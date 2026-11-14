@@ -36,9 +36,11 @@
 <div class="pair"><span>التاريخ: ____ / ____ / ____</span><span lang="en" dir="ltr">Date: ____ / ____ / ____</span></div>
 <div class="block-title">قسم الشؤون المالية والإدارية / <span lang="en" dir="ltr">Finance &amp; Administration</span></div>
 <table class="request-table">
+@if ($showsPay)
     <tr><th>راتب {{ $employee }}</th><td>@if ($salary === null) غير متاح / <span lang="en" dir="ltr">Unavailable</span> @else <bdi>{{ $salary }}</bdi> @endif</td><th lang="en" dir="ltr">Employee Salary</th></tr>
+@endif
     <tr><th>تاريخ التعيين</th><td>@if ($hireDate) {{ $hireDate['weekday'] }} الموافق <bdi>{{ $hireDate['date'] }}</bdi> @else — @endif</td><th lang="en" dir="ltr">Hiring Date</th></tr>
-    <tr><th>هل توجد سلفة سابقة؟</th><td>{{ $snapshot['previous_advance'] ? 'نعم / Yes' : 'لا / No' }}</td><th lang="en" dir="ltr">Any Previous Loan?</th></tr>
+    <tr><th>هل توجد سلفة سابقة؟</th><td>{{ $snapshot['previous_advance'] === null ? '' : ($snapshot['previous_advance'] ? 'نعم / Yes' : 'لا / No') }}</td><th lang="en" dir="ltr">Any Previous Loan?</th></tr>
     <tr><th>ملاحظات</th><td class="fill free">{{ $snapshot['finance_remarks'] }}</td><th lang="en" dir="ltr">Remarks</th></tr>
 </table>
 <div class="pair"><span>توقيع المالية <span class="hand"></span></span><span lang="en" dir="ltr">Finance Signature <span class="hand"></span></span></div>

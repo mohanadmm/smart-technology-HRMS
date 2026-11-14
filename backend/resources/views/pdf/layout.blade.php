@@ -2,6 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
+<title>{{ $title }} - الرقم المسلسل {{ $serial }}</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <style>
     @font-face { font-family: PlexArabic; src: url('{{ $font }}') format('woff2'); font-weight: 600; }

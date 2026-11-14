@@ -17,6 +17,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Enum;
 use stdClass;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
@@ -28,9 +29,13 @@ final class PdfController
 
     public function index(Request $request): JsonResponse
     {
+        $scope = RequestScope::ownerId($request);
+        $own = $scope !== null;
         $filters = $request->validate([
-            'type' => ['nullable', 'required_with:subject_id', Rule::enum(PdfType::class)],
-            'subject_id' => ['nullable', 'uuid'],
+            // An own-scope caller lists one subject of an own-scope type: reach is judged on that subject's request date.
+            'type' => [Rule::requiredIf($own), 'nullable', 'required_with:subject_id',
+                Rule::enum(PdfType::class)->when($own, fn (Enum $rule) => $rule->only(array_filter(PdfType::cases(), fn (PdfType $type) => $type->ownScope())))],
+            'subject_id' => [Rule::requiredIf($own), 'nullable', 'uuid'],
             'employee_id' => ['nullable', 'uuid'],
             'stage' => ['nullable', 'in:unsigned,signed'],
             'status' => ['nullable', 'in:pending,ready,failed'],
@@ -40,7 +45,7 @@ final class PdfController
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ], [], ['type' => __('validation.attributes.kind')]);
         $actor = self::actor($request);
-        $rows = $this->exports->list($filters, $actor, RequestScope::ownerId($request));
+        $rows = $this->exports->list($filters, $actor, $scope);
 
         return ApiEnvelope::collection($request, array_values(array_map(fn (stdClass $row) => $this->row($row, $actor), $rows->items())), [
             'page' => $rows->currentPage(), 'per_page' => $rows->perPage(), 'total' => $rows->total(),
@@ -127,6 +132,7 @@ final class PdfController
                 'approved_by', 'approved_at', 'impersonator_id', 'failure_code', 'sha256', 'size_bytes', 'created_at',
             ])),
             'file_name' => self::fileName($row),
+            'shows_pay' => PdfExports::showsPay($row),
             'actions' => $this->exports->actions($row, $actor),
         ];
     }

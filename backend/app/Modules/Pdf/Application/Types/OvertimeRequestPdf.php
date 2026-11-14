@@ -59,6 +59,7 @@ final class OvertimeRequestPdf implements PdfDocument
     {
         return ['pdf.overtime-request', [
             'plainPaper' => true,
+            'title' => 'طلب عمل إضافي',
             'workDate' => ArabicFormDate::format($snapshot['request_date']),
             'checkout' => substr($snapshot['checkout_time'], 0, 5),
             'duration' => ArabicServiceDuration::hoursAndMinutes($snapshot['minutes']),

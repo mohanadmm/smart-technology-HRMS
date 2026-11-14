@@ -60,6 +60,7 @@ final class ExperienceCertificatePdf implements PdfDocument
         $service = ArabicServiceDuration::format($start->diff($end));
 
         return ['pdf.experience-certificate', [
+            'title' => 'شهادة خبرة',
             'footer' => FilePdfAssets::asset('letterhead/certificate-footer.jpg', 'image/jpeg'),
             'letterhead' => FilePdfAssets::asset('letterhead/certificate-letterhead.png', 'image/png'),
             'logo' => FilePdfAssets::asset('letterhead/logo.png', 'image/png'),

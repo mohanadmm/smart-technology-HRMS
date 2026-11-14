@@ -5,15 +5,20 @@ output="${1:?Pass a directory for the synthetic PDFs}"
 mkdir -p "$output"
 image="${HRMS_PDF_IMAGE:-hrms-php-forms}"
 form="${HRMS_SMOKE_FORM:-experience-certificate}"
+absent=()
 case "$form" in
   overtime-request) phrases=('سارة مثال للاختبار' 'طلب عمل إضافي' 'Overtime Request' 'Checkout Time' '17:35' 'ساعة واحدة');;
   advance-request) phrases=('سارة مثال للاختبار' 'طلب سلفة' 'Employee Salary' '9000.00' '250.50' 'General Manager');;
+  advance-request-no-pay) phrases=('سارة مثال للاختبار' 'طلب سلفة' '250.50' 'Monthly Salary Deduction' 'من الراتب' 'General Manager')
+    absent=('راتب الموظف' 'راتب الموظفة' 'Employee Salary' 'غير متاح' 'Unavailable' '9000' 'Synthetic finance remarks');;
   leave-request) phrases=('سارة مثال للاختبار' 'نموذج طلب إجازة' 'توقيع مدير الشركة');;
   experience-certificate) phrases=('سارة مثال للاختبار' 'شهادة خبرة' 'الشركة');;
   *) printf 'Unknown form: %s\n' "$form" >&2; exit 1;;
 esac
 pdftotext="${PDFTOTEXT:-pdftotext}"
 command -v "$pdftotext" >/dev/null || { echo 'Install Poppler or set PDFTOTEXT to its pdftotext executable.' >&2; exit 1; }
+pdfinfo="${PDFINFO:-pdfinfo}"
+command -v "$pdfinfo" >/dev/null || { echo 'Install Poppler or set PDFINFO to its pdfinfo executable.' >&2; exit 1; }
 suffix=hrms-render-smoke-$$
 net=$suffix-net
 db=$suffix-db
@@ -30,7 +35,8 @@ unsigned=$(docker exec "$app" php tests/Smoke/render-hr-form.php setup)
 docker exec "$app" php artisan queue:work redis --queue=pdf --once --tries=3 -v
 docker exec "$app" php tests/Smoke/render-hr-form.php export "$unsigned" > "$output/unsigned.pdf"
 pdfs=("$output/unsigned.pdf")
-if [[ "$form" != advance-request && "$form" != overtime-request ]]; then
+serial=$(docker exec "$db" psql -U hrms -d hrms_test -tAc "select serial_number from hr_form_exports where id = '$unsigned'")
+if [[ "$form" != advance-request* && "$form" != overtime-request ]]; then
   signed=$(docker exec "$app" php tests/Smoke/render-hr-form.php approve "$unsigned")
   docker exec "$app" php artisan queue:work redis --queue=pdf --once --tries=3 -v
   docker exec "$app" php tests/Smoke/render-hr-form.php export "$signed" > "$output/signed.pdf"
@@ -48,6 +54,17 @@ for pdf in "${pdfs[@]}"; do
       exit 1
     fi
   done
+  for phrase in ${absent[@]+"${absent[@]}"}; do
+    if grep -Fq -- "$phrase" <<< "$text"; then
+      printf 'Unexpected text in %s: %s\n' "$pdf" "$phrase" >&2
+      exit 1
+    fi
+  done
+  title=$("$pdfinfo" -enc UTF-8 "$pdf" | sed -n 's/^Title: *//p')
+  if [[ "$title" == index.html || "$title" != *"الرقم المسلسل $serial" ]]; then
+    printf 'Unexpected PDF title in %s: %s\n' "$pdf" "$title" >&2
+    exit 1
+  fi
 done
-echo 'PDF text extraction verified.'
+echo 'PDF text extraction and title verified.'
 docker exec "$db" psql -U hrms -d hrms_test -c 'select stage, serial_number, status, size_bytes from hr_form_exports order by stage;'

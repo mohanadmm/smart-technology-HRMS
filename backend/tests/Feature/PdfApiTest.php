@@ -6,6 +6,7 @@ use App\Modules\Identity\Infrastructure\Eloquent\Permission;
 use App\Modules\Identity\Infrastructure\Eloquent\Role;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
 use App\Modules\Pdf\Application\RenderPdf;
+use App\Modules\Pdf\Domain\Contracts\PdfRendererInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Route as RouteDefinition;
 use Illuminate\Support\Facades\Bus;
@@ -77,7 +78,7 @@ final class PdfApiTest extends TestCase
         $routes = [['GET', self::API], ['POST', self::API], ['GET', self::API."/{$id}"], ['GET', self::API."/{$id}/download"],
             ['POST', self::API."/{$id}/approve"], ['POST', self::API."/{$id}/retry"]];
 
-        $this->signIn('manager');
+        $this->actingAs($this->holder('site.view.all'), 'api');
         foreach ($routes as [$method, $uri]) {
             $this->json($method, $uri)->assertForbidden()->assertJsonPath('error.code', 'permission_denied');
         }
@@ -122,6 +123,27 @@ final class PdfApiTest extends TestCase
             json_decode($audit($second), true));
         $this->assertStringNotContainsString('salary', $audit($second));
         $this->assertStringNotContainsString('8765', $audit($second));
+    }
+
+    /** The PDF viewer's toolbar shows the document title: the form's name and serial, not the renderer's temp file name. */
+    #[DataProvider('types')]
+    public function test_the_rendered_html_is_titled_with_the_form_name_and_serial(string $type): void
+    {
+        $this->signIn('hr');
+        [$subject, $fields] = $this->subject($type);
+        $this->create($type, $subject, $fields)->assertAccepted();
+        $id = $this->create($type, $subject, $fields)->assertAccepted()->assertJsonPath('data.serial_number', 2)->json('data.id');
+        $html = '';
+        $renderer = $this->createMock(PdfRendererInterface::class);
+        $renderer->expects($this->once())->method('pdf')->willReturnCallback(function (string $page) use (&$html): string {
+            $html = $page;
+
+            return '%PDF-1.7 synthetic';
+        });
+        (new RenderPdf($id))->handle($renderer);
+
+        $name = ['experience_certificate' => 'شهادة خبرة', 'leave_request' => 'نموذج طلب إجازة', 'advance_request' => 'طلب سلفة', 'overtime_request' => 'طلب عمل إضافي'][$type];
+        $this->assertStringContainsString("<title>{$name} - الرقم المسلسل 2</title>", $html);
     }
 
     public function test_a_replay_answers_before_the_subject_is_read_again(): void
@@ -227,7 +249,7 @@ final class PdfApiTest extends TestCase
         $this->getJson(self::API."/{$advance}")->assertNotFound()->assertJsonPath('error.code', 'not_found');
         $this->get(self::API."/{$advance}/download")->assertNotFound();
         $this->postJson(self::API."/{$advance}/retry")->assertNotFound();
-        $this->create('advance_request', $request, $fields)->assertForbidden()->assertJsonPath('error.code', 'permission_denied');
+        $this->create('advance_request', $request, $fields)->assertAccepted()->assertJsonPath('data.shows_pay', false)->assertJsonPath('data.regenerated_from_id', null);
         $this->get(self::API."/{$certificate}/download")->assertOk()
             ->assertHeader('Content-Type', 'application/pdf')->assertHeader('X-Content-Type-Options', 'nosniff')
             ->assertDownload('experience-certificate-1-unsigned.pdf');
@@ -259,7 +281,8 @@ final class PdfApiTest extends TestCase
         $key = (string) Str::uuid7();
         $own = $this->create('advance_request', $mine, $fields, $key)->assertAccepted()->json('data.id');
 
-        $this->getJson(self::API)->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $own);
+        $this->getJson(self::API."?type=advance_request&subject_id={$mine}")->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $own);
+        $this->getJson(self::API."?type=advance_request&subject_id={$theirs}")->assertOk()->assertJsonCount(0, 'data');
         foreach ([$hidden, $overtime, $certificate] as $id) {
             $this->getJson(self::API."/{$id}")->assertNotFound();
         }

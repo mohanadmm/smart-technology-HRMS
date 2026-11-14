@@ -66,7 +66,7 @@ final class HrLeaveRequestFormTest extends TestCase
         $this->postJson("/api/v1/hr-form-exports/{$id}/approve")->assertConflict();
         $this->get("/api/v1/hr-form-exports/{$id}/download")->assertOk();
         $this->signIn('manager');
-        $this->get("/api/v1/hr-form-exports/{$id}/download")->assertForbidden();
+        $this->get("/api/v1/hr-form-exports/{$id}/download")->assertNotFound();
         $this->actingAs($hr, 'api');
         $second = $this->generate($request);
         $this->assertDatabaseHas('hr_form_exports', ['id' => $second, 'serial_number' => 2, 'regenerated_from_id' => $id]);

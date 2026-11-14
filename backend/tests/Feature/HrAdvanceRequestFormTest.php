@@ -68,20 +68,20 @@ final class HrAdvanceRequestFormTest extends TestCase
 
         $this->actingAs($this->manager, 'api');
         $this->getJson("/api/v1/employees/{$this->employeeId}")->assertOk()->assertJsonMissingPath('data.current_pay');
-        $this->generate($request)->assertForbidden();
-        $this->getJson("/api/v1/hr-form-exports/{$export}")->assertForbidden();
-        $this->getJson("/api/v1/hr-form-exports/{$export}/download")->assertForbidden();
+        $managerCopy = $this->generate($request)->assertAccepted()->assertJsonPath('data.shows_pay', false)->json('data.id');
+        $this->getJson("/api/v1/hr-form-exports/{$export}")->assertNotFound();
+        $this->getJson("/api/v1/hr-form-exports/{$export}/download")->assertNotFound();
 
         $role = Role::create(['slug' => 'synthetic-forms-own', 'name' => 'Synthetic', 'name_ar' => 'اختبار']);
         $role->permissions()->attach(Permission::where(fn ($q) => $q->where('resource', 'hr_forms')->whereIn('action', ['generate', 'view']))
             ->orWhere(fn ($q) => $q->where('resource', 'employee')->where('action', 'view')->where('scope', 'own'))->pluck('id'));
         $this->manager->update(['role_id' => $role->id]);
         $this->actingAs($this->manager, 'api');
-        $this->generate($request)->assertForbidden();
+        $copy = $this->generate($request)->assertAccepted()->assertJsonPath('data.shows_pay', false)->assertJsonPath('data.regenerated_from_id', $managerCopy)->json('data.id');
         $this->getJson("/api/v1/hr-form-exports/{$export}")->assertNotFound();
         $this->getJson("/api/v1/hr-form-exports/{$export}/download")->assertNotFound();
-        $this->getJson("/api/v1/hr-form-exports?type=advance_request&subject_id={$request}")->assertOk()->assertJsonCount(0, 'data');
-        $this->getJson("/api/v1/hr-form-exports?employee_id={$this->employeeId}")->assertOk()->assertJsonCount(0, 'data');
+        $this->assertSame([$copy, $managerCopy], array_column($this->getJson("/api/v1/hr-form-exports?type=advance_request&subject_id={$request}")->assertOk()->json('data'), 'id'));
+        $this->assertSame([$copy, $managerCopy], array_column($this->getJson("/api/v1/hr-form-exports?employee_id={$this->employeeId}")->assertOk()->json('data'), 'id'));
     }
 
     public function test_shared_export_routes_allow_certificate_download_without_pay_permission(): void
