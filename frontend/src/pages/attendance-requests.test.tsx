@@ -66,19 +66,19 @@ test.each([
   ], { path: '/attendance-requests?request=request1' })
 
   const review = within(await screen.findByRole('dialog'))
+  await review.findByText('لم يُنشأ ملف بعد') // the panel has loaded its list
   if (type !== 'overtime') {
     expect(review.queryByText('نموذج طلب عمل إضافي')).toBeNull()
     return
   }
-  expect(review.getByText('الطباعة لا تغيّر الحضور أو مدخلات الرواتب أو الطلب.')).toBeInTheDocument()
   if (!canGenerate) {
-    expect(review.queryByRole('button', { name: 'إنشاء الملف' })).toBeNull()
+    expect(review.queryByRole('button', { name: 'إنشاء' })).toBeNull()
     return
   }
 
   const title = review.getByLabelText('المسمى الوظيفي')
   const reason = review.getByLabelText('سبب العمل الإضافي')
-  const submit = review.getByRole('button', { name: 'إنشاء الملف' })
+  const submit = review.getByRole('button', { name: 'إنشاء' })
   expect(title).toBeRequired()
   expect(reason).toBeRequired()
   await user.click(submit)

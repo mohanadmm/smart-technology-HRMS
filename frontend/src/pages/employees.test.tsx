@@ -1144,3 +1144,18 @@ test('the documents tab needs employee_document.view', async () => {
   renderWithAuth(<EmployeeDetailRoute id="e1" tab="documents" />, ['employee.view.all', 'employee_document.view.all'], { router: false })
   expect(await screen.findByRole('tab', { name: 'المستندات' })).toHaveAttribute('aria-selected', 'true')
 })
+
+test('the experience certificate opens to HR forms at All only, and an archived employee keeps its Generate form', async () => {
+  mockFetch({
+    'GET /api/v1/employees/e1': () => json(200, { data: { ...emp, archived: true } }),
+    'GET /api/v1/residences': residences,
+    'GET /api/v1/hr-form-exports': () => json(200, { data: [], meta: { pagination } }),
+  })
+  const { unmount } = renderWithAuth(<EmployeeDetailRoute id="e1" tab="documents" />, ['employee.view.own', 'hr_forms.view.own', 'hr_forms.generate.own'], { router: false })
+  expect(await screen.findByRole('tab', { name: 'البيانات' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.queryByRole('tab', { name: 'المستندات' })).toBeNull()
+  unmount()
+  renderWithAuth(<EmployeeDetailRoute id="e1" tab="documents" />, ['employee.view.all', 'hr_forms.view.all', 'hr_forms.generate.all'], { router: false })
+  expect(await screen.findByRole('heading', { name: 'شهادة خبرة' })).toBeInTheDocument()
+  expect(await screen.findByRole('button', { name: 'إنشاء' })).toBeEnabled()
+})

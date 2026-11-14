@@ -25,7 +25,7 @@
 ## Review Focus
 
 1. **A phone browser has no built-in PDF viewer** (`navigator.pdfViewerEnabled` is false): View must show the Open / Download link, never an empty frame. Pinned in Task 1 (kept test) and Task 3 (panel test opening the viewer with the flag off).
-2. **Double click on Generate, or a retry after a network error:** one row, not two. Pinned in Task 3 (the same `idempotency_key` is sent until the form values change).
+2. **Double click on Generate, or a retry after a network error:** one row, not two. Pinned in Task 3 (the same `idempotency_key` is sent again after a failed or unanswered request; Generate is disabled while one is in flight).
 3. **The dialog closes while a row is pending:** polling stops; reopening shows the current state. Pinned in Task 3 (fake timers: no request after unmount).
 4. **The advance amount changes after its PDF was made:** the old file still shows the old amount. The panel says to generate a new copy. Pinned in Task 5 (the hint renders on the advance panel).
 5. **HR and a manager both generate for the same request:** neither copy hides the other; HR's Generate is not blocked by the manager's pending row. Pinned in Task 3 (grouping test) and Task 4 (separate supersede chains).
@@ -87,7 +87,7 @@
   - a `ready` row with `actions: ['download','approve']`: Approve posts to `/hr-form-exports/{id}/approve`.
   - a `failed` row with `actions: []`: no Retry; with `['retry']`: Retry posts to `…/retry`.
   - a `ready` row whose `actions` is `[]` shows no button at all (buttons never come from `status`).
-  - Generate posts `{ type, subject_id, idempotency_key, fields }`; a second submit with unchanged values sends the same key; after a field changes, a new key.
+  - Generate posts `{ type, subject_id, idempotency_key, fields }`; after a failed or unanswered request a second submit with unchanged values sends the same key; after a create or a changed field, a new key.
   - View with `navigator.pdfViewerEnabled = false` shows the Open link, not an iframe.
   - grouping: rows `[{shows_pay:false, serial 3}, {shows_pay:true, serial 2}, {shows_pay:true, serial 1}]` render serial 2 and serial 3 as current (pay copy first, serial 3 with the no-pay badge) and serial 1 under the earlier-copies disclosure; a `pending` no-pay row does not disable Generate for a caller with `employee.view.all`.
   - `canUsePdf`: a caller with only `hr_forms.view.own` and `hr_forms.generate.own` gets `true` for `advance_request` and `false` for the other three; the panel renders nothing when view is refused and no form when generate is refused.

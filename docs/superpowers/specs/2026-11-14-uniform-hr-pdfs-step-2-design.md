@@ -67,7 +67,8 @@ holds `hr_forms.view` at any scope and the type is own-scope. The Generate form 
 
 Data: `GET /hr-form-exports?type=&subject_id=&per_page=100` through `useApi(..., { fresh: true })`; refetch every 3 s
 while any row is `pending`, never otherwise. Generate posts `{ type, subject_id, idempotency_key, fields }`; the key is
-kept until the form's values change, so a double click or a retry after a network error replays instead of duplicating.
+kept while a request fails or goes unanswered, so a double click or a retry after a network error replays instead of
+duplicating; a created copy or a changed value takes a new key, so «إنشاء نسخة جديدة» with the same values makes a new copy.
 
 What the user sees (the newest row first; the server orders signed above its unsigned twin):
 

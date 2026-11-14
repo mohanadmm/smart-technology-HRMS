@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { ErrorBanner } from '@/components/form'
+import { download } from '@/components/PdfPanel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { apiBlob } from '@/lib/api'
@@ -12,89 +13,6 @@ const exportsPath = '/hr-form-exports'
 const signaturePath = '/me/hr-signature'
 type ExportResult = { id: string }
 type Signature = { signature: { version: number } | null }
-
-export async function download(id: string, fileName: string) {
-  const url = URL.createObjectURL(await apiBlob(`${exportsPath}/${id}/download`))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  link.click()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-
-export function CertificateDocuments({ employee }: { employee: string }) {
-  const { t } = useTranslation()
-  const { can } = useAuth()
-  const [title, setTitle] = useState('')
-  const [page, setPage] = useState(1)
-  const [error, setError] = useState<Error>()
-  const [busy, setBusy] = useState(false)
-  const request = useRef<{ payload: string; key: string } | null>(null)
-  const saving = useRef(false)
-  const list = useList(`${exportsPath}?type=experience_certificate&subject_id=${employee}&page=${page}`, { refetchInterval: 2500 })
-  const save = useSave()
-
-  async function generate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (saving.current || !title.trim()) return
-    saving.current = true
-    setBusy(true)
-    setError(undefined)
-    const payload = JSON.stringify([employee, title.trim()])
-    if (request.current?.payload !== payload) request.current = { payload, key: crypto.randomUUID() }
-    try {
-      await save(exportsPath, {
-        body: { type: 'experience_certificate', subject_id: employee, idempotency_key: request.current.key, fields: { job_title: title.trim() } },
-      })
-      request.current = null
-      setTitle('')
-      setPage(1)
-    } catch (err) {
-      setError(err as Error)
-    } finally {
-      saving.current = false
-      setBusy(false)
-    }
-  }
-
-  return (
-    <section className="space-y-4 py-4">
-      <h2 className="text-lg font-semibold">{t('hrForms.certificate')}</h2>
-      {can('hr_forms.generate') && (
-        <form onSubmit={generate} className="max-w-2xl space-y-3">
-          <label className="block space-y-1">
-            <span>{t('hrForms.jobTitle')}</span>
-            <Input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={160} required />
-          </label>
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={busy}>{t('hrForms.generate')}</Button>
-          </div>
-        </form>
-      )}
-      <ErrorBanner shown={[]} err={error ?? list.err} />
-      {!list.loading && !list.err && list.rows.length === 0 && <p>{t('hrForms.empty')}</p>}
-      <ul className="space-y-2">
-        {list.rows.map((row) => {
-          const id = String(row.id)
-          const serial = String(row.serial_number)
-          const stage = String(row.stage)
-          return (
-            <li key={id} className="flex flex-wrap items-center gap-2 rounded border p-3">
-              <span className="me-auto">{t('hrForms.serial', { serial })} · {t(`hrForms.${stage}`)} · {t(`hrForms.${row.status}`)}
-                {row.impersonator_id ? ` · ${t('hrForms.approvedViaViewAs')}` : null}
-              </span>
-              {row.actions.includes('download') && <Button variant="outline" onClick={() => void download(id, row.file_name).catch(setError)}>{t('hrForms.download')}</Button>}
-              {row.actions.includes('retry') && (
-                <Button variant="outline" onClick={() => void save(`${exportsPath}/${id}/retry`).catch(setError)}>{t('hrForms.retry')}</Button>
-              )}
-            </li>
-          )
-        })}
-      </ul>
-      <ExportPages page={page} total={list.total} setPage={setPage} />
-    </section>
-  )
-}
 
 export function ExportPages({ page, total, setPage }: { page: number; total: number; setPage: (page: number) => void }) {
   const { t } = useTranslation()

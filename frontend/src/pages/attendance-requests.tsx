@@ -5,14 +5,13 @@ import { useSearchParams } from 'react-router-dom'
 import { AdvancePrint } from '@/components/AdvancePrint'
 import { DataList } from '@/components/common/DataList'
 import { PageHeader } from '@/components/common/PageHeader'
+import { PdfPanel } from '@/components/PdfPanel'
 import { cairoToday, ErrorBanner, localName, useCairoTime, useMoney } from '@/components/form'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input, Textarea } from '@/components/ui/input'
 import { useApi, useList, useSave } from '@/lib/query'
-import { useAuth } from '@/lib/auth'
-import { AttendanceRequestPdf } from './attendance-request-pdf'
 
 type RequestRow = {
   id: string
@@ -113,7 +112,6 @@ function RequestDialog({ row, value, close }: { row: RequestRow; value: string |
   const [reason, setReason] = useState('')
   const [paperDate, setPaperDate] = useState('')
   const time = useCairoTime()
-  const { can } = useAuth()
   const name = row.employee ? localName(row.employee, i18n.language) : '—'
   const site = row.site ? localName(row.site, i18n.language) : '—'
   const decide = async (action: 'approve' | 'refuse') => {
@@ -153,7 +151,7 @@ function RequestDialog({ row, value, close }: { row: RequestRow; value: string |
               <div><dt>{t('attendanceRequests.paperDate')}</dt><dd><bdi>{row.paper_decision_date ?? '—'}</bdi></dd></div>
             </dl>
           )}
-          {row.employee && (row.type === 'overtime' || can('employee.view.all')) && (can('hr_forms.generate') || can('hr_forms.view')) && <AttendanceRequestPdf id={row.id} type={row.type} />}
+          {row.employee && <PdfPanel type={`${row.type}_request`} subject={row.id} />}
           {refusing && (
             <label className="grid gap-1">
               {t('attendanceRequests.refusalReason')}
