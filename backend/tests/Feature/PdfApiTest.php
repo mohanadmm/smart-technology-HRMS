@@ -8,13 +8,17 @@ use App\Modules\Identity\Infrastructure\Eloquent\User;
 use App\Modules\Pdf\Application\RenderPdf;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Route as RouteDefinition;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
+use RuntimeException;
 use Tests\AttendanceFixtures;
 use Tests\TestCase;
 
@@ -195,6 +199,18 @@ final class PdfApiTest extends TestCase
         $this->assertArrayNotHasKey('extra', $snapshot);
     }
 
+    public function test_an_unknown_type_is_reported_as_the_type_field(): void
+    {
+        $this->signIn('hr');
+        [$request, $fields] = $this->subject('advance_request');
+        $message = __('validation.enum', ['attribute' => __('validation.attributes.kind', [], 'ar')], 'ar');
+
+        $this->create('end_of_service', $request, $fields, headers: ['Accept-Language' => 'ar'])->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'type')->assertJsonPath('error.details.0.message', $message);
+        $this->getJson(self::API.'?type=end_of_service', ['Accept-Language' => 'ar'])->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'type')->assertJsonPath('error.details.0.message', $message);
+    }
+
     public function test_advance_rows_are_hidden_from_a_caller_without_pay(): void
     {
         $this->signIn('hr');
@@ -328,6 +344,20 @@ final class PdfApiTest extends TestCase
         }
     }
 
+    public function test_a_create_whose_dispatch_fails_leaves_a_failed_row_with_retry(): void
+    {
+        $this->signIn('hr');
+        Exceptions::fake();
+        Bus::shouldReceive('dispatch')->once()->with(Mockery::type(RenderPdf::class))->andThrow(new RuntimeException('Connection refused'));
+        [$employee, $fields] = $this->subject('experience_certificate');
+
+        $id = $this->create('experience_certificate', $employee, $fields)->assertAccepted()->assertJsonPath('data.status', 'failed')->json('data.id');
+        $this->getJson(self::API."/{$id}")->assertOk()->assertJsonPath('data.status', 'failed')
+            ->assertJsonPath('data.failure_code', 'render_failed')->assertJsonPath('data.actions', ['retry']);
+        $this->assertSame(0, DB::table('hr_form_exports')->where('status', 'pending')->count());
+        Exceptions::assertReported(fn (RuntimeException $e) => $e->getMessage() === 'Connection refused');
+    }
+
     public function test_a_retry_while_viewing_as_records_the_developer(): void
     {
         $hr = $this->signIn('hr');
@@ -409,6 +439,20 @@ final class PdfApiTest extends TestCase
         }
         $this->signIn('ceo');
         $this->assertSame([$found, $newer, $leave], $ids('?awaiting_approval=1'));
+    }
+
+    public function test_a_signed_row_lists_before_its_unsigned_twin(): void
+    {
+        $this->signIn('hr');
+        [$employee, $fields] = $this->subject('experience_certificate');
+        $certificate = $this->create('experience_certificate', $employee, $fields)->json('data.id');
+        $this->settle($certificate);
+        $ceo = $this->signIn('ceo');
+        $this->signature($ceo->id);
+        $this->postJson(self::API."/{$certificate}/approve")->assertAccepted();
+
+        $rows = $this->getJson(self::API."?type=experience_certificate&subject_id={$employee}")->assertOk()->json('data');
+        $this->assertSame(['signed', 'unsigned'], array_column($rows, 'stage'));
     }
 
     public function test_rows_of_deleted_types_are_absent_and_not_found(): void

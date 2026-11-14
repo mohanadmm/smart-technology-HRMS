@@ -183,7 +183,7 @@ final class PdfExports
                 ->when(preg_match('/^(0|[1-9]\d{0,8})$/D', $search) === 1, fn (Builder $q) => $q->orWhere('serial_number', (int) $search)));
         }
 
-        return $query->orderByDesc('serial_number')->orderByDesc('stage')->orderByDesc('id')
+        return $query->orderByDesc('serial_number')->orderBy('stage')->orderByDesc('id')
             ->paginate((int) ($filters['per_page'] ?? 25), page: (int) ($filters['page'] ?? 1));
     }
 
@@ -218,6 +218,16 @@ final class PdfExports
         }
 
         return $actions;
+    }
+
+    /** A row whose render job never reached the queue fails as a failed render does, so Retry appears; a row the worker already settled is kept. */
+    public function dispatchFailed(string $id): stdClass
+    {
+        DB::table('hr_form_exports')->where('id', $id)->where('status', 'pending')->update([
+            'status' => 'failed', 'failure_code' => 'render_failed', 'updated_at' => now(),
+        ]);
+
+        return $this->find($id);
     }
 
     public function find(string $id, bool $lock = false): stdClass

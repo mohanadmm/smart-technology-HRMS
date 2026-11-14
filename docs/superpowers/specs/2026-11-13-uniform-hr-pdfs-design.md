@@ -138,7 +138,9 @@ decide routes, stay). The signature routes (lines 49-53) are unchanged.
 
 `permission:a,b` passes when the caller holds **any** of them (`Identity/Presentation/AuthorizePermission.php:29-36`), so approve
 and retry re-check the type's own permission inside the use case (below). After each use case the controller dispatches
-`RenderPdf` when the returned row is `pending` (today's `ExperienceCertificateController::queue`).
+`RenderPdf` when the returned row is `pending` (today's `ExperienceCertificateController::queue`). Since Step 2: when that
+dispatch throws (Redis down), the controller reports it and the row becomes `failed` / `render_failed` if still `pending`, so
+Retry appears instead of a row that stays `pending` with no job.
 
 ### The row (every JSON answer but the download)
 ```json
@@ -174,7 +176,7 @@ Query, all optional: `type` (one of the four; required with `subject_id`), `subj
   types whose approve permission the caller holds at All. The leave signer rule is not in the filter; `actions` tells.
 - `q`: `serial_number = q` when q is digits, or `employee_id IN` the employees matching q through the `Employee::matching` scope
   (`name_ar`/`name_en` ilike, `code` when digits; no national ID).
-- Order: `serial_number desc, stage desc, id desc` (the leave panel's `latest`, `leave-request-pdf.tsx:52`, relies on it).
+- Order: `serial_number desc, stage asc, id desc` (a signed row lists before its unsigned twin).
 - Answer: `ApiEnvelope::collection` with `meta.pagination` (`page, per_page, total, total_pages, has_next_page, has_previous_page`).
 
 ### `POST hr-form-exports` (create)
@@ -342,7 +344,7 @@ Each keeps today's behaviour unless the owner plan says otherwise; the rejected 
 10. `snapshot()` returns `[employee_id, snapshot]`; not a second lookup of the subject's employee in `PdfExports`.
 11. The `CREATED` audit holds `form_type, serial_number, stage, regenerated_from_id, fields`; not the snapshot.
 12. `type` replaces `form_type` in the JSON (the column keeps its name); not both keys.
-13. Every list orders `serial_number desc, stage desc, id desc`; not `created_at desc` (today's employee history).
+13. Every list orders `serial_number desc, stage asc, id desc` (signed above its unsigned twin); not `created_at desc` (today's employee history).
 14. `per_page` defaults to 25 (today's history and `ExportPages`), max 100; the two request panels ask for 100 (their lists were unpaginated); not the project's usual 20.
 15. `q` matches the serial or the employee through `Employee::matching` without national ID; not a new search rule.
 16. `subject_id` requires `type`; not an OR over the four subject columns.

@@ -14,10 +14,12 @@ use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use stdClass;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 /** The one HR-form API: every PdfType through `hr-form-exports`. */
 final class PdfController
@@ -36,7 +38,7 @@ final class PdfController
             'q' => ['nullable', 'string', 'max:100'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-        ]);
+        ], [], ['type' => __('validation.attributes.kind')]);
         $actor = self::actor($request);
         $rows = $this->exports->list($filters, $actor, RequestScope::ownerId($request));
 
@@ -54,7 +56,7 @@ final class PdfController
             'subject_id' => ['required', 'uuid'],
             'idempotency_key' => ['required', 'uuid'],
             'fields' => ['required', 'array'],
-        ]);
+        ], [], ['type' => __('validation.attributes.kind')]);
         $type = PdfType::from($data['type']);
         $fields = $request->validate(Arr::prependKeysWith(PdfExports::document($type)->rules(), 'fields.'), [
             'fields.paper_decision_date.missing' => __('errors.advance_paper_date_pending'),
@@ -104,7 +106,12 @@ final class PdfController
     private function queued(stdClass $row, Authenticatable $actor): array
     {
         if ($row->status === 'pending') {
-            RenderPdf::dispatch((string) $row->id);
+            try {
+                Bus::dispatch(new RenderPdf((string) $row->id));
+            } catch (Throwable $e) {
+                report($e);
+                $row = $this->exports->dispatchFailed((string) $row->id);
+            }
         }
 
         return $this->row($row, $actor);
