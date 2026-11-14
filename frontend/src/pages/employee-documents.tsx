@@ -2,15 +2,15 @@ import { FileText, Upload } from 'lucide-react'
 import { Fragment, useEffect, useState } from 'react'
 import type { TFunction } from 'i18next'
 import { Trans, useTranslation } from 'react-i18next'
+import { FileViewer } from '@/components/FileViewer'
 import { DataList } from '@/components/common/DataList'
 import { RowActions } from '@/components/common/RowActions'
 import { cairoToday, ErrorBanner, Field, FormDialog, intlLocale, type Row, SelectField, TextField, toErrs, useForm } from '@/components/form'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Skeleton } from '@/components/ui/misc'
-import { ApiError, apiBlob } from '@/lib/api'
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { useSave } from '@/lib/query'
 import { cn } from '@/lib/utils'
@@ -157,7 +157,7 @@ export function Documents({ emp, readOnly = false }: { emp: Row; readOnly?: bool
         </p>
       )}
       <UploadDialog empId={emp.id} preset={preset} onClose={() => setPreset(null)} />
-      <Viewer empId={emp.id} doc={viewing} onClose={() => setViewing(null)} />
+      {viewing && <DocumentViewer empId={emp.id} doc={viewing} onClose={() => setViewing(null)} />}
       {dlg?.type === 'edit' && (
         <FormDialog
           title={t('document.editDetails')}
@@ -322,81 +322,25 @@ function UploadForm({ empId, preset, onClose, busy, setBusy }: { empId: string; 
   )
 }
 
-/** Shows one document's file in the app: photos as an img, PDFs in an iframe where the browser can, otherwise an Open link; always a Download link. */
-function Viewer({ empId, doc, onClose }: { empId: string; doc: Doc | null; onClose: () => void }) {
+/** One document's file in the shared viewer: the stored mime, allow-listed, and the server's download name. */
+function DocumentViewer({ empId, doc, onClose }: { empId: string; doc: Doc; onClose: () => void }) {
   const { t, i18n } = useTranslation()
   const date = new Intl.DateTimeFormat(intlLocale(i18n.language), { dateStyle: 'medium', timeZone: 'Africa/Cairo' })
-  return (
-    <Dialog open={doc !== null} onOpenChange={(o) => !o && onClose()}>
-      {/* full screen under sm, below the notch (the close button sits at the top) */}
-      <DialogContent className="top-[env(safe-area-inset-top)] max-h-none rounded-none sm:h-[85vh] sm:max-h-none sm:max-w-4xl">
-        <DialogHeader>
-          <DialogTitle>{doc && kindName(t, doc.kind)}</DialogTitle>
-          <DialogDescription className="[overflow-wrap:anywhere]">
-            {/* the names are React children, never parsed as markup; <bdi> keeps a Latin name from reordering the Arabic */}
-            {doc && <Trans i18nKey="document.uploadedBy" values={{ date: doc.created_at ? date.format(new Date(doc.created_at)) : '—' }} components={{ file: <bdi>{doc.original_name}</bdi>, name: <bdi>{doc.uploader_name ?? '—'}</bdi> }} />}
-          </DialogDescription>
-        </DialogHeader>
-        {doc && <ViewerFile key={doc.id} empId={empId} doc={doc} />}
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-/** The dialog's body: mounted only while open, so the object URL lives exactly as long as the dialog. */
-function ViewerFile({ empId, doc }: { empId: string; doc: Doc }) {
-  const { t } = useTranslation()
   const kind = kindName(t, doc.kind)
-  const [url, setUrl] = useState<string>()
-  const [failed, setFailed] = useState(false)
-  const [tries, setTries] = useState(0)
   // the Blob's type comes from the stored mime, allow-listed; never from the response, so a file can't turn itself into HTML
   const type = doc.mime && Object.hasOwn(EXT, doc.mime) ? doc.mime : 'application/octet-stream'
   // as the server's file route: the base name (or "document") plus the extension of the stored type, so x.html stored as a PDF saves as x.pdf
-  const name = (doc.original_name?.includes('.') ? doc.original_name.slice(0, doc.original_name.lastIndexOf('.')) : doc.original_name) || 'document'
-
-  useEffect(() => {
-    let made: string | undefined
-    let live = true
-    setFailed(false)
-    apiBlob(`/employees/${empId}/documents/${doc.id}/file`).then(
-      (b) => live && setUrl((made = URL.createObjectURL(new Blob([b], { type })))),
-      () => live && setFailed(true),
-    )
-    return () => {
-      live = false
-      if (made) URL.revokeObjectURL(made)
-    }
-  }, [empId, doc.id, type, tries])
-
-  const center = 'm-auto grid justify-items-center gap-3 text-center'
+  const base = (doc.original_name?.includes('.') ? doc.original_name.slice(0, doc.original_name.lastIndexOf('.')) : doc.original_name) || 'document'
   return (
-    <>
-      <DialogBody className="flex min-h-0 flex-col p-2 sm:p-4">
-        {failed ? (
-          <div className={center}>
-            <p className="text-sm text-muted-foreground">{t('document.loadFailed')}</p>
-            <Button type="button" variant="outline" onClick={() => setTries((n) => n + 1)}>{t('document.retry')}</Button>
-          </div>
-        ) : !url ? (
-          <Skeleton aria-busy="true" aria-label={t('auth.loading')} className="min-h-64 flex-1" />
-        ) : type.startsWith('image/') ? (
-          <img src={url} alt={t('document.imageAlt', { kind, name: doc.original_name })} className="min-h-0 w-full flex-1 object-contain" />
-        ) : type === 'application/pdf' && navigator.pdfViewerEnabled ? (
-          // no sandbox: Chromium refuses to show a PDF inside one
-          <iframe src={url} title={kind} className="min-h-0 w-full flex-1 rounded-lg border" />
-        ) : type === 'application/pdf' ? (
-          // a link the user taps, not window.open: iOS blocks a window opened after an await
-          <a href={url} target="_blank" rel="noopener" className={cn(buttonVariants(), center)}>{t('document.open')}</a>
-        ) : null}
-      </DialogBody>
-      {url && (
-        <DialogFooter>
-          {/* iOS Safari may draw only page 1 of a PDF inside the iframe; Open shows the whole file */}
-          {type === 'application/pdf' && navigator.pdfViewerEnabled && <a href={url} target="_blank" rel="noopener" className={buttonVariants({ variant: 'secondary' })}>{t('document.open')}</a>}
-          <a href={url} download={`${name}.${Object.hasOwn(EXT, type) ? EXT[type] : 'bin'}`} className={buttonVariants({ variant: 'secondary' })}>{t('document.download')}</a>
-        </DialogFooter>
-      )}
-    </>
+    <FileViewer
+      path={`/employees/${empId}/documents/${doc.id}/file`}
+      type={type}
+      name={`${base}.${Object.hasOwn(EXT, type) ? EXT[type] : 'bin'}`}
+      title={kind}
+      alt={t('document.imageAlt', { kind, name: doc.original_name })}
+      // the names are React children, never parsed as markup; <bdi> keeps a Latin name from reordering the Arabic
+      description={<Trans i18nKey="document.uploadedBy" values={{ date: doc.created_at ? date.format(new Date(doc.created_at)) : '—' }} components={{ file: <bdi>{doc.original_name}</bdi>, name: <bdi>{doc.uploader_name ?? '—'}</bdi> }} />}
+      onClose={onClose}
+    />
   )
 }

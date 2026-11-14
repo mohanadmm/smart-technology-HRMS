@@ -42,7 +42,7 @@
 - Test: `frontend/src/pages/employee-documents.test.tsx:369-475` (unchanged assertions)
 
 **Interfaces:**
-- Produces: `export function FileViewer(props: { path: string; type: string; name: string; title: string; alt?: string; description?: string; onClose: () => void })`. `path` is an API path for `apiBlob`; `type` is the mime type; `name` is the download file name. Renders the dialog and its content (image, PDF frame when `navigator.pdfViewerEnabled`, else an Open link; Download; Retry on a failed fetch; revokes the object URL on unmount).
+- Produces: `export function FileViewer(props: { path: string; type: string; name: string; title: string; alt?: string; description?: ReactNode; onClose: () => void })`. `path` is an API path for `apiBlob`; `type` is an allow-listed mime type (the caller allow-lists it); `name` is the download file name. Open while mounted (no `open` prop). Renders the dialog and its content (image, PDF frame when `navigator.pdfViewerEnabled`, else an Open link; Download; Retry on a failed fetch; revokes the object URL on unmount).
 
 - [ ] **Step 1:** Run `npm run test -- employee-documents` and record the pass count (baseline).
 - [ ] **Step 2:** Move the two components into `FileViewer.tsx` with the props above; keep markup, mime allow-list and i18n keys; `employee-documents.tsx` renders `<FileViewer … />`.
