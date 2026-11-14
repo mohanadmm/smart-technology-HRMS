@@ -13,10 +13,19 @@ type Props = { path: string; type: string; name: string; title: string; alt?: st
  * `path` is the API route of the bytes; `type` an allow-listed mime the Blob is built with (never the response's, so a file can't turn itself into HTML); `name` the download file name.
  */
 export function FileViewer({ path, type, name, title, alt, description, onClose }: Props) {
+  // read before the dialog takes focus; a Radix modal with no Trigger focuses nothing when it closes
+  const [opener] = useState(() => document.activeElement as HTMLElement | null)
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       {/* full screen under sm, below the notch (the close button sits at the top) */}
-      <DialogContent className="top-[env(safe-area-inset-top)] max-h-none rounded-none sm:h-[85vh] sm:max-h-none sm:max-w-4xl" {...(!description && { 'aria-describedby': undefined })}>
+      <DialogContent
+        className="top-[env(safe-area-inset-top)] max-h-none rounded-none sm:h-[85vh] sm:max-h-none sm:max-w-4xl"
+        onCloseAutoFocus={(e) => {
+          e.preventDefault()
+          opener?.focus()
+        }}
+        {...(!description && { 'aria-describedby': undefined })}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription className="[overflow-wrap:anywhere]">{description}</DialogDescription>}

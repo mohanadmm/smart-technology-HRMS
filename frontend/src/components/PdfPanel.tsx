@@ -204,7 +204,7 @@ export function PdfRowActions({ row, onChanged }: { row: PdfExport; onChanged: (
           path={`${path}/download`}
           type="application/pdf"
           name={row.file_name}
-          title={`${t(PDF_TYPES[row.type].title)} · ${t('hrForms.serial', { serial: row.serial_number })}`}
+          title={`${t(PDF_TYPES[row.type].title)} · ${t('hrForms.serial', { serial: row.serial_number })} · ${t(`hrForms.${row.stage}`)}`}
           onClose={() => setViewing(false)}
         />
       )}

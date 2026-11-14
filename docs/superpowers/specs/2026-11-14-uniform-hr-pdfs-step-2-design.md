@@ -113,9 +113,12 @@ and the `download` helper in `pages/hr-forms.tsx`, and every i18n key left witho
 ### 3. Small backend fixes that the panel depends on (with task 2b)
 - **Order.** `PdfExports.php:186` orders `stage desc`, which puts `unsigned` above `signed`. Change to `stage asc`
   (signed first). Step 1 spec lines 177 and 345 are corrected in the same commit.
-- **A create while Redis is down** leaves a `pending` row with no job and no action, so a panel would poll for ever.
+- **A create whose queue dispatch fails** leaves a `pending` row with no job and no action, so a panel would poll for ever.
   `PdfController::queued()` catches a dispatch failure, reports it, and marks the row `failed` / `render_failed` if still
-  `pending`; Retry then appears and takes the normal path.
+  `pending`; Retry then appears and takes the normal path. Measured at Gate 2.1: with Redis refusing writes the create
+  answers 202 with a `failed` row and Retry recovers it; with Redis fully down every request answers 500 before the
+  controller (role grants are cached on Redis), so no row is made and this guard is not reached. That outage is not
+  Step 2's to fix.
 - **422 label.** An unknown `type` is reported against «نوع الموظف». Pass the attribute name «النوع»
   (`validation.attributes.kind`) in `PdfController`'s two validations.
 

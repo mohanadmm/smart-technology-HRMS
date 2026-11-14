@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { canDo } from '@/lib/auth'
 import { json, mockFetch, pagination, renderWithAuth } from '@/test-utils'
 import { canUsePdf, PDF_TYPES, PdfPanel, type PdfExport, type PdfType } from './PdfPanel'
@@ -164,11 +165,28 @@ test('View opens the file in the app, with an Open link and no frame where the b
   mockFetch({ [LIST]: answer([row({ id: 'r1', type: 'experience_certificate', serial_number: 4, file_name: 'experience-certificate-4-unsigned.pdf' })]), 'GET /api/v1/hr-form-exports/r1/download': file })
   renderWithAuth(<PdfPanel type="experience_certificate" subject="e1" />, ['hr_forms.view.all'])
   await user.click(await screen.findByRole('button', { name: 'عرض' }))
-  const dialog = await screen.findByRole('dialog', { name: 'شهادة خبرة · مسلسل 4' })
+  const dialog = await screen.findByRole('dialog', { name: 'شهادة خبرة · مسلسل 4 · بدون توقيع' })
   expect(await within(dialog).findByRole('link', { name: 'فتح' })).toHaveAttribute('href', 'blob:pdf')
   expect(dialog.querySelector('iframe')).toBeNull()
   expect(within(dialog).getByRole('link', { name: 'تنزيل' })).toHaveAttribute('download', 'experience-certificate-4-unsigned.pdf')
   expect(file).toHaveBeenCalledOnce()
+})
+
+test.each([['on the page', false], ['inside another dialog', true]] as const)('closing the viewer by Escape or ✕ gives focus back to View %s', async (_where, nested) => {
+  const user = userEvent.setup()
+  vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => 'blob:pdf'); static revokeObjectURL = vi.fn() })
+  mockFetch({ [LIST]: answer([row({ id: 'r1', type: 'experience_certificate', serial_number: 4, stage: 'signed' })]), 'GET /api/v1/hr-form-exports/r1/download': () => new Response('%PDF-1.7') })
+  const panel = <PdfPanel type="experience_certificate" subject="e1" />
+  renderWithAuth(nested ? <Dialog open><DialogContent aria-describedby={undefined}><DialogTitle>طلب إجازة</DialogTitle>{panel}</DialogContent></Dialog> : panel, ['hr_forms.view.all'])
+  const view = await screen.findByRole('button', { name: 'عرض' })
+  const viewer = () => screen.findByRole('dialog', { name: 'شهادة خبرة · مسلسل 4 · موقّعة' })
+  for (const close of [() => user.keyboard('{Escape}'), async () => user.click(within(await viewer()).getByRole('button', { name: 'إغلاق' }))]) {
+    await user.click(view)
+    await viewer()
+    await close()
+    await vi.waitFor(() => expect(document.activeElement).toBe(view))
+  }
+  if (nested) expect(screen.getByRole('dialog', { name: 'طلب إجازة' })).toContainElement(view)
 })
 
 test('pay and no-pay copies each keep their newest row current, the pay copy first; the rest go under earlier copies', async () => {
