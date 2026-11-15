@@ -461,7 +461,7 @@ final class PdfApiTest extends TestCase
             $this->getJson(self::API.$query)->assertUnprocessable()->assertJsonPath('error.code', 'validation_failed');
         }
         $this->signIn('ceo');
-        $this->assertSame([$found, $newer, $leave], $ids('?awaiting_approval=1'));
+        $this->assertSame([$found, $newer], $ids('?awaiting_approval=1'));
     }
 
     public function test_each_row_names_its_employee_with_one_query_for_the_page(): void
@@ -483,6 +483,46 @@ final class PdfApiTest extends TestCase
             $this->assertSame($named[$row['employee_id']], $row['employee']);
         }
         $this->getJson(self::API.'/'.reset($made))->assertOk()->assertJsonPath('data.employee', $named[array_key_first($made)]);
+    }
+
+    public function test_awaiting_approval_lists_exactly_the_rows_whose_actions_include_approve(): void
+    {
+        $hr = $this->signIn('hr');
+        [$employee, $fields] = $this->subject('experience_certificate');
+        $certificate = $this->create('experience_certificate', $employee, $fields)->json('data.id');
+        $this->settle($certificate);
+        [$other, $fields] = $this->subject('experience_certificate');
+        $this->settle($this->create('experience_certificate', $other, $fields)->json('data.id'), 'failed');
+        [$request, $advanceFields] = $this->subject('advance_request');
+        $this->settle($this->create('advance_request', $request, $advanceFields)->json('data.id'));
+        $decidedByHr = $this->approvedLeavePdf();
+        $this->leavePdf($this->leave());
+        $cancelled = $this->leave();
+        $this->decide($cancelled, 'cancel');
+        $this->leavePdf($cancelled);
+        $escalated = $this->leave();
+        $this->decide($escalated, 'escalate');
+        $ceo = $this->signIn('ceo');
+        $this->decide($escalated, 'approve');
+        $this->actingAs($hr, 'api');
+        $decidedByCeo = $this->leavePdf($escalated);
+
+        $this->assertSame([$decidedByHr], $this->awaitingMatchesActions());
+        $this->actingAs($ceo, 'api');
+        $this->assertEqualsCanonicalizing([$certificate, $decidedByCeo], $this->awaitingMatchesActions());
+    }
+
+    public function test_the_list_is_newest_first_across_types(): void
+    {
+        $this->signIn('hr');
+        [$employee, $fields] = $this->subject('experience_certificate');
+        $first = $this->create('experience_certificate', $employee, $fields)->json('data.id');
+        $second = $this->create('experience_certificate', $employee, $fields)->json('data.id');
+        $this->cairo('2026-10-20 13:00');
+        [$request, $fields] = $this->subject('leave_request');
+        $leave = $this->create('leave_request', $request, $fields)->json('data.id');
+
+        $this->assertSame([$leave, $second, $first], array_column($this->getJson(self::API)->assertOk()->json('data'), 'id'));
     }
 
     public function test_a_signed_row_lists_before_its_unsigned_twin(): void
@@ -558,11 +598,39 @@ final class PdfApiTest extends TestCase
     private function approvedLeavePdf(): string
     {
         $request = $this->leave();
-        $this->postJson("/api/v1/leave/requests/{$request}/approve", ['version' => (int) DB::table('leave_requests')->where('id', $request)->value('version')])->assertOk();
+        $this->decide($request, 'approve');
+
+        return $this->leavePdf($request);
+    }
+
+    /** A ready unsigned leave PDF of the request, whatever its status. */
+    private function leavePdf(string $request): string
+    {
         $id = $this->create('leave_request', $request, ['job_title' => 'Synthetic QA'])->assertAccepted()->json('data.id');
         $this->settle($id);
 
         return $id;
+    }
+
+    private function decide(string $request, string $action): void
+    {
+        $this->postJson("/api/v1/leave/requests/{$request}/{$action}", ['version' => (int) DB::table('leave_requests')->where('id', $request)->value('version')])->assertOk();
+    }
+
+    /**
+     * The caller's «awaiting approval» ids, after asserting that every listed row has approve in its actions and no other row the caller sees has it.
+     *
+     * @return list<string>
+     */
+    private function awaitingMatchesActions(): array
+    {
+        $awaiting = collect($this->getJson(self::API.'?awaiting_approval=1&per_page=100')->assertOk()->json('data'))->pluck('actions', 'id');
+        $approvable = collect($this->getJson(self::API.'?per_page=100')->assertOk()->json('data'))->pluck('actions', 'id')
+            ->filter(fn (array $actions) => in_array('approve', $actions, true));
+        $awaiting->each(fn (array $actions) => $this->assertContains('approve', $actions));
+        $this->assertEqualsCanonicalizing($approvable->keys()->all(), $awaiting->keys()->all());
+
+        return $awaiting->keys()->all();
     }
 
     /** What the render job leaves: a stored file and the status. */

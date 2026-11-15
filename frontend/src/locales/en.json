@@ -1402,7 +1402,7 @@
     "salary_deduction": "Monthly salary deduction",
     "amountChanged": "If the advance amount changed after this PDF was made, generate a new copy.",
     "issued": "Issued forms",
-    "search": "Search by serial, employee name or ID",
+    "search": "Search by serial or employee",
     "form": "Form",
     "allForms": "All forms",
     "stage": "Stage",

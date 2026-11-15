@@ -1,5 +1,6 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import type { PdfExport } from '@/components/PdfPanel'
 import { navAbilities } from '@/components/layout/AppLayout'
@@ -23,6 +24,11 @@ const row = (over: Partial<PdfExport> = {}): PdfExport => ({
 const answer = (rows: PdfExport[]) => vi.fn((_url: string) => json(200, { data: rows, meta: { pagination: { ...pagination, total: rows.length } } }))
 const urls = (list: ReturnType<typeof answer>) => list.mock.calls.map(([url]) => url)
 const table = () => screen.findByRole('table', { name: 'النماذج الصادرة' })
+const SEARCH = 'ابحث بالمسلسل أو الموظف'
+function Url() {
+  return <output data-testid="url">{useLocation().search}</output>
+}
+const url = () => new URLSearchParams(screen.getByTestId('url').textContent ?? '')
 
 test('each row shows its serial, type, employee (linking to the file), stage, status and issue time', async () => {
   const list = answer([row(), row({ id: 'r2', serial_number: 3, type: 'advance_request', stage: 'signed', status: 'failed', actions: [], employee_id: null, employee: null })])
@@ -56,9 +62,53 @@ test('the type, stage and status filters and the search each ask the server agai
   await waitFor(() => expect(last()).toContain('stage=signed'))
   await user.selectOptions(screen.getByRole('combobox', { name: 'الحالة' }), 'failed')
   await waitFor(() => expect(last()).toContain('status=failed'))
-  await user.type(screen.getByRole('textbox', { name: 'ابحث بالرقم المسلسل أو اسم الموظف أو رقمه الوظيفي' }), '14')
+  await user.type(screen.getByRole('textbox', { name: SEARCH }), '14')
   await waitFor(() => expect(last()).toContain('q=14'))
   expect(last()).toMatch(/type=leave_request.*stage=signed.*status=failed/)
+})
+
+test('a filter and a search changed in the same tick both reach the request, and the controls show them at once', async () => {
+  const list = answer([row()])
+  mockFetch({ [LIST]: list })
+  renderWithAuth(<IssuedFormsPage />, HR)
+  await table()
+  const type = screen.getByRole('combobox', { name: 'النموذج' })
+  const search = screen.getByRole('textbox', { name: SEARCH })
+  act(() => {
+    fireEvent.change(type, { target: { value: 'leave_request' } })
+    fireEvent.change(search, { target: { value: '14' } })
+  })
+  expect(type).toHaveValue('leave_request')
+  expect(search).toHaveValue('14')
+  await waitFor(() => expect(urls(list).at(-1)).toMatch(/type=leave_request.*q=14/))
+})
+
+test('the filters and page come from the URL; a filter change writes the URL and goes back to page 1', async () => {
+  const user = userEvent.setup()
+  const list = answer([row()])
+  mockFetch({ [LIST]: list })
+  renderWithAuth(<><IssuedFormsPage /><Url /></>, HR, { path: '/hr-forms?stage=signed&page=2' })
+  await table()
+  expect(urls(list)[0]).toContain('page=2&per_page=20&stage=signed')
+  expect(screen.getByRole('combobox', { name: 'المرحلة' })).toHaveValue('signed')
+  await user.click(screen.getByRole('checkbox', { name: 'بانتظار اعتمادي' }))
+  await waitFor(() => expect(url().get('awaiting_approval')).toBe('1'))
+  expect(url().get('stage')).toBe('signed')
+  expect(url().get('page')).toBeNull()
+  await waitFor(() => expect(urls(list).at(-1)).toContain('page=1&per_page=20&stage=signed&awaiting_approval=1'))
+})
+
+test('the menu link to this page while it is open starts it again from a clean URL', async () => {
+  const user = userEvent.setup()
+  localStorage.setItem('hrms.auth.token.v1', 't'.repeat(64))
+  const list = answer([row()])
+  mockFetch({ 'GET /api/v1/auth/me': () => json(200, { data: me(HR) }), [LIST]: list })
+  renderApp('/hr-forms?type=leave_request')
+  const nav = await screen.findByRole('navigation', { name: 'القائمة الرئيسية' })
+  expect(await screen.findByRole('combobox', { name: 'النموذج' })).toHaveValue('leave_request')
+  await user.click(within(nav).getByRole('link', { name: 'النماذج الصادرة' }))
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'النموذج' })).toHaveValue(''))
+  await waitFor(() => expect(urls(list).at(-1)).not.toContain('type='))
 })
 
 test('«بانتظار اعتمادي» asks for the rows awaiting the caller', async () => {
@@ -83,10 +133,12 @@ test('Approve on a row that allows it posts to its route and the list is asked a
   await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(1))
 })
 
-test('a row whose actions are empty shows no button', async () => {
+test('a row whose actions are empty shows no button and «—» for its actions', async () => {
   mockFetch({ [LIST]: answer([row({ actions: [] })]) })
   renderWithAuth(<IssuedFormsPage />, HR)
-  expect(within(await table()).queryAllByRole('button')).toEqual([])
+  const [, only] = within(await table()).getAllByRole('row')
+  expect(within(only!).queryAllByRole('button')).toEqual([])
+  expect(within(only!).getAllByRole('cell').at(-1)).toHaveTextContent(/—$/)
 })
 
 test('an advance copy made without the salary carries «بدون الراتب»; the copy with it does not', async () => {

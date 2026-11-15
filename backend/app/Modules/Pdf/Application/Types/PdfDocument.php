@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Pdf\Application\Types;
 
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\Query\Builder;
 use stdClass;
 
 /** Everything that varies per PdfType; PdfExports::document() picks the class. */
@@ -38,6 +39,9 @@ interface PdfDocument
      */
     public function view(array $snapshot): array;
 
-    /** The signer rule: the stamp line for the signed snapshot (null = none); throws the refusal when $actor may not sign. $lock: approve's transaction locks the subject row, a read does not. */
+    /** The stamp line for the signed snapshot (null = none); throws the refusal when signable() refuses $actor. $lock: approve's transaction locks the subject row, a read does not. */
     public function approval(stdClass $export, Authenticatable $actor, bool $lock): ?string;
+
+    /** The signer rule, stated once: narrows hr_form_exports rows of this type to those $actor may sign, so the awaiting-approval list filters in SQL. */
+    public function signable(Builder $exports, Authenticatable $actor): Builder;
 }

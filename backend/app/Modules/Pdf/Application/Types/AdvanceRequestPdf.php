@@ -11,6 +11,7 @@ use App\Support\Database\ConcurrencyConflict;
 use App\Support\Localization\ArabicFormDate;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use stdClass;
 
@@ -86,5 +87,11 @@ final class AdvanceRequestPdf implements PdfDocument
     public function approval(stdClass $export, Authenticatable $actor, bool $lock): ?string
     {
         throw new ConcurrencyConflict;
+    }
+
+    /** Never signed. */
+    public function signable(Builder $exports, Authenticatable $actor): Builder
+    {
+        return $exports->whereRaw('false');
     }
 }

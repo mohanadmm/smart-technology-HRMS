@@ -10,6 +10,7 @@ use App\Support\Localization\ArabicFormDate;
 use App\Support\Localization\ArabicServiceDuration;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use stdClass;
 
@@ -70,5 +71,11 @@ final class OvertimeRequestPdf implements PdfDocument
     public function approval(stdClass $export, Authenticatable $actor, bool $lock): ?string
     {
         throw new ConcurrencyConflict;
+    }
+
+    /** Never signed. */
+    public function signable(Builder $exports, Authenticatable $actor): Builder
+    {
+        return $exports->whereRaw('false');
     }
 }

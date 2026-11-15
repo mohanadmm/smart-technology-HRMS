@@ -176,8 +176,8 @@ export function NoPayBadge({ row }: { row: PdfExport }) {
   return can('employee.view.all') && row.shows_pay === false ? <Badge variant="neutral">{t('hrForms.noPay')}</Badge> : null
 }
 
-/** View, Download, Approve and Retry for one row, each only when the row's `actions` allows it; a refusal shows inline. */
-export function PdfRowActions({ row, onChanged }: { row: PdfExport; onChanged: () => void }) {
+/** View, Download, Approve and Retry for one row, each only when the row's `actions` allows it; a refusal shows inline under them. `className` styles the row of buttons. */
+export function PdfRowActions({ row, onChanged, className }: { row: PdfExport; onChanged: () => void; className?: string }) {
   const { t } = useTranslation()
   const save = useSave()
   const [viewing, setViewing] = useState(false)
@@ -200,8 +200,9 @@ export function PdfRowActions({ row, onChanged }: { row: PdfExport; onChanged: (
   if (!row.actions.length) return null
 
   return (
-    <div className="grid gap-2">
-      <div className="flex flex-wrap gap-2">
+    // flex, not grid: the global `.grid > * { min-width: 0 }` would let a table column shrink below its buttons
+    <div className="flex flex-col gap-2">
+      <div className={cn('flex flex-wrap gap-2', className)}>
         {has('download') && (
           <>
             <Button type="button" variant="outline" onClick={() => setViewing(true)}><Eye aria-hidden />{t('hrForms.view')}</Button>
@@ -211,7 +212,8 @@ export function PdfRowActions({ row, onChanged }: { row: PdfExport; onChanged: (
         {has('approve') && <Button type="button" disabled={busy} onClick={() => void run(() => save(`${path}/approve`))}>{t('hrForms.approve')}</Button>}
         {has('retry') && <Button type="button" variant="outline" disabled={busy} onClick={() => void run(() => save(`${path}/retry`))}>{t('hrForms.retry')}</Button>}
       </div>
-      <ErrorBanner err={error} shown={[]} />
+      {/* no width of its own from 640 px: a refusal wraps under the buttons instead of widening a table column */}
+      {!!error && <div className="whitespace-normal sm:contain-inline-size"><ErrorBanner err={error} shown={[]} /></div>}
       {viewing && (
         <FileViewer
           path={`${path}/download`}

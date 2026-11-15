@@ -214,6 +214,8 @@ final class PdfManagerAdvanceTest extends TestCase
             "?employee_id={$this->worker}", '?awaiting_approval=1'] as $query) {
             $this->getJson(self::API.$query)->assertUnprocessable()->assertJsonPath('error.code', 'validation_failed');
         }
+        $this->getJson(self::API.'?type=advance_request', ['Accept-Language' => 'ar'])->assertJsonPath('error.details.0.field', 'subject_id')
+            ->assertJsonPath('error.details.0.message', 'حقل معرّف السجل مطلوب.');
         $this->assertSame([$mine], array_column($this->getJson(self::API."?type=advance_request&subject_id={$this->request}")->assertOk()->json('data'), 'id'));
         $this->getJson(self::API."?type=advance_request&subject_id={$theirs}")->assertOk()->assertJsonCount(0, 'data');
         $this->getJson(self::API."/{$hidden}")->assertNotFound();

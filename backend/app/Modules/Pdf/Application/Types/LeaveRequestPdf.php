@@ -13,6 +13,7 @@ use App\Support\Localization\ArabicFormDate;
 use App\Support\Localization\ArabicServiceDuration;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use stdClass;
 
@@ -79,13 +80,20 @@ final class LeaveRequestPdf implements PdfDocument
         $snapshot = json_decode((string) $export->snapshot, true, flags: JSON_THROW_ON_ERROR);
         $request = DB::table('leave_requests')->where('id', $snapshot['leave_request_id'])->whereNull('deleted_at')
             ->when($lock, fn ($query) => $query->lockForUpdate())->first() ?? throw new ModelNotFoundException;
-        if ($request->status !== LeaveStatus::Approved->value) {
-            throw new ConcurrencyConflict;
-        }
-        if ($request->decided_by !== (string) $actor->getAuthIdentifier()) {
-            throw AuthorizationRefused::of('hr_forms.approve_leave_request');
+        if (! $this->signable(DB::table('hr_form_exports')->where('id', $export->id), $actor)->exists()) {
+            // signable() decides; the status only picks the refusal: not approved (409) or approved by someone else (403).
+            throw $request->status === LeaveStatus::Approved->value ? AuthorizationRefused::of('hr_forms.approve_leave_request') : new ConcurrencyConflict;
         }
 
         return $request->escalated_at === null ? 'hr' : 'company_manager';
+    }
+
+    /** The leave request is approved and $actor decided it. */
+    public function signable(Builder $exports, Authenticatable $actor): Builder
+    {
+        return $exports->whereExists(fn (Builder $requests) => $requests->selectRaw('1')->from('leave_requests')
+            ->whereRaw("leave_requests.id = (hr_form_exports.snapshot->>'leave_request_id')::uuid")
+            ->whereNull('leave_requests.deleted_at')->where('leave_requests.status', LeaveStatus::Approved->value)
+            ->where('leave_requests.decided_by', (string) $actor->getAuthIdentifier()));
     }
 }

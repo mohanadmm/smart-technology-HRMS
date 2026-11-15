@@ -55,7 +55,7 @@
 - Test: `backend/tests/Feature/PdfApiTest.php`
 
 **Interfaces:**
-- Produces: list order `serial_number desc, stage asc, id desc` (a signed row comes before its unsigned twin). A row whose dispatch failed is `status = failed`, `failure_code = render_failed`, and so has `retry` in `actions` for a caller who may retry.
+- Produces: list order `serial_number desc, stage asc, id desc` (a signed row comes before its unsigned twin); since Gate 2.3 `created_at desc` leads and these three break ties. A row whose dispatch failed is `status = failed`, `failure_code = render_failed`, and so has `retry` in `actions` for a caller who may retry.
 
 - [ ] **Step 1: Failing tests** in `PdfApiTest`: `test_a_signed_row_lists_before_its_unsigned_twin` (approve a certificate, list by subject, assert `data[0].stage === 'signed'`, `data[1].stage === 'unsigned'`); `test_a_create_whose_dispatch_fails_leaves_a_failed_row_with_retry` (make the bus throw on `RenderPdf`, POST create, then GET the row: `status === 'failed'`, `failure_code === 'render_failed'`, `actions` contains `retry`; no `pending` row remains); `test_an_unknown_type_is_reported_as_the_type_field` (422 message for `type` uses `validation.attributes.kind`, not `validation.attributes.type`).
 - [ ] **Step 2:** Run `bash .claude/gate-pdf-2/wt-run.sh php artisan test --filter=PdfApiTest`: the three fail.

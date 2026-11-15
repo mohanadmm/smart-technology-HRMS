@@ -170,7 +170,7 @@ export function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRe
           {advance?.amount && draft?.advance_request === undefined && canUsePdf(can, 'view', 'advance_request') && (
             <Dialog>
               <DialogTrigger asChild>
-                <Button type="button" variant="outline" className="min-h-11"><FileText aria-hidden />{t('attendanceRequests.advancePdf')}</Button>
+                <Button type="button" variant="outline" className="min-h-tap"><FileText aria-hidden />{t('attendanceRequests.advancePdf')}</Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>

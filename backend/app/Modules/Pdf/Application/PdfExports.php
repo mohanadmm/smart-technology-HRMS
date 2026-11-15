@@ -184,7 +184,13 @@ final class PdfExports
             $query->when($filters[$column] ?? null, fn (Builder $q, string $value) => $q->where($column, $value));
         }
         if (! empty($filters['awaiting_approval'])) {
-            $query->whereIn('form_type', self::served(fn (PdfType $type) => ($permission = $type->approvePermission()) !== null && $this->holdsAll($actor, $permission)))
+            // The rows whose actions() include approve: approval()'s gates, with each type's signer rule as SQL.
+            $query->where(function (Builder $q) use ($actor): void {
+                $q->whereRaw('false');
+                foreach (self::served(fn (PdfType $type) => ($permission = $type->approvePermission()) !== null && $this->holdsAll($actor, $permission)) as $type) {
+                    $q->orWhere(fn (Builder $q) => self::document(PdfType::from($type))->signable($q->where('form_type', $type), $actor));
+                }
+            })
                 ->where('stage', 'unsigned')->where('status', 'ready')
                 ->whereNotExists(fn (Builder $q) => $q->selectRaw('1')->from('hr_form_exports as successor')
                     ->where(fn (Builder $q) => $q->whereColumn('successor.unsigned_export_id', 'hr_form_exports.id')
@@ -196,7 +202,8 @@ final class PdfExports
                 ->when(preg_match('/^(0|[1-9]\d{0,8})$/D', $search) === 1, fn (Builder $q) => $q->orWhere('serial_number', (int) $search)));
         }
 
-        return $query->orderByDesc('serial_number')->orderBy('stage')->orderByDesc('id')
+        // Issue time first: serials count per type, so across types only the time says which is newer.
+        return $query->orderByDesc('created_at')->orderByDesc('serial_number')->orderBy('stage')->orderByDesc('id')
             ->paginate((int) ($filters['per_page'] ?? 25), page: (int) ($filters['page'] ?? 1));
     }
 

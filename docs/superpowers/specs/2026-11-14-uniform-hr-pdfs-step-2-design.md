@@ -173,7 +173,10 @@ Frontend:
 - Model: `pages/leave.tsx` (`Balances` `:142-218`): `SearchInput`, `FilterSelect`, `useDebounced`, `DataList` (table on
   desktop, cards on a phone), `Pagination`, `StatusBadge`, `useCairoTime`.
 - Columns: serial, type, employee (name and code, linking to the employee file), stage, status, issued at, actions.
-- Filters: type, stage, status, search `q` (serial or employee), and a toggle «بانتظار اعتمادي» (`awaiting_approval=1`).
+- Filters: type, stage, status, search `q` (serial or employee), and a toggle «بانتظار اعتمادي» (`awaiting_approval=1`): exactly
+  the rows the caller can approve now (those whose `actions` include `approve`). The filters and the page number live in the URL.
+- Order: newest issue first across all types. Below 1280 px the table hides the stage and the issue time (the phone cards keep
+  both); a row's buttons sit on one line from 1440 px.
 - Row actions: View, Download, Approve, Retry, from `row.actions`, with the same handlers as the panel (shared, not copied).
 - 3 s refetch while a listed row is `pending`.
 - Backend: the row JSON gains `employee: { id, code, name_ar, name_en }` (one query per page, not per row). Old rows of

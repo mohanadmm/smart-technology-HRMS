@@ -44,7 +44,7 @@ final class PdfController
             'q' => ['nullable', 'string', 'max:100'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
-        ], [], ['type' => __('validation.attributes.kind')]);
+        ], [], ['type' => __('validation.attributes.kind'), 'subject_id' => __('validation.attributes.entity_id')]);
         $actor = self::actor($request);
         $rows = $this->exports->list($filters, $actor, $scope);
         $employees = $this->roster->names(array_values(array_unique(array_filter(array_map(fn (stdClass $row) => (string) $row->employee_id, $rows->items())))));

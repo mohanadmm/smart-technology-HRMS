@@ -1,7 +1,7 @@
 import { ScrollText } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigationType, useSearchParams } from 'react-router-dom'
 import { DataList } from '@/components/common/DataList'
 import { FilterSelect, SearchInput } from '@/components/common/Filters'
 import { PageHeader } from '@/components/common/PageHeader'
@@ -21,27 +21,39 @@ import { cn, FOCUS } from '@/lib/utils'
 const exportsPath = '/hr-form-exports'
 const signaturePath = '/me/hr-signature'
 const PAGE = 20
-const FILTERS = ['type', 'stage', 'status', 'awaiting_approval']
+const KEYS = ['type', 'stage', 'status', 'awaiting_approval', 'q', 'page'] as const
+type Filters = Record<(typeof KEYS)[number], string>
+// The table's cells keep one line; these may wrap between words, never inside one, so the row's buttons keep their room.
+const WRAP = 'whitespace-normal wrap-normal'
 type Signature = { signature: { version: number } | null }
 
 /** `/hr-forms`: every issued form the caller may read, newest first (the server's order). The filters live in the URL, so Back from an employee keeps the list. */
 export function IssuedFormsPage() {
+  // A link or Back/forward to this page starts it again from the URL; the page's own writes replace the entry and keep it.
+  const { key } = useLocation()
+  const own = useNavigationType() === 'REPLACE'
+  const [entry, setEntry] = useState(key)
+  if (!own && key !== entry) setEntry(key)
+  return <IssuedForms key={entry} />
+}
+
+function IssuedForms() {
   const { t, i18n } = useTranslation()
   const time = useCairoTime({ dateStyle: 'long', timeStyle: 'short' })
   const [params, setParams] = useSearchParams()
-  const set = (patch: Record<string, string>) =>
-    setParams((p) => {
-      for (const [k, v] of Object.entries(patch)) {
-        if (v) p.set(k, v)
-        else p.delete(k)
-      }
-      return p
-    }, { replace: true })
-  const [q, setQ] = useState(params.get('q') ?? '') // the router writes the URL in a transition, which would lag a box bound to it
+  // The controls and the request read this state and the URL follows it: the router writes the URL in a transition (a control
+  // bound to it lags) and builds each write from the last render's params (two writes in one tick keep only the second).
+  const [filters, setFilters] = useState(() => Object.fromEntries(KEYS.map((k) => [k, params.get(k) ?? ''])) as Filters)
+  const url = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString()
+  useEffect(() => {
+    if (url !== params.toString()) setParams(url, { replace: true })
+  }, [url, params, setParams])
+  const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }))
+  const filter = (patch: Partial<Filters>) => set({ ...patch, page: '' })
+  const { q, page: pageParam, ...chosen } = filters
   const search = useDebounced(q, 250)
-  const filters = Object.fromEntries(FILTERS.map((k) => [k, params.get(k) ?? '']))
-  const page = Number(params.get('page')) || 1
-  const qs = new URLSearchParams(Object.entries({ page: String(page), per_page: String(PAGE), ...filters, q: search }).filter(([, v]) => v))
+  const page = Number(pageParam) || 1
+  const qs = new URLSearchParams(Object.entries({ page: String(page), per_page: String(PAGE), ...chosen, q: search }).filter(([, v]) => v))
   const { rows, total, err, loading, reload } = useList(`${exportsPath}?${qs}`)
   const polling = rows.some((r) => r.status === 'pending')
   useEffect(() => {
@@ -49,23 +61,22 @@ export function IssuedFormsPage() {
     const timer = window.setInterval(reload, 3000)
     return () => window.clearInterval(timer)
   }, [polling, reload])
-  const filter = (patch: Record<string, string>) => set({ ...patch, page: '' })
 
   return (
     <div className="space-y-6">
       <PageHeader title={t('hrForms.issued')} />
       <Card className="overflow-hidden">
         <div className="flex flex-wrap items-center gap-3 border-b p-4">
-          <SearchInput value={q} onChange={(v) => { setQ(v); filter({ q: v }) }} placeholder={t('hrForms.search')} maxLength={100} className="sm:w-full sm:max-w-md" />
-          <FilterSelect value={filters.type ?? ''} onChange={(v) => filter({ type: v })} label={t('hrForms.form')} allLabel={t('hrForms.allForms')} options={(Object.keys(PDF_TYPES) as PdfType[]).map((k) => [k, t(PDF_TYPES[k].title)])} />
-          <FilterSelect value={filters.stage ?? ''} onChange={(v) => filter({ stage: v })} label={t('hrForms.stage')} allLabel={t('hrForms.allStages')} options={['unsigned', 'signed'].map((s) => [s, t(`hrForms.${s}`)])} />
-          <FilterSelect value={filters.status ?? ''} onChange={(v) => filter({ status: v })} label={t('common.status')} allLabel={t('hrForms.allStatuses')} options={Object.keys(STATUS).map((s) => [s, t(`hrForms.${s}`)])} />
+          <SearchInput value={q} onChange={(v) => filter({ q: v })} placeholder={t('hrForms.search')} maxLength={100} className="sm:w-full sm:max-w-md" />
+          <FilterSelect value={chosen.type} onChange={(v) => filter({ type: v })} label={t('hrForms.form')} allLabel={t('hrForms.allForms')} options={(Object.keys(PDF_TYPES) as PdfType[]).map((k) => [k, t(PDF_TYPES[k].title)])} />
+          <FilterSelect value={chosen.stage} onChange={(v) => filter({ stage: v })} label={t('hrForms.stage')} allLabel={t('hrForms.allStages')} options={['unsigned', 'signed'].map((s) => [s, t(`hrForms.${s}`)])} />
+          <FilterSelect value={chosen.status} onChange={(v) => filter({ status: v })} label={t('common.status')} allLabel={t('hrForms.allStatuses')} options={Object.keys(STATUS).map((s) => [s, t(`hrForms.${s}`)])} />
           <label className="flex min-h-tap items-center gap-3 text-sm font-medium">
-            <input type="checkbox" className={cn(FOCUS, 'size-4 accent-primary')} checked={!!filters.awaiting_approval} onChange={(e) => filter({ awaiting_approval: e.target.checked ? '1' : '' })} />
+            <input type="checkbox" className={cn(FOCUS, 'size-4 accent-primary')} checked={!!chosen.awaiting_approval} onChange={(e) => filter({ awaiting_approval: e.target.checked ? '1' : '' })} />
             {t('hrForms.awaitingMine')}
           </label>
-          {(q || Object.values(filters).some(Boolean)) && (
-            <Button variant="ghost" size="sm" onClick={() => { setQ(''); filter({ q: '', type: '', stage: '', status: '', awaiting_approval: '' }) }} className="lg:ms-auto">
+          {(q || Object.values(chosen).some(Boolean)) && (
+            <Button variant="ghost" size="sm" onClick={() => filter({ q: '', type: '', stage: '', status: '', awaiting_approval: '' })} className="lg:ms-auto">
               {t('common.clearFilters')}
             </Button>
           )}
@@ -80,21 +91,24 @@ export function IssuedFormsPage() {
           page={{ page, pageSize: PAGE, total, onPageChange: (p) => set({ page: p > 1 ? String(p) : '' }) }}
           title={{ header: t('hrForms.serialNumber'), cell: (r) => t('hrForms.serial', { serial: r.serial_number }) }}
           fields={[
-            { header: t('hrForms.form'), cell: (r) => <span className="inline-flex flex-wrap items-center gap-2">{t(PDF_TYPES[r.type].title)}<NoPayBadge row={r} /></span> },
+            { header: t('hrForms.form'), cell: (r) => <span className={cn('inline-flex flex-wrap items-center gap-2', WRAP)}>{t(PDF_TYPES[r.type].title)}<NoPayBadge row={r} /></span> },
             {
               header: t('employee.employee'),
               cell: (r) => r.employee ? (
                 <span className="inline-flex flex-wrap items-center gap-x-2">
-                  <Link to={`/employees/${r.employee.id}`} className={cn('inline-flex min-h-tap items-center rounded font-medium text-primary hover:underline', FOCUS)}>{localName(r.employee, i18n.language)}</Link>
+                  <Link to={`/employees/${r.employee.id}`} className={cn('inline-flex min-h-tap items-center rounded font-medium text-primary hover:underline', WRAP, FOCUS)}>{localName(r.employee, i18n.language)}</Link>
                   <bdi dir="ltr" className="font-mono text-xs text-muted-foreground">{r.employee.code}</bdi>
                 </span>
               ) : '—',
             },
-            { header: t('hrForms.stage'), cell: (r) => (r.stage === 'signed' ? <Badge variant="success">{t('hrForms.signed')}</Badge> : <span className="text-muted-foreground">{t('hrForms.unsigned')}</span>) },
+            // the table shows the stage and the issue time from 1280 px only (with the stage at 1024 a long English row
+            // scrolls), so a narrower table keeps room for the buttons; cards show both
+            { header: t('hrForms.stage'), tableFrom: 'xl', cell: (r) => (r.stage === 'signed' ? <Badge variant="success">{t('hrForms.signed')}</Badge> : <span className="text-muted-foreground">{t('hrForms.unsigned')}</span>) },
             { header: t('common.status'), cell: (r) => <StatusBadge variant={STATUS[r.status]} label={t(`hrForms.${r.status}`)} /> },
-            { header: t('hrForms.issuedAt'), cell: (r) => time(r.created_at) },
-            // a field, not the actions slot: on a phone card the buttons need the full width
-            { header: t('common.actions'), cell: (r) => <PdfRowActions row={r} onChanged={reload} /> },
+            { header: t('hrForms.issuedAt'), tableFrom: 'xl', cell: (r) => <span className={WRAP}>{time(r.created_at)}</span> },
+            // a field, not the actions slot: on a phone card the buttons need the full width. One line from 1440 px, where the
+            // widest English row still fits; narrower, they wrap rather than push the table sideways.
+            { header: t('common.actions'), cell: (r) => (r.actions.length ? <PdfRowActions row={r} onChanged={reload} className="min-[1440px]:flex-nowrap" /> : '—') },
           ]}
         />
       </Card>

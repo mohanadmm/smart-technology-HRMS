@@ -173,10 +173,12 @@ Query, all optional: `type` (one of the four; required with `subject_id`), `subj
   (`Employees/Application/EmployeeReach.php:54`).
 - `subject_id`: `where(document(type)->subjectColumn(), subject_id)`. `employee_id`, `stage`, `status`: equality.
 - `awaiting_approval=1`: `unsigned`, `ready`, no successor (as `ExperienceCertificates::awaitingApproval`, `:165-173`), of the
-  types whose approve permission the caller holds at All. The leave signer rule is not in the filter; `actions` tells.
+  types whose approve permission the caller holds at All, narrowed by each type's signer rule (`PdfDocument::signable()`): the
+  list holds exactly the rows whose `actions` include `approve` (Step 2, Gate 2.3).
 - `q`: `serial_number = q` when q is digits, or `employee_id IN` the employees matching q through the `Employee::matching` scope
   (`name_ar`/`name_en` ilike, `code` when digits; no national ID).
-- Order: `serial_number desc, stage asc, id desc` (a signed row lists before its unsigned twin).
+- Order: `created_at desc, serial_number desc, stage asc, id desc` (newest issue first across types; a signed row lists before
+  its unsigned twin). Issue time leads since Step 2, Gate 2.3: serials count per type.
 - Answer: `ApiEnvelope::collection` with `meta.pagination` (`page, per_page, total, total_pages, has_next_page, has_previous_page`).
 
 ### `POST hr-form-exports` (create)
@@ -349,10 +351,14 @@ Each keeps today's behaviour unless the owner plan says otherwise; the rejected 
 11. The `CREATED` audit holds `form_type, serial_number, stage, regenerated_from_id, fields`; not the snapshot.
 12. `type` replaces `form_type` in the JSON (the column keeps its name); not both keys.
 13. Every list orders `serial_number desc, stage asc, id desc` (signed above its unsigned twin); not `created_at desc` (today's employee history).
+    Replaced in Step 2 (Gate 2.3): `created_at desc` leads and the three keys break ties, because the page «النماذج الصادرة» lists
+    all types together and serials count per type. Within one type and subject the order is unchanged.
 14. `per_page` defaults to 25 (today's history and `ExportPages`), max 100; the two request panels ask for 100 (their lists were unpaginated); not the project's usual 20.
 15. `q` matches the serial or the employee through `Employee::matching` without national ID; not a new search rule.
 16. `subject_id` requires `type`; not an OR over the four subject columns.
 17. `awaiting_approval` filters by permission only, the leave decider rule shows in `actions`; not a per-type SQL hook on `PdfDocument`.
+    Replaced in Step 2 (Gate 2.3): the toggle «بانتظار اعتمادي» listed leave PDFs with no Approve button, so each type states its
+    signer rule once as SQL (`PdfDocument::signable()`), used by the filter and by `approval()`.
 18. Own-scope lists filter with `EmployeeReach::ids(owner, today)`; not requiring a `subject_id`. Replaced in Step 2 (task 2c): an
     own-scope list must name `type=advance_request` and `subject_id` (422 otherwise) and returns the subject's rows when the
     caller reaches the employee on the request's date, else none.
