@@ -27,7 +27,7 @@ export type PdfExport = {
   file_name: string
   actions: ('download' | 'approve' | 'retry')[]
   shows_pay?: boolean | null
-  employee?: { id: string; code: number; name_ar: string; name_en: string | null }
+  employee?: { id: string; code: number; name_ar: string; name_en: string | null } | null
 }
 
 type Field = { name: string; label: string; kind: 'text' | 'textarea' | 'choice' | 'yesno'; required?: boolean; max?: number; options?: string[]; finance?: boolean }
@@ -75,10 +75,10 @@ export function canUsePdf(can: (a: string) => boolean, action: 'view' | 'generat
 }
 
 const EXPORTS = '/hr-form-exports'
-const STATUS: Record<PdfExport['status'], BadgeVariant> = { pending: 'info', ready: 'success', failed: 'danger' }
+export const STATUS: Record<PdfExport['status'], BadgeVariant> = { pending: 'info', ready: 'success', failed: 'danger' }
 const summaryCls = cn('flex min-h-tap w-fit cursor-pointer list-none items-center gap-2 rounded-lg text-sm font-medium text-primary [&::-webkit-details-marker]:hidden', FOCUS)
 
-export async function download(id: string, fileName: string) {
+async function download(id: string, fileName: string) {
   const url = URL.createObjectURL(await apiBlob(`${EXPORTS}/${id}/download`))
   const link = document.createElement('a')
   link.href = url
@@ -117,7 +117,7 @@ export function PdfPanel({ type, subject }: { type: PdfType; subject: string }) 
   }
   current.sort((a, b) => Number(a.shows_pay === false) - Number(b.shows_pay === false))
   const ownPending = !!rows?.some((r) => r.status === 'pending' && (r.shows_pay ?? seesPay) === seesPay)
-  const item = (r: PdfExport) => <PdfRow key={r.id} row={r} noPay={seesPay && r.shows_pay === false} onChanged={reload} />
+  const item = (r: PdfExport) => <PdfRow key={r.id} row={r} onChanged={reload} />
   const form = rows && canUsePdf(can, 'generate', type) && <GenerateForm type={type} subject={subject} blocked={ownPending} describedBy={statusId} />
   const hint = PDF_TYPES[type].hint
 
@@ -152,7 +152,7 @@ function Disclosure({ label, children }: { label: string; children: ReactNode })
   )
 }
 
-function PdfRow({ row, noPay, onChanged }: { row: PdfExport; noPay: boolean; onChanged: () => void }) {
+function PdfRow({ row, onChanged }: { row: PdfExport; onChanged: () => void }) {
   const { t } = useTranslation()
   const time = useCairoTime({ dateStyle: 'long', timeStyle: 'short' })
   return (
@@ -161,12 +161,19 @@ function PdfRow({ row, noPay, onChanged }: { row: PdfExport; noPay: boolean; onC
         <span className="font-semibold">{t('hrForms.serial', { serial: row.serial_number })}</span>
         {row.stage === 'signed' ? <Badge variant="success">{t('hrForms.signed')}</Badge> : <span className="text-muted-foreground">{t('hrForms.unsigned')}</span>}
         <StatusBadge variant={STATUS[row.status]} label={t(`hrForms.${row.status}`)} />
-        {noPay && <Badge variant="neutral">{t('hrForms.noPay')}</Badge>}
+        <NoPayBadge row={row} />
         <span className="text-muted-foreground">{time(row.created_at)}</span>
       </p>
       <PdfRowActions row={row} onChanged={onChanged} />
     </li>
   )
+}
+
+/** «بدون الراتب» on an advance copy made without the salary, for a caller who also sees the copies with it. */
+export function NoPayBadge({ row }: { row: PdfExport }) {
+  const { t } = useTranslation()
+  const { can } = useAuth()
+  return can('employee.view.all') && row.shows_pay === false ? <Badge variant="neutral">{t('hrForms.noPay')}</Badge> : null
 }
 
 /** View, Download, Approve and Retry for one row, each only when the row's `actions` allows it; a refusal shows inline. */

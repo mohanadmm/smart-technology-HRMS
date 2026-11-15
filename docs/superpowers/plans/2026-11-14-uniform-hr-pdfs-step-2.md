@@ -153,11 +153,11 @@
 ### Task 6: «النماذج الصادرة» page (2d)
 
 **Files:**
-- Modify: `backend/app/Modules/Pdf/Presentation/PdfController.php` (row key `employee`), `backend/app/Modules/Pdf/Application/PdfExports.php` only if the page query needs it, `frontend/src/pages/hr-forms.tsx` (`IssuedFormsPage` replaces `FormApprovalsPage` and `ApprovedExport`; `SignaturePage` stays), `frontend/src/App.tsx`, `frontend/src/components/layout/AppLayout.tsx`, `frontend/src/locales/{ar,en}.json`, `CONTEXT.md:214-223`, `docs/hrms-module-plan.md` (one line: Step 2 built)
+- Modify: `backend/app/Modules/Pdf/Presentation/PdfController.php` (row key `employee`), `backend/app/Modules/Pdf/Application/PdfExports.php` only if the page query needs it, `frontend/src/pages/hr-forms.tsx` (`IssuedFormsPage` replaces `FormApprovalsPage`, `ApprovedExport` and `ExportPages`; `SignaturePage` stays), `frontend/src/components/PdfPanel.tsx` (exports `NoPayBadge` and `STATUS` for the page; `download()` is private again), `frontend/src/App.tsx`, `frontend/src/components/layout/AppLayout.tsx`, `frontend/src/locales/{ar,en}.json`, `CONTEXT.md:214-223`, `docs/hrms-module-plan.md` (one line: Step 2 built)
 - Test: `backend/tests/Feature/PdfApiTest.php`, `frontend/src/pages/hr-forms.test.tsx`
 
 **Interfaces:**
-- Consumes: `PdfRowActions`, `PdfExport`, `PDF_TYPES` (Task 3).
+- Consumes: `PdfRowActions`, `PdfExport`, `PDF_TYPES` (Task 3); `EmployeeRoster::names()` for the row's `employee` (no change to `PdfExports.php`). The page keeps its filters and page number in the URL, so Back from an employee file returns to the same list.
 - Produces: row JSON key `employee: { id, code, name_ar, name_en } | null` on every `hr-form-exports` answer, loaded with one query per page. Route `/hr-forms` → `IssuedFormsPage`; nav entry gated on `hr_forms.view.all`; `/hr-form-approvals` and its nav entry removed.
 
 - [ ] **Step 1: Failing tests.** Backend `test_each_row_names_its_employee_with_one_query_for_the_page` (list of 3 rows: each has `employee.name_ar` and `employee.code`; the employee lookup runs once, asserted with the query log). Frontend, in `hr-forms.test.tsx`: the page lists serial, type, employee name (a link to `/employees/{id}`), stage, status and issued time; changing the type, stage and status filters and typing in search each refetch with `type=`, `stage=`, `status=`, `q=`; the «بانتظار اعتمادي» toggle sends `awaiting_approval=1`; Approve on a row with `actions: ['download','approve']` posts to `/hr-form-exports/{id}/approve` and the list refetches; a row with `actions: []` shows no action button; a caller with `hr_forms.view.own` only does not get the nav entry (assert on the nav's permission string `hr_forms.view.all`); empty and error states render.

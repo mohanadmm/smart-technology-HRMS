@@ -464,6 +464,27 @@ final class PdfApiTest extends TestCase
         $this->assertSame([$found, $newer, $leave], $ids('?awaiting_approval=1'));
     }
 
+    public function test_each_row_names_its_employee_with_one_query_for_the_page(): void
+    {
+        $this->signIn('hr');
+        $made = [];
+        for ($i = 0; $i < 3; $i++) {
+            [$employee, $fields] = $this->subject('experience_certificate');
+            $made[$employee] = $this->create('experience_certificate', $employee, $fields)->assertAccepted()
+                ->assertJsonPath('data.employee.id', $employee)->json('data.id');
+        }
+        $named = DB::table('employees')->whereIn('id', array_keys($made))->get(['id', 'code', 'name_ar', 'name_en'])
+            ->map(fn (object $e) => ['id' => $e->id, 'code' => (int) $e->code, 'name_ar' => $e->name_ar, 'name_en' => $e->name_en])->keyBy('id')->all();
+        DB::enableQueryLog();
+
+        $rows = $this->getJson(self::API.'?type=experience_certificate')->assertOk()->assertJsonCount(3, 'data')->json('data');
+        $this->assertSame(1, count(array_filter(array_column(DB::getQueryLog(), 'query'), fn (string $sql) => str_contains($sql, 'from "employees"'))));
+        foreach ($rows as $row) {
+            $this->assertSame($named[$row['employee_id']], $row['employee']);
+        }
+        $this->getJson(self::API.'/'.reset($made))->assertOk()->assertJsonPath('data.employee', $named[array_key_first($made)]);
+    }
+
     public function test_a_signed_row_lists_before_its_unsigned_twin(): void
     {
         $this->signIn('hr');

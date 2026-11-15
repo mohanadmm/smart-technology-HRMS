@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Pdf\Presentation;
 
+use App\Modules\Employees\Application\EmployeeRoster;
 use App\Modules\Identity\Presentation\RequestScope;
 use App\Modules\Pdf\Application\PdfExports;
 use App\Modules\Pdf\Application\RenderPdf;
@@ -25,7 +26,7 @@ use Throwable;
 /** The one HR-form API: every PdfType through `hr-form-exports`. */
 final class PdfController
 {
-    public function __construct(private readonly PdfExports $exports) {}
+    public function __construct(private readonly PdfExports $exports, private readonly EmployeeRoster $roster) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -46,8 +47,9 @@ final class PdfController
         ], [], ['type' => __('validation.attributes.kind')]);
         $actor = self::actor($request);
         $rows = $this->exports->list($filters, $actor, $scope);
+        $employees = $this->roster->names(array_values(array_unique(array_filter(array_map(fn (stdClass $row) => (string) $row->employee_id, $rows->items())))));
 
-        return ApiEnvelope::collection($request, array_values(array_map(fn (stdClass $row) => $this->row($row, $actor), $rows->items())), [
+        return ApiEnvelope::collection($request, array_values(array_map(fn (stdClass $row) => $this->row($row, $actor, $employees), $rows->items())), [
             'page' => $rows->currentPage(), 'per_page' => $rows->perPage(), 'total' => $rows->total(),
             'total_pages' => $rows->lastPage(), 'has_next_page' => $rows->hasMorePages(),
             'has_previous_page' => $rows->currentPage() > 1,
@@ -122,9 +124,15 @@ final class PdfController
         return $this->row($row, $actor);
     }
 
-    /** @return array<string, mixed> never the snapshot */
-    private function row(stdClass $row, Authenticatable $actor): array
+    /**
+     * @param  array<string, array<string, mixed>>|null  $employees  the page's employees by id (one query for a list); null reads the row's own
+     * @return array<string, mixed> never the snapshot; `employee` is the four naming keys only, as a manager receives this row too
+     */
+    private function row(stdClass $row, Authenticatable $actor, ?array $employees = null): array
     {
+        $employeeId = (string) $row->employee_id;
+        $employees ??= $this->roster->names($employeeId === '' ? [] : [$employeeId]);
+
         return [
             'id' => $row->id, 'type' => $row->form_type,
             ...array_intersect_key((array) $row, array_flip([
@@ -133,6 +141,7 @@ final class PdfController
             ])),
             'file_name' => self::fileName($row),
             'shows_pay' => PdfExports::showsPay($row),
+            'employee' => $employees[$employeeId] ?? null,
             'actions' => $this->exports->actions($row, $actor),
         ];
     }

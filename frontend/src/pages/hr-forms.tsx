@@ -1,100 +1,103 @@
+import { ScrollText } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
-import { ErrorBanner } from '@/components/form'
-import { download } from '@/components/PdfPanel'
+import { Link, useSearchParams } from 'react-router-dom'
+import { DataList } from '@/components/common/DataList'
+import { FilterSelect, SearchInput } from '@/components/common/Filters'
+import { PageHeader } from '@/components/common/PageHeader'
+import { StatusBadge } from '@/components/common/StatusBadge'
+import { ErrorBanner, localName, useCairoTime } from '@/components/form'
+import { NoPayBadge, PDF_TYPES, PdfRowActions, STATUS, type PdfExport, type PdfType } from '@/components/PdfPanel'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { useDebounced } from '@/hooks/useDebounced'
 import { apiBlob } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { useApi, useList, useSave } from '@/lib/query'
+import { cn, FOCUS } from '@/lib/utils'
 
 const exportsPath = '/hr-form-exports'
 const signaturePath = '/me/hr-signature'
-type ExportResult = { id: string }
+const PAGE = 20
+const FILTERS = ['type', 'stage', 'status', 'awaiting_approval']
 type Signature = { signature: { version: number } | null }
 
-export function ExportPages({ page, total, setPage }: { page: number; total: number; setPage: (page: number) => void }) {
-  const { t } = useTranslation()
-  if (page === 1 && total <= 25) return null
-  return (
-    <div className="flex gap-2">
-      <Button variant="outline" disabled={page === 1} onClick={() => setPage(page - 1)}>{t('hrForms.previous')}</Button>
-      <Button variant="outline" disabled={page * 25 >= total} onClick={() => setPage(page + 1)}>{t('hrForms.next')}</Button>
-    </div>
-  )
-}
-
-export function FormApprovalsPage() {
-  const { t } = useTranslation()
-  const [page, setPage] = useState(1)
-  const [busy, setBusy] = useState<string>()
-  const [error, setError] = useState<Error>()
-  const [approved, setApproved] = useState<string>()
-  const list = useList(`${exportsPath}?awaiting_approval=1&type=experience_certificate&page=${page}`)
-  const save = useSave()
-  async function approve(id: string) {
-    setBusy(id)
-    setError(undefined)
-    try {
-      const row = await save<ExportResult>(`${exportsPath}/${id}/approve`)
-      setApproved(row.id)
-    } catch (err) {
-      setError(err as Error)
-    } finally {
-      setBusy(undefined)
-    }
-  }
-
-  return (
-    <section className="space-y-4">
-      <h1 className="text-xl font-semibold">{t('hrForms.approvals')}</h1>
-      <ErrorBanner shown={[]} err={error ?? list.err} />
-      {approved && <ApprovedExport key={approved} id={approved} />}
-      {!list.loading && !list.err && list.rows.length === 0 && <p>{t('hrForms.empty')}</p>}
-      <ul className="space-y-2">
-        {list.rows.map((row) => {
-          const id = String(row.id)
-          return (
-            <li key={id} className="flex flex-wrap items-center gap-2 rounded border p-3">
-              <Link className="me-auto underline" to={`/employees/${row.employee_id}`}>{t('hrForms.serial', { serial: row.serial_number })} · {t('hrForms.certificate')}</Link>
-              <Button variant="outline" onClick={() => void download(id, row.file_name).catch(setError)}>{t('hrForms.download')}</Button>
-              <Button disabled={busy !== undefined} onClick={() => void approve(id)}>{t('hrForms.approve')}</Button>
-            </li>
-          )
-        })}
-      </ul>
-      <ExportPages page={page} total={list.total} setPage={setPage} />
-    </section>
-  )
-}
-
-function ApprovedExport({ id }: { id: string }) {
-  const { t } = useTranslation()
-  const save = useSave()
-  const [error, setError] = useState<Error>()
-  const [retrying, setRetrying] = useState(false)
-  const path = `${exportsPath}/${id}`
-  const { data, err, reload } = useApi<{ status: string; serial_number: number; file_name: string }>(path)
-  const pending = data?.status === 'pending'
+/** `/hr-forms`: every issued form the caller may read, newest first (the server's order). The filters live in the URL, so Back from an employee keeps the list. */
+export function IssuedFormsPage() {
+  const { t, i18n } = useTranslation()
+  const time = useCairoTime({ dateStyle: 'long', timeStyle: 'short' })
+  const [params, setParams] = useSearchParams()
+  const set = (patch: Record<string, string>) =>
+    setParams((p) => {
+      for (const [k, v] of Object.entries(patch)) {
+        if (v) p.set(k, v)
+        else p.delete(k)
+      }
+      return p
+    }, { replace: true })
+  const [q, setQ] = useState(params.get('q') ?? '') // the router writes the URL in a transition, which would lag a box bound to it
+  const search = useDebounced(q, 250)
+  const filters = Object.fromEntries(FILTERS.map((k) => [k, params.get(k) ?? '']))
+  const page = Number(params.get('page')) || 1
+  const qs = new URLSearchParams(Object.entries({ page: String(page), per_page: String(PAGE), ...filters, q: search }).filter(([, v]) => v))
+  const { rows, total, err, loading, reload } = useList(`${exportsPath}?${qs}`)
+  const polling = rows.some((r) => r.status === 'pending')
   useEffect(() => {
-    if (!pending) return
-    const timer = window.setInterval(reload, 2500)
+    if (!polling) return
+    const timer = window.setInterval(reload, 3000)
     return () => window.clearInterval(timer)
-  }, [pending, reload])
+  }, [polling, reload])
+  const filter = (patch: Record<string, string>) => set({ ...patch, page: '' })
 
   return (
-    <div className="space-y-2 rounded border p-3">
-      <ErrorBanner shown={[]} err={error ?? err} />
-      {data && <p role="status">{t('hrForms.serial', { serial: data.serial_number })} · {t(`hrForms.${data.status}`)}</p>}
-      {data?.status === 'ready' && <Button variant="outline" onClick={() => void download(id, data.file_name).catch(setError)}>{t('hrForms.download')}</Button>}
-      {data?.status === 'failed' && (
-        <Button disabled={retrying} onClick={async () => {
-          setRetrying(true)
-          setError(undefined)
-          try { await save(`${path}/retry`) } catch (err) { setError(err as Error) } finally { setRetrying(false) }
-        }}>{t('hrForms.retry')}</Button>
-      )}
+    <div className="space-y-6">
+      <PageHeader title={t('hrForms.issued')} />
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 border-b p-4">
+          <SearchInput value={q} onChange={(v) => { setQ(v); filter({ q: v }) }} placeholder={t('hrForms.search')} maxLength={100} className="sm:w-full sm:max-w-md" />
+          <FilterSelect value={filters.type ?? ''} onChange={(v) => filter({ type: v })} label={t('hrForms.form')} allLabel={t('hrForms.allForms')} options={(Object.keys(PDF_TYPES) as PdfType[]).map((k) => [k, t(PDF_TYPES[k].title)])} />
+          <FilterSelect value={filters.stage ?? ''} onChange={(v) => filter({ stage: v })} label={t('hrForms.stage')} allLabel={t('hrForms.allStages')} options={['unsigned', 'signed'].map((s) => [s, t(`hrForms.${s}`)])} />
+          <FilterSelect value={filters.status ?? ''} onChange={(v) => filter({ status: v })} label={t('common.status')} allLabel={t('hrForms.allStatuses')} options={Object.keys(STATUS).map((s) => [s, t(`hrForms.${s}`)])} />
+          <label className="flex min-h-tap items-center gap-3 text-sm font-medium">
+            <input type="checkbox" className={cn(FOCUS, 'size-4 accent-primary')} checked={!!filters.awaiting_approval} onChange={(e) => filter({ awaiting_approval: e.target.checked ? '1' : '' })} />
+            {t('hrForms.awaitingMine')}
+          </label>
+          {(q || Object.values(filters).some(Boolean)) && (
+            <Button variant="ghost" size="sm" onClick={() => { setQ(''); filter({ q: '', type: '', stage: '', status: '', awaiting_approval: '' }) }} className="lg:ms-auto">
+              {t('common.clearFilters')}
+            </Button>
+          )}
+        </div>
+        <DataList<PdfExport>
+          label={t('hrForms.issued')}
+          rows={rows as PdfExport[]}
+          rowKey={(r) => r.id}
+          loading={loading}
+          error={err}
+          empty={{ icon: ScrollText, title: t('hrForms.none') }}
+          page={{ page, pageSize: PAGE, total, onPageChange: (p) => set({ page: p > 1 ? String(p) : '' }) }}
+          title={{ header: t('hrForms.serialNumber'), cell: (r) => t('hrForms.serial', { serial: r.serial_number }) }}
+          fields={[
+            { header: t('hrForms.form'), cell: (r) => <span className="inline-flex flex-wrap items-center gap-2">{t(PDF_TYPES[r.type].title)}<NoPayBadge row={r} /></span> },
+            {
+              header: t('employee.employee'),
+              cell: (r) => r.employee ? (
+                <span className="inline-flex flex-wrap items-center gap-x-2">
+                  <Link to={`/employees/${r.employee.id}`} className={cn('inline-flex min-h-tap items-center rounded font-medium text-primary hover:underline', FOCUS)}>{localName(r.employee, i18n.language)}</Link>
+                  <bdi dir="ltr" className="font-mono text-xs text-muted-foreground">{r.employee.code}</bdi>
+                </span>
+              ) : '—',
+            },
+            { header: t('hrForms.stage'), cell: (r) => (r.stage === 'signed' ? <Badge variant="success">{t('hrForms.signed')}</Badge> : <span className="text-muted-foreground">{t('hrForms.unsigned')}</span>) },
+            { header: t('common.status'), cell: (r) => <StatusBadge variant={STATUS[r.status]} label={t(`hrForms.${r.status}`)} /> },
+            { header: t('hrForms.issuedAt'), cell: (r) => time(r.created_at) },
+            // a field, not the actions slot: on a phone card the buttons need the full width
+            { header: t('common.actions'), cell: (r) => <PdfRowActions row={r} onChanged={reload} /> },
+          ]}
+        />
+      </Card>
     </div>
   )
 }
