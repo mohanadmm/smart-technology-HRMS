@@ -104,7 +104,8 @@ final class PdfApiTest extends TestCase
             ->assertJsonPath('data.status', 'pending')->assertJsonPath('data.regenerated_from_id', null)->assertJsonPath('data.actions', [])
             ->assertJsonPath('data.file_name', str_replace('_', '-', $type).'-1-unsigned.pdf')
             ->assertJsonMissingPath('data.snapshot')->assertJsonMissingPath('data.form_type')->json('data.id');
-        $this->create($type, $subject, $fields, $key)->assertAccepted()->assertJsonPath('data.id', $first);
+        $this->create($type, $subject, $fields, $key)->assertAccepted()->assertJsonPath('data.id', $first)->assertJsonPath('data.status', 'pending');
+        $this->assertCount(1, Queue::pushed(RenderPdf::class, fn (RenderPdf $job) => $job->exportId === $first), 'a replay is not queued again');
         $this->create($type, $subject, [...$fields, 'job_title' => 'Another title'], $key)
             ->assertConflict()->assertJsonPath('error.code', 'concurrency_conflict');
         $second = $this->create($type, $subject, $fields)->assertAccepted()
@@ -373,10 +374,14 @@ final class PdfApiTest extends TestCase
         Exceptions::fake();
         Bus::shouldReceive('dispatch')->once()->with(Mockery::type(RenderPdf::class))->andThrow(new RuntimeException('Connection refused'));
         [$employee, $fields] = $this->subject('experience_certificate');
+        $key = (string) Str::uuid7();
 
-        $id = $this->create('experience_certificate', $employee, $fields)->assertAccepted()->assertJsonPath('data.status', 'failed')->json('data.id');
+        $id = $this->create('experience_certificate', $employee, $fields, $key)->assertAccepted()->assertJsonPath('data.status', 'failed')->json('data.id');
         $this->getJson(self::API."/{$id}")->assertOk()->assertJsonPath('data.status', 'failed')
             ->assertJsonPath('data.failure_code', 'render_failed')->assertJsonPath('data.actions', ['retry']);
+        // A replay (the browser resends its key after an unanswered request) answers the failed row with Retry, unqueued.
+        $this->create('experience_certificate', $employee, $fields, $key)->assertAccepted()->assertJsonPath('data.id', $id)
+            ->assertJsonPath('data.status', 'failed')->assertJsonPath('data.actions', ['retry']);
         $this->assertSame(0, DB::table('hr_form_exports')->where('status', 'pending')->count());
         Exceptions::assertReported(fn (RuntimeException $e) => $e->getMessage() === 'Connection refused');
     }

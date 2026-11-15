@@ -1442,7 +1442,8 @@
     "awaitingMine": "بانتظار اعتمادي",
     "serialNumber": "الرقم المسلسل",
     "issuedAt": "تاريخ الإصدار",
-    "none": "لا توجد نماذج صادرة"
+    "none": "لا توجد نماذج صادرة",
+    "approvedViaViewAs": "اعتُمدت بالعرض بحساب آخر"
   },
   "attendanceRequests": {
     "paperDateOptional": "تاريخ القرار الورقي (اختياري)",

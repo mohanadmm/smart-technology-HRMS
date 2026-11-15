@@ -34,6 +34,8 @@ interface PdfDocument
     public function subjectColumn(): string;
 
     /**
+     * The view data must hold `title`, the form name that `pdf.layout` prints with the serial as the PDF's document title.
+     *
      * @param  array<string, mixed>  $snapshot
      * @return array{0: view-string, 1: array<string, mixed>} [view name, type-specific view data]
      */

@@ -69,6 +69,7 @@ Data: `GET /hr-form-exports?type=&subject_id=&per_page=100` through `useApi(...,
 while any row is `pending`, never otherwise. Generate posts `{ type, subject_id, idempotency_key, fields }`; the key is
 kept while a request fails or goes unanswered, so a double click or a retry after a network error replays instead of
 duplicating; a created copy or a changed value takes a new key, so «إنشاء نسخة جديدة» with the same values makes a new copy.
+After a create, Generate stays disabled until the list shows the created copy, so a second click in that gap sends nothing.
 
 What the user sees (the newest row first; the server orders signed above its unsigned twin):
 
@@ -91,11 +92,13 @@ What the user sees (the newest row first; the server orders signed above its uns
 | Failed | «تعذّر إنشاء الملف»; Retry when `actions` has `retry` |
 | Signed | the signed row on top with a «موقّع» badge; its unsigned twin moves under «نسخ سابقة» |
 | No-pay copy (advance) | a «بدون الراتب» badge on rows whose `shows_pay` is `false`, shown to callers who can see both kinds |
+| Approved through View as | a «اعتُمدت بالعرض بحساب آخر» badge on rows whose `impersonator_id` is set (the panel row and the issued-forms page share it) |
 
 Current rows and earlier copies: rows are grouped by their `shows_pay` value (one group for every type but the advance).
 The newest row of each group is current and shows in full, the pay copy first; the rest sit under «نسخ سابقة». So when a
 manager generates after HR, HR's own copy stays current beside the manager's. Generate is disabled only while the
-caller's own kind of copy is `pending` (the caller's kind is `shows_pay = can('employee.view.all')`).
+caller's own kind of copy is `pending` (the caller's kind is `shows_pay = can('employee.view.all')`), or while a copy
+just created is not yet in the list.
 
 View opens `FileViewer` on `/hr-form-exports/{id}/download` with the row's `file_name`. Approve and Retry post to the
 row's routes and show the server's error in the panel (for example the missing signature image).
@@ -176,7 +179,9 @@ Frontend:
 - Filters: type, stage, status, search `q` (serial or employee), and a toggle «بانتظار اعتمادي» (`awaiting_approval=1`): exactly
   the rows the caller can approve now (those whose `actions` include `approve`). The filters and the page number live in the URL.
 - Order: newest issue first across all types. Below 1280 px the table hides the stage and the issue time (the phone cards keep
-  both); a row's buttons sit on one line from 1440 px.
+  both); a row's buttons sit on one line from 1440 px. The issue time prints the date and the time as two parts that never
+  split (no «في» / "at" between them). Between 640 and 767 px the table's badges may wrap between words and its buttons
+  drop their icons, so the English table does not scroll sideways.
 - Row actions: View, Download, Approve, Retry, from `row.actions`, with the same handlers as the panel (shared, not copied).
 - 3 s refetch while a listed row is `pending`.
 - Backend: the row JSON gains `employee: { id, code, name_ar, name_en }` (one query per page, not per row). Old rows of
@@ -228,6 +233,9 @@ into `main`, and Gate 2.
    request itself already notifies HR instantly, generating its PDF changes no data, and the `CREATED` audit row records
    it. **Owner to confirm.**
 9. `/hr-form-approvals` is removed without a redirect (the app has no stored links to it; the builder greps to confirm).
+10. Every PDF's metadata title is its form name and serial («{form name} - الرقم المسلسل 14»), so the viewer names the file instead of the
+    renderer's temporary name; each type's `PdfDocument::view()` returns `title`. A metadata-only change: the page layout and
+    wording are untouched.
 
 ## Left to the builder
 Component internals, exact class names, the wording of new i18n keys (glossary terms from `CONTEXT.md`), test structure,

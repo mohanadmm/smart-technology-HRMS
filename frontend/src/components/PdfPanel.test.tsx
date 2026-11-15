@@ -1,8 +1,10 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { afterEach, expect, test, vi } from 'vitest'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { canDo } from '@/lib/auth'
+import { useApi } from '@/lib/query'
 import { json, mockFetch, pagination, renderWithAuth } from '@/test-utils'
 import { canUsePdf, PDF_TYPES, PdfPanel, type PdfExport, type PdfType } from './PdfPanel'
 
@@ -47,7 +49,13 @@ test('a pending row hides View and Download, disables Generate, and polls every 
   const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
   const list = vi.fn(answer([row({ status: 'pending', actions: [] })]))
   mockFetch({ [LIST]: list })
-  const panel = renderWithAuth(<PdfPanel type="leave_request" subject="leave-1" />, HR)
+  // Another reader of the same list stays mounted, so a timer left running after the panel goes would still refetch.
+  function Page() {
+    const [open, setOpen] = useState(true)
+    useApi('/hr-form-exports?type=leave_request&subject_id=leave-1&per_page=100')
+    return <>{open && <PdfPanel type="leave_request" subject="leave-1" />}<button type="button" onClick={() => setOpen(false)}>close</button></>
+  }
+  renderWithAuth(<Page />, HR)
   expect(await screen.findByRole('status')).toHaveTextContent('جارٍ إنشاء الملف')
   expect(screen.queryByRole('button', { name: 'عرض' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'تنزيل PDF' })).toBeNull()
@@ -56,7 +64,7 @@ test('a pending row hides View and Download, disables Generate, and polls every 
   expect(list).toHaveBeenCalledTimes(1)
   await act(() => vi.advanceTimersByTimeAsync(3000))
   await waitFor(() => expect(list).toHaveBeenCalledTimes(2))
-  panel.unmount()
+  await user.click(screen.getByRole('button', { name: 'close' }))
   await act(() => vi.advanceTimersByTimeAsync(9000))
   expect(list).toHaveBeenCalledTimes(2)
 })
@@ -121,14 +129,21 @@ test('a ready row whose actions are empty shows no button at all: buttons never 
 
 test('Generate replays its idempotency key after a failed request and takes a new one after a create or a changed value', async () => {
   const user = userEvent.setup()
+  const rows = [row({ id: 'r0', type: 'experience_certificate' })]
   const unavailable = () => json(503, { error: { code: 'unavailable', message: 'الخدمة غير متاحة' } })
-  const created = () => json(202, { data: row({ status: 'pending' }) })
+  // As the server does, the list then shows the copy made (ready here, so Generate opens again).
+  const created = () => {
+    const made = row({ id: `c${rows.length}`, type: 'experience_certificate' })
+    rows.unshift(made)
+    return json(202, { data: { ...made, status: 'pending' } })
+  }
   const answers: (() => Response)[] = [() => { throw new TypeError('Failed to fetch') }, unavailable, unavailable, created, created]
   let calls = 0
   const post = vi.fn(() => answers[calls++]!())
-  mockFetch({ [LIST]: answer([]), 'POST /api/v1/hr-form-exports': post })
+  mockFetch({ [LIST]: answer(rows), 'POST /api/v1/hr-form-exports': post })
   renderWithAuth(<PdfPanel type="experience_certificate" subject="e1" />, HR)
-  const title = await screen.findByLabelText('المسمى الوظيفي')
+  await user.click(await screen.findByText('إنشاء نسخة جديدة'))
+  const title = screen.getByLabelText('المسمى الوظيفي')
   const submit = async (n: number) => {
     const button = screen.getByRole('button', { name: 'إنشاء' })
     await waitFor(() => expect(button).toBeEnabled())
@@ -155,6 +170,37 @@ test('Generate replays its idempotency key after a failed request and takes a ne
   await submit(5)
   expect(sent(post, 4).fields).toEqual(sent(post, 3).fields)
   expect(key(4)).not.toBe(key(3))
+})
+
+test('after a create, Generate stays disabled until the list shows the created row, so a fast second click sends nothing', async () => {
+  const user = userEvent.setup()
+  const old = row({ id: 'r0', type: 'experience_certificate' })
+  let release: (r: Response) => void = () => {}
+  let lists = 0
+  const list = () => (lists++ ? new Promise<Response>((r) => { release = r }) as unknown as Response : json(200, { data: [old], meta: { pagination } }))
+  const post = vi.fn(() => json(202, { data: row({ id: 'c1', type: 'experience_certificate', status: 'pending', actions: [] }) }))
+  mockFetch({ [LIST]: list, 'POST /api/v1/hr-form-exports': post })
+  renderWithAuth(<PdfPanel type="experience_certificate" subject="e1" />, HR)
+  await user.click(await screen.findByText('إنشاء نسخة جديدة'))
+  const title = screen.getByLabelText('المسمى الوظيفي')
+  await user.type(title, 'مهندسة اختبار')
+  const generate = screen.getByRole('button', { name: 'إنشاء' })
+  await user.click(generate)
+  await waitFor(() => expect(lists).toBe(2))
+  await waitFor(() => expect(title).toBeEnabled())
+  await user.click(generate)
+  expect(post).toHaveBeenCalledOnce()
+  expect(generate).toBeDisabled()
+  release(json(200, { data: [row({ id: 'c1', type: 'experience_certificate' }), old], meta: { pagination } }))
+  await waitFor(() => expect(generate).toBeEnabled())
+})
+
+test('a copy approved through View as says so on its row; a copy approved otherwise does not', async () => {
+  mockFetch({ [LIST]: answer([row({ id: 's1', stage: 'signed', impersonator_id: 'dev-1' }), row({ id: 's0', serial_number: 0, stage: 'signed' })]) })
+  renderWithAuth(<PdfPanel type="leave_request" subject="leave-1" />, ['hr_forms.view.all'])
+  const [viewAs, normal] = await screen.findAllByRole('listitem')
+  expect(within(viewAs!).getByText('اعتُمدت بالعرض بحساب آخر')).toBeInTheDocument()
+  expect(within(normal!).queryByText('اعتُمدت بالعرض بحساب آخر')).toBeNull()
 })
 
 test('View opens the file in the app, with an Open link and no frame where the browser has no PDF viewer', async () => {

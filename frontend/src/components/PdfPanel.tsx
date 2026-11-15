@@ -28,6 +28,7 @@ export type PdfExport = {
   actions: ('download' | 'approve' | 'retry')[]
   shows_pay?: boolean | null
   employee?: { id: string; code: number; name_ar: string; name_en: string | null } | null
+  impersonator_id?: string | null
 }
 
 type Field = { name: string; label: string; kind: 'text' | 'textarea' | 'choice' | 'yesno'; required?: boolean; max?: number; options?: string[]; finance?: boolean }
@@ -118,7 +119,7 @@ export function PdfPanel({ type, subject }: { type: PdfType; subject: string }) 
   current.sort((a, b) => Number(a.shows_pay === false) - Number(b.shows_pay === false))
   const ownPending = !!rows?.some((r) => r.status === 'pending' && (r.shows_pay ?? seesPay) === seesPay)
   const item = (r: PdfExport) => <PdfRow key={r.id} row={r} onChanged={reload} />
-  const form = rows && canUsePdf(can, 'generate', type) && <GenerateForm type={type} subject={subject} blocked={ownPending} describedBy={statusId} />
+  const form = rows && canUsePdf(can, 'generate', type) && <GenerateForm type={type} subject={subject} rows={rows} blocked={ownPending} describedBy={statusId} />
   const hint = PDF_TYPES[type].hint
 
   return (
@@ -162,6 +163,7 @@ function PdfRow({ row, onChanged }: { row: PdfExport; onChanged: () => void }) {
         {row.stage === 'signed' ? <Badge variant="success">{t('hrForms.signed')}</Badge> : <span className="text-muted-foreground">{t('hrForms.unsigned')}</span>}
         <StatusBadge variant={STATUS[row.status]} label={t(`hrForms.${row.status}`)} />
         <NoPayBadge row={row} />
+        <ViewAsBadge row={row} />
         <span className="text-muted-foreground">{time(row.created_at)}</span>
       </p>
       <PdfRowActions row={row} onChanged={onChanged} />
@@ -174,6 +176,12 @@ export function NoPayBadge({ row }: { row: PdfExport }) {
   const { t } = useTranslation()
   const { can } = useAuth()
   return can('employee.view.all') && row.shows_pay === false ? <Badge variant="neutral">{t('hrForms.noPay')}</Badge> : null
+}
+
+/** «اعتُمدت بالعرض بحساب آخر» on a copy a developer approved while viewing as another account. */
+export function ViewAsBadge({ row }: { row: PdfExport }) {
+  const { t } = useTranslation()
+  return row.impersonator_id ? <Badge variant="warning">{t('hrForms.approvedViaViewAs')}</Badge> : null
 }
 
 /** View, Download, Approve and Retry for one row, each only when the row's `actions` allows it; a refusal shows inline under them. `className` styles the row of buttons. */
@@ -227,15 +235,20 @@ export function PdfRowActions({ row, onChanged, className }: { row: PdfExport; o
   )
 }
 
-/** The form keeps its idempotency key while a request fails or goes unanswered, so a retry replays it; a created copy or a changed value takes a new key. */
-function GenerateForm({ type, subject, blocked, describedBy }: { type: PdfType; subject: string; blocked: boolean; describedBy: string }) {
+/**
+ * The form keeps its idempotency key while a request fails or goes unanswered, so a retry replays it; a created copy or a changed
+ * value takes a new key. After a create it stays disabled until `rows` shows the copy: a click before that would make a second one.
+ */
+function GenerateForm({ type, subject, rows, blocked, describedBy }: { type: PdfType; subject: string; rows: PdfExport[]; blocked: boolean; describedBy: string }) {
   const { t } = useTranslation()
   const { can } = useAuth()
   const save = useSave()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>()
+  const [created, setCreated] = useState<string>()
   const request = useRef<{ fields: string; key: string }>(undefined)
   const fields = PDF_TYPES[type].fields.filter((f) => !f.finance || can('employee.view.all'))
+  const unlisted = !!created && !rows.some((r) => r.id === created)
 
   async function generate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -249,8 +262,9 @@ function GenerateForm({ type, subject, blocked, describedBy }: { type: PdfType; 
     setBusy(true)
     setError(undefined)
     try {
-      await save(EXPORTS, { body: { type, subject_id: subject, idempotency_key: request.current.key, fields: values } })
+      const row = await save<PdfExport>(EXPORTS, { body: { type, subject_id: subject, idempotency_key: request.current.key, fields: values } })
       request.current = undefined
+      setCreated(row.id)
     } catch (e) {
       setError(e)
     } finally {
@@ -277,7 +291,7 @@ function GenerateForm({ type, subject, blocked, describedBy }: { type: PdfType; 
             )}
           </label>
         ))}
-        <Button disabled={busy || blocked} aria-describedby={blocked ? describedBy : undefined} className="sm:col-span-2 sm:justify-self-start">{t('hrForms.generate')}</Button>
+        <Button disabled={busy || blocked || unlisted} aria-describedby={blocked ? describedBy : undefined} className="sm:col-span-2 sm:justify-self-start">{t('hrForms.generate')}</Button>
       </form>
     </>
   )

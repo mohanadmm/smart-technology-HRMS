@@ -69,9 +69,9 @@ final class PdfController
             'fields.paper_decision_date.missing' => __('errors.advance_paper_date_pending'),
         ])['fields'] ?? [];
         $actor = self::actor($request);
-        $row = $this->exports->create($type, $data['subject_id'], $data['idempotency_key'], $fields, $actor, RequestScope::ownerId($request));
+        [$row, $made] = $this->exports->create($type, $data['subject_id'], $data['idempotency_key'], $fields, $actor, RequestScope::ownerId($request));
 
-        return ApiEnvelope::single($request, $this->queued($row, $actor), 202);
+        return ApiEnvelope::single($request, $made ? $this->queued($row, $actor) : $this->row($row, $actor), 202);
     }
 
     public function show(Request $request, string $export): JsonResponse

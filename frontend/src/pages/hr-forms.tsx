@@ -7,7 +7,7 @@ import { FilterSelect, SearchInput } from '@/components/common/Filters'
 import { PageHeader } from '@/components/common/PageHeader'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { ErrorBanner, localName, useCairoTime } from '@/components/form'
-import { NoPayBadge, PDF_TYPES, PdfRowActions, STATUS, type PdfExport, type PdfType } from '@/components/PdfPanel'
+import { NoPayBadge, PDF_TYPES, PdfRowActions, STATUS, ViewAsBadge, type PdfExport, type PdfType } from '@/components/PdfPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -39,7 +39,8 @@ export function IssuedFormsPage() {
 
 function IssuedForms() {
   const { t, i18n } = useTranslation()
-  const time = useCairoTime({ dateStyle: 'long', timeStyle: 'short' })
+  const date = useCairoTime({ dateStyle: 'long' })
+  const time = useCairoTime({ timeStyle: 'short' })
   const [params, setParams] = useSearchParams()
   // The controls and the request read this state and the URL follows it: the router writes the URL in a transition (a control
   // bound to it lags) and builds each write from the last render's params (two writes in one tick keep only the second).
@@ -91,7 +92,8 @@ function IssuedForms() {
           page={{ page, pageSize: PAGE, total, onPageChange: (p) => set({ page: p > 1 ? String(p) : '' }) }}
           title={{ header: t('hrForms.serialNumber'), cell: (r) => t('hrForms.serial', { serial: r.serial_number }) }}
           fields={[
-            { header: t('hrForms.form'), cell: (r) => <span className={cn('inline-flex flex-wrap items-center gap-2', WRAP)}>{t(PDF_TYPES[r.type].title)}<NoPayBadge row={r} /></span> },
+            // its badges wrap too, so they never set the column's width (the English table scrolled sideways from 640 to 767 px)
+            { header: t('hrForms.form'), cell: (r) => <span className={cn('inline-flex flex-wrap items-center gap-2 text-balance [&>*]:whitespace-normal', WRAP)}>{t(PDF_TYPES[r.type].title)}<NoPayBadge row={r} /><ViewAsBadge row={r} /></span> },
             {
               header: t('employee.employee'),
               cell: (r) => r.employee ? (
@@ -104,11 +106,14 @@ function IssuedForms() {
             // the table shows the stage and the issue time from 1280 px only (with the stage at 1024 a long English row
             // scrolls), so a narrower table keeps room for the buttons; cards show both
             { header: t('hrForms.stage'), tableFrom: 'xl', cell: (r) => (r.stage === 'signed' ? <Badge variant="success">{t('hrForms.signed')}</Badge> : <span className="text-muted-foreground">{t('hrForms.unsigned')}</span>) },
-            { header: t('common.status'), cell: (r) => <StatusBadge variant={STATUS[r.status]} label={t(`hrForms.${r.status}`)} /> },
-            { header: t('hrForms.issuedAt'), tableFrom: 'xl', cell: (r) => <span className={WRAP}>{time(r.created_at)}</span> },
+            // between words, and only from 640 to 767 px, where the English table had no room for it on one line
+            { header: t('common.status'), cell: (r) => <StatusBadge variant={STATUS[r.status]} label={t(`hrForms.${r.status}`)} className="wrap-normal sm:max-md:whitespace-normal" /> },
+            // the date and the time may sit on two lines, but neither splits (an AM/PM mark alone on a line misreads)
+            { header: t('hrForms.issuedAt'), tableFrom: 'xl', cell: (r) => <span className={WRAP}><span className="whitespace-nowrap">{date(r.created_at)}</span> <span className="whitespace-nowrap">{time(r.created_at)}</span></span> },
             // a field, not the actions slot: on a phone card the buttons need the full width. One line from 1440 px, where the
-            // widest English row still fits; narrower, they wrap rather than push the table sideways.
-            { header: t('common.actions'), cell: (r) => (r.actions.length ? <PdfRowActions row={r} onChanged={reload} className="min-[1440px]:flex-nowrap" /> : '—') },
+            // widest English row still fits; narrower, they wrap rather than push the table sideways. From 640 to 767 px the
+            // table has no room for their icons (the labels stay); cards keep them.
+            { header: t('common.actions'), cell: (r) => (r.actions.length ? <PdfRowActions row={r} onChanged={reload} className="min-[1440px]:flex-nowrap sm:max-md:[&_svg]:hidden" /> : '—') },
           ]}
         />
       </Card>

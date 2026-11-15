@@ -49,7 +49,8 @@ final class AdvanceRequestPdf implements PdfDocument
         if ($scope !== null && ! $this->employees->isManagedBy($employeeId, $scope, $date)) {
             throw new ModelNotFoundException;
         }
-        $employee = $showsPay ? $this->employees->show($employeeId) : Employee::query()->findOrFail($employeeId)->toArray();
+        $employee = $showsPay ? $this->employees->show($employeeId)
+            : Employee::query()->findOrFail($employeeId, ['name_ar', 'name_en', 'code', 'department', 'gender', 'hire_date'])->toArray();
 
         return [$employeeId, [
             ...array_intersect_key($employee, array_flip(['name_ar', 'name_en', 'code', 'department', 'gender'])),

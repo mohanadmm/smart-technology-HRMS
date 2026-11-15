@@ -41,7 +41,7 @@ test('each row shows its serial, type, employee (linking to the file), stage, st
   expect(first).toHaveTextContent('1042')
   expect(first).toHaveTextContent('بدون توقيع')
   expect(first).toHaveTextContent('جاهز')
-  expect(first).toHaveTextContent('14 نوفمبر 2026 في 5:05 م')
+  expect(first).toHaveTextContent('14 نوفمبر 2026 5:05 م')
   expect(second).toHaveTextContent('نموذج طلب سلفة')
   expect(second).toHaveTextContent('موقّعة')
   expect(second).toHaveTextContent('تعذر إنشاء الملف')
@@ -147,6 +147,14 @@ test('an advance copy made without the salary carries «بدون الراتب»;
   const [, noPay, pay] = within(await table()).getAllByRole('row')
   expect(noPay).toHaveTextContent('بدون الراتب')
   expect(pay).not.toHaveTextContent('بدون الراتب')
+})
+
+test('a copy approved through View as says so in its form cell, which the table and the phone card always show', async () => {
+  mockFetch({ [LIST]: answer([row({ stage: 'signed', impersonator_id: 'dev-1' }), row({ id: 'r2', serial_number: 13, stage: 'signed' })]) })
+  renderWithAuth(<IssuedFormsPage />, HR)
+  const [, viewAs, normal] = within(await table()).getAllByRole('row')
+  expect(within(viewAs!).getAllByRole('cell')[1]).toHaveTextContent(/^النموذجشهادة خبرةاعتُمدت بالعرض بحساب آخر$/)
+  expect(normal).not.toHaveTextContent('اعتُمدت بالعرض بحساب آخر')
 })
 
 test('a listed pending row makes the list ask again every 3 s; closing the viewer meanwhile gives focus back to View', async () => {

@@ -46,7 +46,7 @@ try {
             DB::table('attendance_requests')->insert(['id' => $id, 'employee_id' => $employee, 'site_id' => $site->id,
                 'date' => now('Africa/Cairo')->toDateString(), 'type' => $advance ? 'advance' : 'overtime', 'requested_by' => $actor->id,
                 ...($advance ? ['amount' => '250.5'] : ['minutes' => 95, 'in_time' => '09:00', 'out_time' => '17:35'])]);
-            $row = app(PdfExports::class)->create($advance ? PdfType::AdvanceRequest : PdfType::OvertimeRequest, $id, (string) Str::uuid7(), [
+            [$row] = app(PdfExports::class)->create($advance ? PdfType::AdvanceRequest : PdfType::OvertimeRequest, $id, (string) Str::uuid7(), [
                 'job_title' => 'مهندسة اختبار', 'reason' => 'سبب تجريبي',
                 ...($advance ? ['repayment_method' => 'cash', 'previous_advance' => false, 'finance_remarks' => 'Synthetic finance remarks'] : []),
             ], $actor, $scope);
@@ -56,11 +56,11 @@ try {
             $request = $requests->submit(['employee_id' => $employee, 'kind' => 'annual', 'from_date' => $from, 'to_date' => $from, 'note' => 'سبب تجريبي'], $hr->id, null);
             Auth::setUser($hr);
             $requests->approve($request['id'], $request['version'], $hr);
-            $row = app(PdfExports::class)->create(PdfType::LeaveRequest, $request['id'], (string) Str::uuid7(), [
+            [$row] = app(PdfExports::class)->create(PdfType::LeaveRequest, $request['id'], (string) Str::uuid7(), [
                 'job_title' => 'مهندسة اختبار', 'notification_method' => 'الهاتف', 'manager_opinion' => 'رأي تجريبي', 'substitute' => 'بديل تجريبي',
             ], $hr, null);
         } else {
-            $row = app(PdfExports::class)->create(PdfType::ExperienceCertificate, $employee, (string) Str::uuid7(), ['job_title' => 'مهندسة اختبار'], $hr, null);
+            [$row] = app(PdfExports::class)->create(PdfType::ExperienceCertificate, $employee, (string) Str::uuid7(), ['job_title' => 'مهندسة اختبار'], $hr, null);
         }
         RenderPdf::dispatch($row->id);
         echo $row->id;

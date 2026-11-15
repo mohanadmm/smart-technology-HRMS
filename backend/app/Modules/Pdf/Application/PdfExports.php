@@ -49,8 +49,9 @@ final class PdfExports
      * subject's latest unsigned row of the same pay kind, so no answer names a row the caller cannot read.
      *
      * @param  array<string, mixed>  $fields  validated with document($type)->rules()
+     * @return array{0: stdClass, 1: bool} [the row, whether this call made it]: only a new row is queued, a replay's row already was
      */
-    public function create(PdfType $type, string $subjectId, string $key, array $fields, Authenticatable $actor, ?string $scope): stdClass
+    public function create(PdfType $type, string $subjectId, string $key, array $fields, Authenticatable $actor, ?string $scope): array
     {
         if ($scope !== null && ! $type->ownScope()) {
             throw AuthorizationRefused::of('hr_forms.generate');
@@ -63,7 +64,7 @@ final class PdfExports
         }
         $fields = self::document($type)->normalise($fields);
 
-        return DB::transaction(function () use ($type, $subjectId, $key, $fields, $actor, $actorId, $scope, $showsPay): stdClass {
+        return DB::transaction(function () use ($type, $subjectId, $key, $fields, $actor, $actorId, $scope, $showsPay): array {
             DB::table('users')->where('id', $actorId)->lockForUpdate()->firstOrFail();
             $unsigned = fn (): Builder => $this->subjectRows($type, $subjectId)->where('stage', 'unsigned');
             // Deleted rows too: a soft-deleted row still holds its key in the unique (requested_by, idempotency_key) index.
@@ -80,7 +81,7 @@ final class PdfExports
                     throw new ConcurrencyConflict;
                 }
 
-                return $existing;
+                return [$existing, false];
             }
 
             [$employeeId, $snapshot] = self::document($type)->snapshot($subjectId, $fields, $scope, $showsPay);
@@ -93,7 +94,7 @@ final class PdfExports
                 'regenerated_from_id' => $row->regenerated_from_id, 'fields' => $fields,
             ]);
 
-            return $row;
+            return [$row, true];
         });
     }
 

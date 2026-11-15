@@ -1411,7 +1411,8 @@
     "awaitingMine": "Awaiting my approval",
     "serialNumber": "Serial",
     "issuedAt": "Issued at",
-    "none": "No issued forms"
+    "none": "No issued forms",
+    "approvedViaViewAs": "Approved through View as"
   },
   "attendanceRequests": {
     "paperDateOptional": "Paper decision date (optional)",
