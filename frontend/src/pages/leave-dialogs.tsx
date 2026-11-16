@@ -1,9 +1,9 @@
-import { LeaveRequestPdf } from './leave-request-pdf'
 import { useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Alert } from '@/components/common/Alert'
 import { SearchInput } from '@/components/common/Filters'
+import { PdfPanel } from '@/components/PdfPanel'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { type Controlled, Dates, ErrorBanner, Field, type FormApi, FormDialog, localName, ltrDates, type Row, SelectField, TextField, useCairoTime } from '@/components/form'
 import type { BadgeVariant } from '@/components/ui/badge'
@@ -221,7 +221,7 @@ function DecideBody({ id, close, busy, setBusy }: { id: string; close: () => voi
             {t('leave.decide.replace')}
           </label>
         )}
-        {r.employee && can('hr_forms.view') && <LeaveRequestPdf key={r.id} id={r.id} />}
+        {r.employee && <PdfPanel key={r.id} type="leave_request" subject={r.id} />}
       </DialogBody>
       {(!!actions.length || cancellable) && (
         <DialogFooter>

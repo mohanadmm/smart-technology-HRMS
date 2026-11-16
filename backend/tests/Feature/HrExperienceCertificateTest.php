@@ -53,7 +53,7 @@ class HrExperienceCertificateTest extends TestCase
         $this->getJson("/api/v1/hr-form-exports?employee_id={$employee}")->assertOk()->assertJsonPath('data.0.id', $id);
         $this->getJson('/api/v1/hr-form-exports?awaiting_approval=1')->assertOk()->assertJsonCount(0, 'data');
         $this->signIn('manager');
-        $this->getJson("/api/v1/hr-form-exports/{$id}/download")->assertForbidden();
+        $this->getJson("/api/v1/hr-form-exports/{$id}/download")->assertNotFound();
         $this->signIn('ceo');
         $this->getJson('/api/v1/hr-form-exports?awaiting_approval=1')->assertOk()->assertJsonPath('data.0.id', $id);
         $this->assertSame(1, DB::table('audit_log')->where('event', 'GENERATED')->where('entity_id', $id)->count());

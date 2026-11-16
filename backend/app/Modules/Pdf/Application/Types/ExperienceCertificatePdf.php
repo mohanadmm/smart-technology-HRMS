@@ -10,6 +10,7 @@ use App\Support\Localization\ArabicFormDate;
 use App\Support\Localization\ArabicServiceDuration;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -60,6 +61,7 @@ final class ExperienceCertificatePdf implements PdfDocument
         $service = ArabicServiceDuration::format($start->diff($end));
 
         return ['pdf.experience-certificate', [
+            'title' => 'شهادة خبرة',
             'footer' => FilePdfAssets::asset('letterhead/certificate-footer.jpg', 'image/jpeg'),
             'letterhead' => FilePdfAssets::asset('letterhead/certificate-letterhead.png', 'image/png'),
             'logo' => FilePdfAssets::asset('letterhead/logo.png', 'image/png'),
@@ -74,5 +76,11 @@ final class ExperienceCertificatePdf implements PdfDocument
     public function approval(stdClass $export, Authenticatable $actor, bool $lock): ?string
     {
         return null;
+    }
+
+    /** Any holder of hr_forms.approve signs. */
+    public function signable(Builder $exports, Authenticatable $actor): Builder
+    {
+        return $exports;
     }
 }

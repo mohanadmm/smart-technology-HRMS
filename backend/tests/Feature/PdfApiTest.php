@@ -6,15 +6,20 @@ use App\Modules\Identity\Infrastructure\Eloquent\Permission;
 use App\Modules\Identity\Infrastructure\Eloquent\Role;
 use App\Modules\Identity\Infrastructure\Eloquent\User;
 use App\Modules\Pdf\Application\RenderPdf;
+use App\Modules\Pdf\Domain\Contracts\PdfRendererInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Route as RouteDefinition;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
+use RuntimeException;
 use Tests\AttendanceFixtures;
 use Tests\TestCase;
 
@@ -73,7 +78,7 @@ final class PdfApiTest extends TestCase
         $routes = [['GET', self::API], ['POST', self::API], ['GET', self::API."/{$id}"], ['GET', self::API."/{$id}/download"],
             ['POST', self::API."/{$id}/approve"], ['POST', self::API."/{$id}/retry"]];
 
-        $this->signIn('manager');
+        $this->actingAs($this->holder('site.view.all'), 'api');
         foreach ($routes as [$method, $uri]) {
             $this->json($method, $uri)->assertForbidden()->assertJsonPath('error.code', 'permission_denied');
         }
@@ -99,7 +104,8 @@ final class PdfApiTest extends TestCase
             ->assertJsonPath('data.status', 'pending')->assertJsonPath('data.regenerated_from_id', null)->assertJsonPath('data.actions', [])
             ->assertJsonPath('data.file_name', str_replace('_', '-', $type).'-1-unsigned.pdf')
             ->assertJsonMissingPath('data.snapshot')->assertJsonMissingPath('data.form_type')->json('data.id');
-        $this->create($type, $subject, $fields, $key)->assertAccepted()->assertJsonPath('data.id', $first);
+        $this->create($type, $subject, $fields, $key)->assertAccepted()->assertJsonPath('data.id', $first)->assertJsonPath('data.status', 'pending');
+        $this->assertCount(1, Queue::pushed(RenderPdf::class, fn (RenderPdf $job) => $job->exportId === $first), 'a replay is not queued again');
         $this->create($type, $subject, [...$fields, 'job_title' => 'Another title'], $key)
             ->assertConflict()->assertJsonPath('error.code', 'concurrency_conflict');
         $second = $this->create($type, $subject, $fields)->assertAccepted()
@@ -118,6 +124,27 @@ final class PdfApiTest extends TestCase
             json_decode($audit($second), true));
         $this->assertStringNotContainsString('salary', $audit($second));
         $this->assertStringNotContainsString('8765', $audit($second));
+    }
+
+    /** The PDF viewer's toolbar shows the document title: the form's name and serial, not the renderer's temp file name. */
+    #[DataProvider('types')]
+    public function test_the_rendered_html_is_titled_with_the_form_name_and_serial(string $type): void
+    {
+        $this->signIn('hr');
+        [$subject, $fields] = $this->subject($type);
+        $this->create($type, $subject, $fields)->assertAccepted();
+        $id = $this->create($type, $subject, $fields)->assertAccepted()->assertJsonPath('data.serial_number', 2)->json('data.id');
+        $html = '';
+        $renderer = $this->createMock(PdfRendererInterface::class);
+        $renderer->expects($this->once())->method('pdf')->willReturnCallback(function (string $page) use (&$html): string {
+            $html = $page;
+
+            return '%PDF-1.7 synthetic';
+        });
+        (new RenderPdf($id))->handle($renderer);
+
+        $name = ['experience_certificate' => 'شهادة خبرة', 'leave_request' => 'نموذج طلب إجازة', 'advance_request' => 'طلب سلفة', 'overtime_request' => 'طلب عمل إضافي'][$type];
+        $this->assertStringContainsString("<title>{$name} - الرقم المسلسل 2</title>", $html);
     }
 
     public function test_a_replay_answers_before_the_subject_is_read_again(): void
@@ -195,6 +222,18 @@ final class PdfApiTest extends TestCase
         $this->assertArrayNotHasKey('extra', $snapshot);
     }
 
+    public function test_an_unknown_type_is_reported_as_the_type_field(): void
+    {
+        $this->signIn('hr');
+        [$request, $fields] = $this->subject('advance_request');
+        $message = __('validation.enum', ['attribute' => __('validation.attributes.kind', [], 'ar')], 'ar');
+
+        $this->create('end_of_service', $request, $fields, headers: ['Accept-Language' => 'ar'])->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'type')->assertJsonPath('error.details.0.message', $message);
+        $this->getJson(self::API.'?type=end_of_service', ['Accept-Language' => 'ar'])->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'type')->assertJsonPath('error.details.0.message', $message);
+    }
+
     public function test_advance_rows_are_hidden_from_a_caller_without_pay(): void
     {
         $this->signIn('hr');
@@ -211,7 +250,7 @@ final class PdfApiTest extends TestCase
         $this->getJson(self::API."/{$advance}")->assertNotFound()->assertJsonPath('error.code', 'not_found');
         $this->get(self::API."/{$advance}/download")->assertNotFound();
         $this->postJson(self::API."/{$advance}/retry")->assertNotFound();
-        $this->create('advance_request', $request, $fields)->assertForbidden()->assertJsonPath('error.code', 'permission_denied');
+        $this->create('advance_request', $request, $fields)->assertAccepted()->assertJsonPath('data.shows_pay', false)->assertJsonPath('data.regenerated_from_id', null);
         $this->get(self::API."/{$certificate}/download")->assertOk()
             ->assertHeader('Content-Type', 'application/pdf')->assertHeader('X-Content-Type-Options', 'nosniff')
             ->assertDownload('experience-certificate-1-unsigned.pdf');
@@ -243,7 +282,8 @@ final class PdfApiTest extends TestCase
         $key = (string) Str::uuid7();
         $own = $this->create('advance_request', $mine, $fields, $key)->assertAccepted()->json('data.id');
 
-        $this->getJson(self::API)->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $own);
+        $this->getJson(self::API."?type=advance_request&subject_id={$mine}")->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $own);
+        $this->getJson(self::API."?type=advance_request&subject_id={$theirs}")->assertOk()->assertJsonCount(0, 'data');
         foreach ([$hidden, $overtime, $certificate] as $id) {
             $this->getJson(self::API."/{$id}")->assertNotFound();
         }
@@ -328,6 +368,24 @@ final class PdfApiTest extends TestCase
         }
     }
 
+    public function test_a_create_whose_dispatch_fails_leaves_a_failed_row_with_retry(): void
+    {
+        $this->signIn('hr');
+        Exceptions::fake();
+        Bus::shouldReceive('dispatch')->once()->with(Mockery::type(RenderPdf::class))->andThrow(new RuntimeException('Connection refused'));
+        [$employee, $fields] = $this->subject('experience_certificate');
+        $key = (string) Str::uuid7();
+
+        $id = $this->create('experience_certificate', $employee, $fields, $key)->assertAccepted()->assertJsonPath('data.status', 'failed')->json('data.id');
+        $this->getJson(self::API."/{$id}")->assertOk()->assertJsonPath('data.status', 'failed')
+            ->assertJsonPath('data.failure_code', 'render_failed')->assertJsonPath('data.actions', ['retry']);
+        // A replay (the browser resends its key after an unanswered request) answers the failed row with Retry, unqueued.
+        $this->create('experience_certificate', $employee, $fields, $key)->assertAccepted()->assertJsonPath('data.id', $id)
+            ->assertJsonPath('data.status', 'failed')->assertJsonPath('data.actions', ['retry']);
+        $this->assertSame(0, DB::table('hr_form_exports')->where('status', 'pending')->count());
+        Exceptions::assertReported(fn (RuntimeException $e) => $e->getMessage() === 'Connection refused');
+    }
+
     public function test_a_retry_while_viewing_as_records_the_developer(): void
     {
         $hr = $this->signIn('hr');
@@ -408,7 +466,82 @@ final class PdfApiTest extends TestCase
             $this->getJson(self::API.$query)->assertUnprocessable()->assertJsonPath('error.code', 'validation_failed');
         }
         $this->signIn('ceo');
-        $this->assertSame([$found, $newer, $leave], $ids('?awaiting_approval=1'));
+        $this->assertSame([$found, $newer], $ids('?awaiting_approval=1'));
+    }
+
+    public function test_each_row_names_its_employee_with_one_query_for_the_page(): void
+    {
+        $this->signIn('hr');
+        $made = [];
+        for ($i = 0; $i < 3; $i++) {
+            [$employee, $fields] = $this->subject('experience_certificate');
+            $made[$employee] = $this->create('experience_certificate', $employee, $fields)->assertAccepted()
+                ->assertJsonPath('data.employee.id', $employee)->json('data.id');
+        }
+        $named = DB::table('employees')->whereIn('id', array_keys($made))->get(['id', 'code', 'name_ar', 'name_en'])
+            ->map(fn (object $e) => ['id' => $e->id, 'code' => (int) $e->code, 'name_ar' => $e->name_ar, 'name_en' => $e->name_en])->keyBy('id')->all();
+        DB::enableQueryLog();
+
+        $rows = $this->getJson(self::API.'?type=experience_certificate')->assertOk()->assertJsonCount(3, 'data')->json('data');
+        $this->assertSame(1, count(array_filter(array_column(DB::getQueryLog(), 'query'), fn (string $sql) => str_contains($sql, 'from "employees"'))));
+        foreach ($rows as $row) {
+            $this->assertSame($named[$row['employee_id']], $row['employee']);
+        }
+        $this->getJson(self::API.'/'.reset($made))->assertOk()->assertJsonPath('data.employee', $named[array_key_first($made)]);
+    }
+
+    public function test_awaiting_approval_lists_exactly_the_rows_whose_actions_include_approve(): void
+    {
+        $hr = $this->signIn('hr');
+        [$employee, $fields] = $this->subject('experience_certificate');
+        $certificate = $this->create('experience_certificate', $employee, $fields)->json('data.id');
+        $this->settle($certificate);
+        [$other, $fields] = $this->subject('experience_certificate');
+        $this->settle($this->create('experience_certificate', $other, $fields)->json('data.id'), 'failed');
+        [$request, $advanceFields] = $this->subject('advance_request');
+        $this->settle($this->create('advance_request', $request, $advanceFields)->json('data.id'));
+        $decidedByHr = $this->approvedLeavePdf();
+        $this->leavePdf($this->leave());
+        $cancelled = $this->leave();
+        $this->decide($cancelled, 'cancel');
+        $this->leavePdf($cancelled);
+        $escalated = $this->leave();
+        $this->decide($escalated, 'escalate');
+        $ceo = $this->signIn('ceo');
+        $this->decide($escalated, 'approve');
+        $this->actingAs($hr, 'api');
+        $decidedByCeo = $this->leavePdf($escalated);
+
+        $this->assertSame([$decidedByHr], $this->awaitingMatchesActions());
+        $this->actingAs($ceo, 'api');
+        $this->assertEqualsCanonicalizing([$certificate, $decidedByCeo], $this->awaitingMatchesActions());
+    }
+
+    public function test_the_list_is_newest_first_across_types(): void
+    {
+        $this->signIn('hr');
+        [$employee, $fields] = $this->subject('experience_certificate');
+        $first = $this->create('experience_certificate', $employee, $fields)->json('data.id');
+        $second = $this->create('experience_certificate', $employee, $fields)->json('data.id');
+        $this->cairo('2026-10-20 13:00');
+        [$request, $fields] = $this->subject('leave_request');
+        $leave = $this->create('leave_request', $request, $fields)->json('data.id');
+
+        $this->assertSame([$leave, $second, $first], array_column($this->getJson(self::API)->assertOk()->json('data'), 'id'));
+    }
+
+    public function test_a_signed_row_lists_before_its_unsigned_twin(): void
+    {
+        $this->signIn('hr');
+        [$employee, $fields] = $this->subject('experience_certificate');
+        $certificate = $this->create('experience_certificate', $employee, $fields)->json('data.id');
+        $this->settle($certificate);
+        $ceo = $this->signIn('ceo');
+        $this->signature($ceo->id);
+        $this->postJson(self::API."/{$certificate}/approve")->assertAccepted();
+
+        $rows = $this->getJson(self::API."?type=experience_certificate&subject_id={$employee}")->assertOk()->json('data');
+        $this->assertSame(['signed', 'unsigned'], array_column($rows, 'stage'));
     }
 
     public function test_rows_of_deleted_types_are_absent_and_not_found(): void
@@ -470,11 +603,39 @@ final class PdfApiTest extends TestCase
     private function approvedLeavePdf(): string
     {
         $request = $this->leave();
-        $this->postJson("/api/v1/leave/requests/{$request}/approve", ['version' => (int) DB::table('leave_requests')->where('id', $request)->value('version')])->assertOk();
+        $this->decide($request, 'approve');
+
+        return $this->leavePdf($request);
+    }
+
+    /** A ready unsigned leave PDF of the request, whatever its status. */
+    private function leavePdf(string $request): string
+    {
         $id = $this->create('leave_request', $request, ['job_title' => 'Synthetic QA'])->assertAccepted()->json('data.id');
         $this->settle($id);
 
         return $id;
+    }
+
+    private function decide(string $request, string $action): void
+    {
+        $this->postJson("/api/v1/leave/requests/{$request}/{$action}", ['version' => (int) DB::table('leave_requests')->where('id', $request)->value('version')])->assertOk();
+    }
+
+    /**
+     * The caller's «awaiting approval» ids, after asserting that every listed row has approve in its actions and no other row the caller sees has it.
+     *
+     * @return list<string>
+     */
+    private function awaitingMatchesActions(): array
+    {
+        $awaiting = collect($this->getJson(self::API.'?awaiting_approval=1&per_page=100')->assertOk()->json('data'))->pluck('actions', 'id');
+        $approvable = collect($this->getJson(self::API.'?per_page=100')->assertOk()->json('data'))->pluck('actions', 'id')
+            ->filter(fn (array $actions) => in_array('approve', $actions, true));
+        $awaiting->each(fn (array $actions) => $this->assertContains('approve', $actions));
+        $this->assertEqualsCanonicalizing($approvable->keys()->all(), $awaiting->keys()->all());
+
+        return $awaiting->keys()->all();
     }
 
     /** What the render job leaves: a stored file and the status. */

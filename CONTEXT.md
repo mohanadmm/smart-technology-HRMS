@@ -219,5 +219,8 @@ The number assigned within one form type. The unsigned and approved versions of 
 **Form snapshot** (نسخة النموذج):
 An immutable copy of an HR form and the values used to produce it. Approval creates a separate snapshot and retains the unsigned copy.
 
+**Issued form** (نموذج صادر):
+One generated PDF of an HR form, identified by its form serial and stage.
+
 **Signature image** (صورة التوقيع):
 An image an approver provides for their own signature. A form uses the version in force when the document was approved.

@@ -20,7 +20,7 @@ const SiteDayPage = page(() => import('@/pages/site-day'), 'SiteDayPage')
 const WageProposalsPage = page(() => import('@/pages/wage-proposals'), 'WageProposalsPage')
 const TeamFaresPage = page(() => import('@/pages/team-fares'), 'TeamFaresPage')
 const PayrollPage = page(() => import('@/pages/payroll'), 'PayrollPage')
-const FormApprovalsPage = page(() => import('@/pages/hr-forms'), 'FormApprovalsPage')
+const IssuedFormsPage = page(() => import('@/pages/hr-forms'), 'IssuedFormsPage')
 const SignaturePage = page(() => import('@/pages/hr-forms'), 'SignaturePage')
 const NotFoundPage = page(() => import('@/pages/pages'), 'NotFoundPage')
 
@@ -50,7 +50,7 @@ export function AppRoutes() {
         <Route path="attendance-requests" element={nav('/attendance-requests', <AttendanceRequestsPage />)} />
         <Route path="site-day" element={<SiteDayPage />} />
         <Route path="wage-proposals" element={nav('/wage-proposals', <WageProposalsPage />)} />
-        <Route path="hr-form-approvals" element={nav('/hr-form-approvals', <FormApprovalsPage />)} />
+        <Route path="hr-forms" element={nav('/hr-forms', <IssuedFormsPage />)} />
         <Route path="my-signature" element={nav('/my-signature', <SignaturePage />)} />
         <Route path="team-fares" element={<TeamFaresPage />} />
         <Route path="payroll" element={nav('/payroll', <PayrollPage />)} />

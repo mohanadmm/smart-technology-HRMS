@@ -22,36 +22,45 @@ require __DIR__.'/../../vendor/autoload.php';
 $app = require __DIR__.'/../../bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 $leave = getenv('HRMS_SMOKE_FORM') === 'leave-request';
-$advance = getenv('HRMS_SMOKE_FORM') === 'advance-request';
+// The site manager's copy: a permanent worker in a real manager's reach, created at the manager's own scope, without the salary.
+$noPay = getenv('HRMS_SMOKE_FORM') === 'advance-request-no-pay';
+$advance = $noPay || getenv('HRMS_SMOKE_FORM') === 'advance-request';
 $overtime = getenv('HRMS_SMOKE_FORM') === 'overtime-request';
 try {
     if ($argv[1] === 'setup') {
         $employee = app(EmployeeService::class)->create([
-            'name_ar' => 'سارة مثال للاختبار', 'gender' => 'female', 'type' => 'office', 'effective_from' => '2022-01-01',
+            'name_ar' => 'سارة مثال للاختبار', 'gender' => 'female', 'type' => $noPay ? 'permanent_worker' : 'office', 'effective_from' => '2022-01-01',
             'hire_date' => '2022-01-01', 'salary' => '9000', 'national_id' => '12345678901234', 'department' => 'اختبار',
         ])['id'];
         $hr = User::create(['name' => 'hr', 'email' => 'hr@synthetic.test', 'password' => Str::random(24), 'role_id' => Role::where('slug', 'hr')->value('id'), 'is_active' => true]);
         if ($advance || $overtime) {
             $id = (string) Str::uuid7();
             $site = Site::create(['name_ar' => 'موقع تجريبي', 'kind' => 'work']);
+            [$actor, $scope] = [$hr, null];
+            if ($noPay) {
+                app(EmployeeService::class)->assignSite($employee, ['site_id' => $site->id, 'effective_from' => '2022-01-01']);
+                $actor = User::create(['name' => 'manager', 'email' => 'manager@synthetic.test', 'password' => Str::random(24), 'role_id' => Role::where('slug', 'manager')->value('id'), 'is_active' => true]);
+                DB::table('manager_sites')->insert(['manager_id' => $actor->id, 'site_id' => $site->id]);
+                $scope = $actor->id;
+            }
             DB::table('attendance_requests')->insert(['id' => $id, 'employee_id' => $employee, 'site_id' => $site->id,
-                'date' => now('Africa/Cairo')->toDateString(), 'type' => $advance ? 'advance' : 'overtime', 'requested_by' => $hr->id,
+                'date' => now('Africa/Cairo')->toDateString(), 'type' => $advance ? 'advance' : 'overtime', 'requested_by' => $actor->id,
                 ...($advance ? ['amount' => '250.5'] : ['minutes' => 95, 'in_time' => '09:00', 'out_time' => '17:35'])]);
-            $row = app(PdfExports::class)->create($advance ? PdfType::AdvanceRequest : PdfType::OvertimeRequest, $id, (string) Str::uuid7(), [
+            [$row] = app(PdfExports::class)->create($advance ? PdfType::AdvanceRequest : PdfType::OvertimeRequest, $id, (string) Str::uuid7(), [
                 'job_title' => 'مهندسة اختبار', 'reason' => 'سبب تجريبي',
-                ...($advance ? ['repayment_method' => 'cash', 'previous_advance' => false, 'finance_remarks' => 'ملاحظات تجريبية'] : []),
-            ], $hr, null);
+                ...($advance ? ['repayment_method' => 'cash', 'previous_advance' => false, 'finance_remarks' => 'Synthetic finance remarks'] : []),
+            ], $actor, $scope);
         } elseif ($leave) {
             $requests = app(LeaveRequests::class);
             $from = now('Africa/Cairo')->next('Monday')->toDateString();
             $request = $requests->submit(['employee_id' => $employee, 'kind' => 'annual', 'from_date' => $from, 'to_date' => $from, 'note' => 'سبب تجريبي'], $hr->id, null);
             Auth::setUser($hr);
             $requests->approve($request['id'], $request['version'], $hr);
-            $row = app(PdfExports::class)->create(PdfType::LeaveRequest, $request['id'], (string) Str::uuid7(), [
+            [$row] = app(PdfExports::class)->create(PdfType::LeaveRequest, $request['id'], (string) Str::uuid7(), [
                 'job_title' => 'مهندسة اختبار', 'notification_method' => 'الهاتف', 'manager_opinion' => 'رأي تجريبي', 'substitute' => 'بديل تجريبي',
             ], $hr, null);
         } else {
-            $row = app(PdfExports::class)->create(PdfType::ExperienceCertificate, $employee, (string) Str::uuid7(), ['job_title' => 'مهندسة اختبار'], $hr, null);
+            [$row] = app(PdfExports::class)->create(PdfType::ExperienceCertificate, $employee, (string) Str::uuid7(), ['job_title' => 'مهندسة اختبار'], $hr, null);
         }
         RenderPdf::dispatch($row->id);
         echo $row->id;

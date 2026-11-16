@@ -459,6 +459,12 @@ test('closing revokes the URL', async () => {
   expect(urls.revoke).toHaveBeenCalledWith('blob:doc-1')
 })
 
+test('closing the viewer gives focus back to the file button that opened it', async () => {
+  const { user } = await view()
+  await user.keyboard('{Escape}')
+  await vi.waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'صحيفة الحالة الجنائية' })))
+})
+
 test('a failed fetch shows Retry', async () => {
   const { user, dialog, get } = await view({}, () => json(500, { error: { code: 'x', message: 'x' } }))
   expect(await within(dialog).findByText('تعذّر تحميل الملف.')).toBeInTheDocument()

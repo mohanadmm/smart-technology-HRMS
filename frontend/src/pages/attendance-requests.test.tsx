@@ -6,9 +6,8 @@ import { AttendanceRequestsPage } from './attendance-requests'
 
 afterEach(() => vi.unstubAllGlobals())
 
-test('prints the saved advance revision and records paper approval as one action', async () => {
+test('a pending advance is matched to the signed paper by amount and serial, has no print button, and records paper approval as one action', async () => {
   const user = userEvent.setup()
-  const print = vi.fn()
   const request = {
     id: 'advance1',
     version: 3,
@@ -25,18 +24,14 @@ test('prints the saved advance revision and records paper approval as one action
     'GET /api/v1/attendance/requests/advance1': () => json(200, { data: request }),
     'POST /api/v1/attendance/requests/advance1/approve': approve,
   })
-  vi.stubGlobal('print', print)
   renderWithAuth(<AttendanceRequestsPage />, ['attendance_request.decide.all'], { path: '/attendance-requests?request=advance1' })
 
   const review = await screen.findByRole('dialog', { name: 'سلفة' })
-  expect(within(review).getByText(/نسخة الطلب رقم 3/)).toBeInTheDocument()
-  await user.click(within(review).getByRole('button', { name: 'طباعة نموذج السلفة' }))
-  const preview = await screen.findByRole('dialog', { name: 'نموذج طلب سلفة' })
-  expect(document.querySelector('.advance-print')).toHaveTextContent('advance1 / 3')
-  await user.click(within(preview).getByRole('button', { name: 'طباعة نموذج السلفة' }))
-  expect(print).toHaveBeenCalledOnce()
+  const hint = within(review).getByText(/الورقة الموقّعة/)
+  expect(hint).toHaveTextContent(/مبلغ.*مسلسل/)
+  expect(hint.textContent).not.toMatch(/\d|\{\{/)
+  expect(within(review).queryByRole('button', { name: /طباعة/ })).toBeNull()
   expect(approve).not.toHaveBeenCalled()
-  await user.keyboard('{Escape}')
   await user.click(within(review).getByRole('button', { name: 'تسجيل الموافقة الورقية' }))
   await waitFor(() => expect(approve).toHaveBeenCalledOnce())
   const sent = vi.mocked(fetch).mock.calls.find(([url, opts]) => String(url).endsWith('/advance1/approve') && opts?.method === 'POST')
@@ -66,19 +61,19 @@ test.each([
   ], { path: '/attendance-requests?request=request1' })
 
   const review = within(await screen.findByRole('dialog'))
+  await review.findByText('لم يُنشأ ملف بعد') // the panel has loaded its list
   if (type !== 'overtime') {
     expect(review.queryByText('نموذج طلب عمل إضافي')).toBeNull()
     return
   }
-  expect(review.getByText('الطباعة لا تغيّر الحضور أو مدخلات الرواتب أو الطلب.')).toBeInTheDocument()
   if (!canGenerate) {
-    expect(review.queryByRole('button', { name: 'إنشاء الملف' })).toBeNull()
+    expect(review.queryByRole('button', { name: 'إنشاء' })).toBeNull()
     return
   }
 
   const title = review.getByLabelText('المسمى الوظيفي')
   const reason = review.getByLabelText('سبب العمل الإضافي')
-  const submit = review.getByRole('button', { name: 'إنشاء الملف' })
+  const submit = review.getByRole('button', { name: 'إنشاء' })
   expect(title).toBeRequired()
   expect(reason).toBeRequired()
   await user.click(submit)

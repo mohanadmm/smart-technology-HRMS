@@ -81,14 +81,18 @@ final class HrOvertimeRequestFormTest extends TestCase
         $this->postJson("/api/v1/hr-form-exports/{$export}/approve")->assertConflict();
         $this->assertDatabaseMissing('hr_form_exports', ['form_type' => 'overtime_request', 'stage' => 'signed']);
 
+        $this->actingAs($this->managerOf($this->site), 'api');
+        $this->generate($id)->assertForbidden()->assertJsonPath('error.code', 'permission_denied');
+        $this->getJson("/api/v1/hr-form-exports?type=overtime_request&subject_id={$id}")->assertUnprocessable();
+        $this->getJson("/api/v1/hr-form-exports/{$export}")->assertNotFound();
+        $this->get("/api/v1/hr-form-exports/{$export}/download")->assertNotFound();
+
         $role = Role::create(['slug' => 'employee', 'name' => 'Employee', 'name_ar' => 'موظف']);
-        foreach ([$this->managerOf($this->site), $this->makeUser('hr', ['role_id' => $role->id])] as $user) {
-            $this->actingAs($user, 'api');
-            $this->generate($id)->assertForbidden();
-            $this->getJson("/api/v1/hr-form-exports?type=overtime_request&subject_id={$id}")->assertForbidden();
-            $this->getJson("/api/v1/hr-form-exports/{$export}")->assertForbidden();
-            $this->get("/api/v1/hr-form-exports/{$export}/download")->assertForbidden();
-        }
+        $this->actingAs($this->makeUser('hr', ['role_id' => $role->id]), 'api');
+        $this->generate($id)->assertForbidden();
+        $this->getJson("/api/v1/hr-form-exports?type=overtime_request&subject_id={$id}")->assertForbidden();
+        $this->getJson("/api/v1/hr-form-exports/{$export}")->assertForbidden();
+        $this->get("/api/v1/hr-form-exports/{$export}/download")->assertForbidden();
     }
 
     public function test_database_requires_positive_overtime_and_a_checkout(): void

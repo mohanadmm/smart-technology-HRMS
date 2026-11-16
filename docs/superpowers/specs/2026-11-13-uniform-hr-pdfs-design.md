@@ -88,11 +88,11 @@ signature, `feminine`, fonts) and checks `template_version === 1` as today.
 | Subject (`subject_id`) | the employee; `subjectColumn()` = `employee_id` | `snapshot->leave_request_id` | `snapshot->advance_request_id` | `snapshot->overtime_request_id` |
 | Subject row locked | `employees` | `leave_requests` | `attendance_requests` with `type = 'advance'` | `attendance_requests` with `type = 'overtime'` |
 | Subject missing, deleted or of the other request type | 404 | 404 | 404 | 404 |
-| `fields` rules (today's validators) | `job_title`: required, string, max:160 | `job_title`: required, string, max:160; `notification_method`: nullable, string, max:160; `manager_opinion`: nullable, string, max:360; `substitute`: nullable, string, max:160 (null stored as `''`) | `job_title`: required, string, max:160; `reason`: required, string, max:300; `repayment_method`: required, in:receipts,cash,salary_deduction; `previous_advance`: required, boolean (stored as bool); `finance_remarks`: nullable, string, max:300 (null stored as `''`); `paper_decision_date`: missing | `job_title`: required, string, max:160; `reason`: required, string, max:300; `paper_decision_date`: missing |
+| `fields` rules (today's validators) | `job_title`: required, string, max:160 | `job_title`: required, string, max:160; `notification_method`: nullable, string, max:160; `manager_opinion`: nullable, string, max:360; `substitute`: nullable, string, max:160 (null stored as `''`) | `job_title`: required, string, max:160; `reason`: required, string, max:300; `repayment_method`: required, in:receipts,cash,salary_deduction; `previous_advance`: nullable, boolean (stored as bool, `null` when unanswered; optional since Step 2); `finance_remarks`: nullable, string, max:300 (null stored as `''`); `paper_decision_date`: missing | `job_title`: required, string, max:160; `reason`: required, string, max:300; `paper_decision_date`: missing |
 | Rules today | `ExperienceCertificateController.php:34-39` (minus `praise`, `regenerated_from_id`) | `LeaveRequestFormController.php:20-30` | `AttendanceRequestFormController.php:27-42` | same file, non-advance branch |
 | Snapshot (as today) | `name_ar, national_id, department, gender, hire_date, termination_date, job_title, issued_on`; 422 when `national_id`, `department`, `gender` or `hire_date` is empty (`errors.certificate_employee_data`) | `LeaveRequestForms.php:50-55` | `AttendanceRequestForms.php:58-71` + `shows_pay` | `AttendanceRequestForms.php:58-71` |
 | Signer rule (`approval()`) | any holder of `hr_forms.approve`; returns null (no stamp line) | the leave request (locked) must be `approved`, else 409; its `decided_by` must be the actor, else 403; returns `hr` when `escalated_at` is null, else `company_manager` (`LeaveRequestForms.php:73-87`) | not signed | not signed |
-| Own-scope callers | no | no | yes, employee in reach today | no |
+| Own-scope callers | no | no | yes, employee in reach on the request's date (Step 2; was today) | no |
 | Bears pay | no | no | yes, unless the snapshot says `"shows_pay": false` | no |
 | Archived employee | allowed | allowed (as today) | allowed (as today) | allowed (as today) |
 
@@ -101,7 +101,8 @@ signature, `feminine`, fonts) and checks `template_version === 1` as today.
 
 Advance in Step 1: a caller without `employee.view` at scope All is refused (403, as today
 `AttendanceRequestFormController.php:26`); `snapshot()` throws it when `$showsPay` is false. Every advance row Step 1 creates has
-`"shows_pay": true`. Task 2c lifts the refusal and builds the copy without the salary.
+`"shows_pay": true`. Since Step 2 (task 2c) the refusal is lifted: that caller gets the copy without the salary
+(`"shows_pay": false`).
 
 ### `PdfExports` (Application)
 - `static document(PdfType $type): PdfDocument`: the one `match`, resolving the class from the container. It replaces the branch
@@ -138,7 +139,11 @@ decide routes, stay). The signature routes (lines 49-53) are unchanged.
 
 `permission:a,b` passes when the caller holds **any** of them (`Identity/Presentation/AuthorizePermission.php:29-36`), so approve
 and retry re-check the type's own permission inside the use case (below). After each use case the controller dispatches
-`RenderPdf` when the returned row is `pending` (today's `ExperienceCertificateController::queue`).
+`RenderPdf` when the returned row is `pending` (today's `ExperienceCertificateController::queue`). Since Step 2: when that
+dispatch throws (Redis down), the controller reports it and the row becomes `failed` / `render_failed` if still `pending`, so
+Retry appears instead of a row that stays `pending` with no job. Also since Step 2: a create that replays an idempotency key
+answers its row without dispatching again (`PdfExports::create` says whether it made the row); the row was queued when it was
+made, or is `failed` with Retry if that dispatch threw.
 
 ### The row (every JSON answer but the download)
 ```json
@@ -148,11 +153,13 @@ and retry re-check the type's own permission inside the use case (below). After 
   "approved_by": null, "approved_at": null, "impersonator_id": null,
   "failure_code": null, "sha256": "9c1e…", "size_bytes": 48211, "created_at": "…",
   "file_name": "leave-request-14-unsigned.pdf",
+  "shows_pay": null, "employee": { "id": "0193f2c1-…", "code": 1042, "name_ar": "…", "name_en": "…" },
   "actions": ["download", "approve"]
 }
 ```
 Today's keys (`ExperienceCertificateController.php:132-138`) with `form_type` renamed `type`, plus `file_name`
-(`PdfType::fileName`) and `actions`. Never the snapshot. `actions` ⊆ `download | approve | retry`, computed for the caller:
+(`PdfType::fileName`) and `actions`. Since Step 2 also `shows_pay` (`true` / `false` for an advance, `null` for the other types)
+and `employee` (`id, code, name_ar, name_en` only, or null; one query per page). Never the snapshot. `actions` ⊆ `download | approve | retry`, computed for the caller:
 - `download`: `status = ready`.
 - `approve`: the type has an approve permission, the caller holds it at All, the row is `unsigned` and `ready`, no row has it as
   `unsigned_export_id` or `regenerated_from_id`, and `approval()` does not refuse.
@@ -163,18 +170,22 @@ Today's keys (`ExperienceCertificateController.php:132-138`) with `form_type` re
 ### `GET hr-form-exports` (list)
 Query, all optional: `type` (one of the four; required with `subject_id`), `subject_id` (uuid), `employee_id` (uuid), `stage`
 (`unsigned|signed`), `status` (`pending|ready|failed`), `awaiting_approval` (boolean), `q` (string, max 100), `page` (integer ≥ 1),
-`per_page` (integer 1-100, default 25). Anything else invalid is 422 `validation_failed`.
+`per_page` (integer 1-100, default 25). Since Step 2 an own-scope caller must send `type=advance_request` and `subject_id`.
+Anything else invalid is 422 `validation_failed`.
 - Always: `form_type IN` the four, `deleted_at IS NULL`.
 - Pay gate: without `employee.view` at All, rows `form_type = 'advance_request' AND coalesce(snapshot->>'shows_pay', 'true') <> 'false'`
   are left out.
-- Own scope (`RequestScope::ownerId` not null): only types with `ownScope()`, and `employee_id IN EmployeeReach::ids(owner, today)`
-  (`Employees/Application/EmployeeReach.php:54`).
+- Own scope (`RequestScope::ownerId` not null): only types with `ownScope()`. Since Step 2 the list names its subject, whose rows
+  share one employee and request date: they are returned when the caller reaches that employee on the request's date
+  (`request_date` in the snapshot), else none (was `employee_id IN EmployeeReach::ids(owner, today)`).
 - `subject_id`: `where(document(type)->subjectColumn(), subject_id)`. `employee_id`, `stage`, `status`: equality.
 - `awaiting_approval=1`: `unsigned`, `ready`, no successor (as `ExperienceCertificates::awaitingApproval`, `:165-173`), of the
-  types whose approve permission the caller holds at All. The leave signer rule is not in the filter; `actions` tells.
+  types whose approve permission the caller holds at All, narrowed by each type's signer rule (`PdfDocument::signable()`): the
+  list holds exactly the rows whose `actions` include `approve` (Step 2, Gate 2.3).
 - `q`: `serial_number = q` when q is digits, or `employee_id IN` the employees matching q through the `Employee::matching` scope
   (`name_ar`/`name_en` ilike, `code` when digits; no national ID).
-- Order: `serial_number desc, stage desc, id desc` (the leave panel's `latest`, `leave-request-pdf.tsx:52`, relies on it).
+- Order: `created_at desc, serial_number desc, stage asc, id desc` (newest issue first across types; a signed row lists before
+  its unsigned twin). Issue time leads since Step 2, Gate 2.3: serials count per type.
 - Answer: `ApiEnvelope::collection` with `meta.pagination` (`page, per_page, total, total_pages, has_next_page, has_previous_page`).
 
 ### `POST hr-form-exports` (create)
@@ -185,12 +196,14 @@ prefixed `fields.`; only validated keys are kept. Then, in this order:
 2. One transaction: lock the caller's `users` row (as today); a row with `(requested_by, idempotency_key)` is a replay: same type,
    same subject, `unsigned`, not deleted, and the snapshot holds every normalised field (`PdfDocument::normalise`: optional keys
    filled with `''`, casts applied) with the identical value (type-strict) → return it when it passes the read gates of `visible`
-   (else 404), else 409 `concurrency_conflict`.
+   (else 404), else 409 `concurrency_conflict`. Since Step 2 the read gate runs before the field comparison: a row the caller
+   cannot read is 404 whatever the fields, because a caller without pay has the advance finance fields normalised away.
 3. `document(type)->snapshot(subject_id, fields, scope, canViewPay(caller))`: locks the subject row, 404 when missing or out of
-   reach, 403 for an advance without pay (Step 1), 422 for missing certificate data.
-4. Supersede: the latest (`serial_number desc`) `unsigned` row of the same type and subject (`subjectColumn()`), whatever its
-   status, becomes the new row's `regenerated_from_id`. The subject lock serialises this, so the unique `regenerated_from_id`
-   never collides.
+   reach (since Step 2 on the request's date for the advance), 422 for missing certificate data. An advance for a caller without
+   pay is the copy without the salary since Step 2 (Step 1 answered 403).
+4. Supersede: the latest (`serial_number desc`) `unsigned` row of the same type and subject (`subjectColumn()`), and since Step 2
+   of the same pay kind (`shows_pay`), whatever its status, becomes the new row's `regenerated_from_id`. The subject lock
+   serialises this, so the unique `regenerated_from_id` never collides.
 5. `storeUnsigned` with the next serial of the type; then `AuditLog::record('CREATED', 'hr_form_exports', id, null, {form_type,
    serial_number, stage, regenerated_from_id, fields})`. Never the snapshot (it carries salary).
 No `employee.scope` middleware: it reads `route('employee')` (`Employees/Presentation/EnsureEmployeeInScope.php:28`), which this
@@ -198,7 +211,8 @@ route has not, and its archived refusal (`:33`, 409 `employee_archived`) would s
 
 ### `GET hr-form-exports/{export}` and `/download`
 `PdfExports::visible(id, caller, scope)`: 404 when the row is missing, soft-deleted, of an unknown type, pay-bearing for a caller
-without pay (`canViewPay`), or (own scope) of a type without `ownScope()` or of an employee out of reach today. Download also 404s
+without pay (`canViewPay`), or (own scope) of a type without `ownScope()` or of an employee out of reach on the request's date
+(`request_date` in the snapshot; since Step 2, was today). Download also 404s
 unless `status = ready` and the file exists; it streams with `Content-Type: application/pdf`, `Content-Disposition` attachment
 `file_name`, `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff` (today's headers). View and Download in the UI
 both fetch this as a blob.
@@ -230,7 +244,7 @@ type's approve permission for a `signed` row; caller lacks it: 403; `visible` wi
 | Code | Status | Source | When |
 |---|---|---|---|
 | `validation_failed` | 422 | `backend/bootstrap/app.php:65` | bad query or body; `fields` rules; certificate data missing; no signature image on approve |
-| `permission_denied` | 403 | `AuthorizationRefused`, rendered at `bootstrap/app.php:91` | route permission missing; type's approve/generate permission missing; own scope on a type without `ownScope()` (create); advance without pay (create, Step 1); leave signer not the decider |
+| `permission_denied` | 403 | `AuthorizationRefused`, rendered at `bootstrap/app.php:91` | route permission missing; type's approve/generate permission missing; own scope on a type without `ownScope()` (create); advance without pay (create, Step 1 only: since Step 2 it is the no-pay copy); leave signer not the decider |
 | `not_found` | 404 | `bootstrap/app.php:73` | missing or deleted row or subject; unknown type; pay gate; own scope out of reach or type not own-scope (read, approve, retry); download not ready or file missing |
 | `concurrency_conflict` | 409 | `App\Support\Database\ConcurrencyConflict`, `bootstrap/app.php:104` | idempotency key reused with another payload; approve of an unsignable row or state; leave request not approved; retry of a row not failed or by another approver |
 | `unauthenticated` | 401 | `bootstrap/app.php:77` | no session |
@@ -319,6 +333,9 @@ check `select count(*) from hr_form_exports where status = 'pending'` is 0 and t
 payloads name the old class and cannot be retried with `queue:retry`; a `failed` row is retried through the API instead.
 
 ## Known gaps for task 2c (not fixed in Step 1)
+Resolved in Step 2 (task 2c, `docs/superpowers/specs/2026-11-14-uniform-hr-pdfs-step-2-design.md` section 4): the no-pay advance
+copy, reach on the request's date (create, show, download, retry, and own-scope lists that name their subject), separate pay and
+no-pay supersede chains. The leave PDF reach gap stays unreachable (leave is not own-scope).
 - Leave PDF reach: `LeaveRequestForms.php:33,65` call `EmployeeService::show($id, $scope)`, which trims fields but checks no reach.
   Unreachable in Step 1 (`ownScope()` is false); if a type ever turns own-scope, its `snapshot()` must call `isManagedBy`.
 - Manager's advance copy: the snapshot reads `$employee['pay_changes']` (`AttendanceRequestForms.php:61`), which
@@ -335,21 +352,29 @@ Each keeps today's behaviour unless the owner plan says otherwise; the rejected 
 3. A signed failed row is retried only by its approver, for both signable types; not "any `hr_forms.approve` holder" for the certificate.
 4. Approving a type that is never signed is 409 `concurrency_conflict` (today's certificate route answer); not 404.
 5. Every 403 is `AuthorizationRefused` → `permission_denied`; not `abort(403)`, which answers without an error code.
-6. Advance create without pay stays 403 in Step 1; not building the no-salary copy before 2c.
+6. Advance create without pay stays 403 in Step 1; not building the no-salary copy before 2c. Since Step 2 (task 2c): lifted,
+   the caller gets the copy without the salary.
 7. New advance snapshots carry `shows_pay` (always true in Step 1); not deriving it from the caller at read time.
 8. No type refuses an archived employee; not adding a refusal to leave, advance or overtime.
 9. Create keeps the `users`-row lock besides the subject lock (serialises same-key replays); not the subject lock alone.
 10. `snapshot()` returns `[employee_id, snapshot]`; not a second lookup of the subject's employee in `PdfExports`.
 11. The `CREATED` audit holds `form_type, serial_number, stage, regenerated_from_id, fields`; not the snapshot.
 12. `type` replaces `form_type` in the JSON (the column keeps its name); not both keys.
-13. Every list orders `serial_number desc, stage desc, id desc`; not `created_at desc` (today's employee history).
+13. Every list orders `serial_number desc, stage asc, id desc` (signed above its unsigned twin); not `created_at desc` (today's employee history).
+    Replaced in Step 2 (Gate 2.3): `created_at desc` leads and the three keys break ties, because the page «النماذج الصادرة» lists
+    all types together and serials count per type. Within one type and subject the order is unchanged.
 14. `per_page` defaults to 25 (today's history and `ExportPages`), max 100; the two request panels ask for 100 (their lists were unpaginated); not the project's usual 20.
 15. `q` matches the serial or the employee through `Employee::matching` without national ID; not a new search rule.
 16. `subject_id` requires `type`; not an OR over the four subject columns.
 17. `awaiting_approval` filters by permission only, the leave decider rule shows in `actions`; not a per-type SQL hook on `PdfDocument`.
-18. Own-scope lists filter with `EmployeeReach::ids(owner, today)`; not requiring a `subject_id`.
+    Replaced in Step 2 (Gate 2.3): the toggle «بانتظار اعتمادي» listed leave PDFs with no Approve button, so each type states its
+    signer rule once as SQL (`PdfDocument::signable()`), used by the filter and by `approval()`.
+18. Own-scope lists filter with `EmployeeReach::ids(owner, today)`; not requiring a `subject_id`. Replaced in Step 2 (task 2c): an
+    own-scope list must name `type=advance_request` and `subject_id` (422 otherwise) and returns the subject's rows when the
+    caller reaches the employee on the request's date, else none.
 19. The certificate's fixed praise paragraph moves into the view; a stored `praise` still prints (a retry reproduces what was approved); not ignoring it.
 20. Supersede takes the latest unsigned row of the type and subject whatever its status or approval (today's leave and attendance rule).
+    Since Step 2 (task 2c) also of the same pay kind (`shows_pay`), so the pay and no-pay copies are separate chains.
 21. `actions.download` means `status = ready`; the file is checked only by the download itself.
 22. Retry of a superseded failed row is allowed (today for advance); approve still refuses a superseded row (today).
 23. Retry writes a `RETRIED` audit row and sets `updated_by` (`CLAUDE.md`: every update is audited); not today's unaudited update.

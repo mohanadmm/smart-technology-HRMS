@@ -1,11 +1,13 @@
-import { MoreHorizontal, StickyNote, UserMinus } from 'lucide-react'
+import { FileText, MoreHorizontal, StickyNote, UserMinus } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AdvancePrint } from '@/components/AdvancePrint'
-import { asciiDigits, ErrorBanner, isHhmm, localName, type Row, TimeInput } from '@/components/form'
+import { asciiDigits, ErrorBanner, isHhmm, localName, type Row, TimeInput, useMoney } from '@/components/form'
+import { canUsePdf, PdfPanel } from '@/components/PdfPanel'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input, Textarea } from '@/components/ui/input'
+import { useAuth } from '@/lib/auth'
 import { useSave } from '@/lib/query'
 import { arrivalDiff, changed, departureDiff, type Draft, type LeaveDayTypes, type Mark, MARKS, MORE, type SiteDayRow } from '@/lib/site-day'
 import { cn } from '@/lib/utils'
@@ -20,11 +22,13 @@ const PRESSED: Record<Mark, string> = {
 const leaveOf = (d: Draft | null, leave: LeaveDayTypes) => (d ? (Object.entries(leave).find(([, id]) => id === d.site_id)?.[0] ?? null) : null)
 
 /** One person: status buttons, then (when present) the arrival and the departure with its difference from the shift end. */
-export function PersonRow({ r, draft, siteId, siteName, date, leave, sites, set, removable, onRemoved, locked, onOpenDay }: {
-  r: SiteDayRow; draft: Draft | null; siteId: string; siteName: string; date: string; leave: LeaveDayTypes; sites: Row[]; set: (d: Draft | null) => void; removable: boolean; onRemoved: () => void; locked: boolean
+export function PersonRow({ r, draft, siteId, leave, sites, set, removable, onRemoved, locked, onOpenDay }: {
+  r: SiteDayRow; draft: Draft | null; siteId: string; leave: LeaveDayTypes; sites: Row[]; set: (d: Draft | null) => void; removable: boolean; onRemoved: () => void; locked: boolean
   onOpenDay: (date: string, site: string) => void
 }) {
   const { t, i18n } = useTranslation()
+  const { can } = useAuth()
+  const money = useMoney()
   const save = useSave()
   const [removeErr, setRemoveErr] = useState<unknown>()
   const lang = i18n.language
@@ -163,7 +167,20 @@ export function PersonRow({ r, draft, siteId, siteName, date, leave, sites, set,
           {overtime && <span className="rounded-md bg-muted px-2 py-1 text-xs">{t('attendanceRequests.type.overtime')} · {t('attendanceRequests.minutes', { count: overtime.minutes ?? 0 })} · {t(`attendanceRequests.status.${overtime.status}`)}</span>}
           {advance && <span className="rounded-md bg-muted px-2 py-1 text-xs">{t('attendanceRequests.type.advance')} · {t(advance.status === 'approved' ? 'attendanceRequests.paid' : `attendanceRequests.status.${advance.status}`)}</span>}
           {editableAdvance && <Button type="button" variant="ghost" className="min-h-tap" aria-expanded={advanceOpen} onClick={() => setAdvanceOpen((open) => !open)}>{t('attendanceRequests.requestAdvance')}</Button>}
-          {advance?.amount && draft?.advance_request === undefined && <AdvancePrint id={advance.id} version={advance.version} name={name} code={r.employee.code} site={siteName} date={date} amount={advance.amount} />}
+          {advance?.amount && draft?.advance_request === undefined && canUsePdf(can, 'view', 'advance_request') && (
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button type="button" variant="outline" className="min-h-tap"><FileText aria-hidden />{t('attendanceRequests.advancePdf')}</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{t('attendanceRequests.advancePdf')}</DialogTitle>
+                  <DialogDescription><bdi>{name}</bdi> · {money(advance.amount)}</DialogDescription>
+                </DialogHeader>
+                <DialogBody><PdfPanel type="advance_request" subject={advance.id} /></DialogBody>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       )}
       {advanceOpen && editableAdvance && draft && (
